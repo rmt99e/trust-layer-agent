@@ -6,3 +6,5 @@ __pycache__/
 results/
 .DS_Store
 notes/
+node_modules/
+dist/
