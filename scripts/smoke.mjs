@@ -21,8 +21,8 @@ async function ollamaModel() {
 }
 
 const providers = [
-  { name: "anthropic", ready: !!process.env.ANTHROPIC_API_KEY, make: () => anthropic({ model: process.env.SMOKE_ANTHROPIC_MODEL ?? "claude-opus-5-5" }),
-    cost: "≈ $0.03 (3–4 calls × ~1.5k input + ~300 output tokens at $4/$20 per M)" },
+  { name: "anthropic", ready: !!process.env.ANTHROPIC_API_KEY, make: () => anthropic({ model: process.env.SMOKE_ANTHROPIC_MODEL ?? "claude-sonnet-5-5" }),
+    cost: "≈ $0.015 (3–4 calls × ~1.5k input + ~300 output tokens at $2/$10 per M)" },
   { name: "openai", ready: !!process.env.OPENAI_API_KEY, make: () => openaiCompatible({ model: process.env.SMOKE_OPENAI_MODEL ?? "gpt-4.1", baseUrl: "https://api.openai.com/v1" }),
     cost: "≈ $0.01–0.03 depending on model" },
   { name: "ollama", ready: false, make: null, cost: "free (local)" },
