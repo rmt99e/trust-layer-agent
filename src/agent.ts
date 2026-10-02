@@ -4,8 +4,9 @@ import { contextFrom, runChecks, type Check } from "./checks.js";
 import { markShown } from "./claims.js";
 import { resolveModel } from "./models/resolve.js";
 import type { Model, ModelMessage } from "./models/types.js";
-import { loadJourneys, type LoadedJourneys } from "./journeys.js";
-import { isPersonalName } from "./privacy.js";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
+import { listFiles, loadJourneys, type LoadedJourneys } from "./journeys.js";
 import { createSession, currentTurn, type Json, type Session } from "./session.js";
 import { runTool, toolSpec, type Tool } from "./tools.js";
 import { jsonl, type TraceSink } from "./trace.js";
@@ -17,6 +18,7 @@ export interface AgentOptions {
   checks?: Check[];
   builtins?: BuiltinOptions;
   journeys?: string | string[];      // YAML files or directories, validated here
+  knowledge?: string | string[];     // operator-authored .md/.txt files or directories, added to the prompt
   strictVisibility?: boolean;
   trace?: TraceSink | false;
   maxToolCalls?: number;
@@ -57,26 +59,22 @@ export class Agent {
         checks: [...BUILTIN_NAMES.filter((n) => !disabled.includes(n)), ...(opts.checks ?? []).map((c) => c.name)] });
     }
     this.checks = checkPipeline(opts.builtins, this.journeys.checks, opts.checks);
-    this.operatorText = [opts.instructions, ...this.journeys.prompts];
+    const docs = opts.knowledge ? listFiles(opts.knowledge, /\.(md|txt)$/)
+      .map((f) => `## Knowledge: ${basename(f)}\n${readFileSync(f, "utf8").trim()}`) : [];
+    this.operatorText = [opts.instructions, ...this.journeys.prompts, ...docs];   // counts as confirmed for claims
     this.system = [...this.operatorText, DATA_RULE].join("\n\n");
     this.trace = opts.trace === false ? undefined : opts.trace ?? jsonl();
     const warning = opts.builtins?.verified_first !== false && verificationWarning(opts.tools);
     if (warning) console.warn(`⚠️  ${warning}`);
-    for (const t of opts.tools.filter((t) => !t.visible)) console.warn(`ℹ️  ${t.name}: ${this.hiddenReport(t)}`);
+    const unlisted = opts.tools.filter((t) => !t.visible).map((t) => t.name);
+    if (unlisted.length) console.warn(`ℹ️  No visible list on ${unlisted.join(", ")}: ${opts.strictVisibility
+      ? "strictVisibility hides all their fields" : "fields named like personal data (email, phone, address, dob, ssn, card) are hidden; personal data in other text is masked"}.`);
   }
 
   respond(session: Session | null, message: string): Promise<Reply> { return this.turn(session, message); }
 
   chat(opts: { session?: Session } = {}): Promise<void> {
     return chatLoop((s, m, observe) => this.turn(s, m, observe), opts);
-  }
-
-  private hiddenReport(t: Tool): string {
-    if (this.opts.strictVisibility) return "no visible list, so strictVisibility hides every field";
-    const shape = (t.output as any)?.shape as Record<string, unknown> | undefined;
-    const hidden = shape ? Object.keys(shape).filter(isPersonalName) : [];
-    return shape ? `hides ${hidden.join(", ") || "nothing by name"}; masks personal data inside other text`
-      : "no visible list; fields with personal names (email, phone, address, dob, ssn, card) are hidden, personal data in other text is masked";
   }
 
   private ctx = (s: Session) => contextFrom(s, this.opts.tools, this.operatorText);

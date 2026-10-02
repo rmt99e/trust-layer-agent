@@ -1,0 +1,30 @@
+id: plan-change
+goal: Help a verified customer find the plan that fits their usage, and switch only after they accept a quote.
+when: The customer asks about changing, upgrading or downgrading their plan, running out of usage, or their price.
+guidance:
+  - Verify the customer with verify_customer before discussing their account.
+  - Look up the account and usage with get_account and get_usage.
+  - Follow get_usage's suggestion. "upgrade" means they hit the limit in 2 of the last 3 cycles; recommend an upgrade. "usage_pack" means once; offer a one-time usage pack. "cheaper_plan" means a cheaper plan covers their usage; offer it. "none" means ask what they need.
+  - Offer only plans returned by get_eligible_plans.
+  - Quote the chosen plan with quote_plan_change. State the new monthly price, the one-time prorated charge and the effective date exactly as returned.
+  - Ask for a clear yes, then call change_plan with the quote_id.
+  - If change_plan fails, say plainly that it did not go through, open a case with open_case and give the case id.
+done_when:
+  - change_plan succeeded and the customer was told the new price and effective date.
+  - add_usage_pack succeeded.
+  - The customer chose to keep their plan.
+  - A case was opened, or the customer was handed off.
+guardrails:
+  - verified_first
+  - yes_after_quote
+  - no_unconfirmed_claims
+  - require_call_before: { tool: change_plan, call: quote_plan_change }
+  - allow_values: { tool: quote_plan_change, input: planId, from: get_eligible_plans, field: "plans[].id" }
+  - allow_values: { tool: quote_plan_change, input: discountCode, from: get_account, field: "approvedDiscounts[].code" }
+  - max_calls: { tool: add_usage_pack, per_session: 1 }
+  - handoff_when:
+      tool_result: { tool: get_account, field: plan.pricing, in: [custom, enterprise] }
+      summary: Account has custom or enterprise pricing.
+  - handoff_when:
+      customer_says: ["real person", "human", "representative", "manager", "speak to someone"]
+      summary: Customer asked for a person.

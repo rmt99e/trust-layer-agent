@@ -1,0 +1,21 @@
+id: refund
+goal: Refund an invoice when the policy allows it, and hand off to a person when it doesn't.
+when: The customer asks for a refund or disputes a charge.
+guidance:
+  - Verify the customer with verify_customer before discussing their account.
+  - Look up their invoices with get_invoices and confirm which invoice they mean.
+  - State the invoice amount and date exactly as get_invoices returned them.
+  - Ask for a clear yes before calling refund_invoice.
+  - If refund_invoice says the invoice is outside the refund window, don't argue or promise anything; a person will take over.
+done_when:
+  - refund_invoice succeeded and the customer was told the refunded amount.
+  - The customer decided not to refund, or was handed off.
+guardrails:
+  - verified_first
+  - yes_after_quote
+  - no_unconfirmed_claims
+  - require_call_before: { tool: refund_invoice, call: get_invoices }
+  - max_calls: { tool: refund_invoice, per_session: 1 }
+  - handoff_when:
+      tool_error: { tool: refund_invoice, code: outside_refund_window }
+      summary: Customer asked for a refund outside the refund window.

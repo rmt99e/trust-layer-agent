@@ -46,15 +46,16 @@ function where(file: string, doc: Document, lines: LineCounter, issue: Issue): s
 const fromZod = (e: z.ZodError, prefix: (string | number)[] = []): Issue[] => e.issues.map((i) => ({ path: [...prefix, ...(i.path as (string | number)[])],
   message: i.code === "unrecognized_keys" ? `unknown field "${i.keys[0]}"` : i.message, keys: i.code === "unrecognized_keys" ? i.keys : undefined }));
 
-export function journeyFiles(paths: string | string[]): string[] {
+/** Files named directly, plus matching files inside any directories named. */
+export function listFiles(paths: string | string[], ext = /\.ya?ml$/): string[] {
   return [paths].flat().flatMap((p) => statSync(p).isDirectory()
-    ? readdirSync(p).filter((f) => /\.ya?ml$/.test(f)).sort().map((f) => join(p, f)) : [p]);
+    ? readdirSync(p).filter((f) => ext.test(f)).sort().map((f) => join(p, f)) : [p]);
 }
 
 /** Load, validate and compile journeys. Throws one error listing every problem as file:line:col. */
 export function loadJourneys(paths: string | string[], known: { tools: string[]; checks: string[]; disabled: string[] }): LoadedJourneys {
   const out: LoadedJourneys = { prompts: [], checks: [], handoffs: [] }, ids = new Set<string>();
-  for (const file of journeyFiles(paths)) {
+  for (const file of listFiles(paths)) {
     const lines = new LineCounter(), doc = parseDocument(readFileSync(file, "utf8"), { lineCounter: lines, prettyErrors: false });
     if (doc.errors.length) throw new Error(`${file}:${lines.linePos(doc.errors[0].pos[0]).line} ${doc.errors[0].message.split("\n")[0]}`);
     const parsed = JourneyFile.safeParse(doc.toJS());
