@@ -64,6 +64,9 @@ const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e,
   return handoff(`${ctx.failures} consecutive failures${errors.length ? ` (${errors.join("; ")})` : ""}.`);
 });
 
+/** Built-in names a journey may list. untrusted_text_is_data is structural and always on. */
+export const BUILTIN_NAMES = ["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "untrusted_text_is_data"] as const;
+
 export function builtinChecks(opts: BuiltinOptions = {}): Check[] {
   return [
     opts.verified_first !== false && verifiedFirst,

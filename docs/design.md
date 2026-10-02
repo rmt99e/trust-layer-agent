@@ -242,7 +242,7 @@ Only guardrails are enforced. Guidance is a prompt.
 - **Loading fails** if a named check is unknown or disabled.
 - **`handoff_when`** fires before the next action or reply.
 
-**No active-journey state:** in v0.1 all loaded journeys are active at once. Guardrails are scoped by the tools they name, so there's no journey-switching state and no router.
+**No active-journey state:** in v0.1 all loaded journeys are active at once. Guardrails are scoped by the tools they name, so there's no journey-switching state and no router. Each journey's prose goes into the system prompt under its own `## Journey: <id>` heading, and it counts as operator-authored text for claim checks. `handoff_when` conditions are also evaluated as soon as a customer message arrives, so a `customer_says` match hands off without a model call.
 
 **Validation:** at load time the YAML is parsed with positions and validated against the schema; tools, fields and facts are checked against the Agent's tools. Errors carry file and line, e.g. `journeys/plan-change.yaml:27:7 guardrails[3].tool: unknown tool "change_plann" (did you mean "change_plan"?)`. The JSON Schema is generated from the zod schema and published in SPEC.md.
 

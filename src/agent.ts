@@ -1,9 +1,10 @@
-import { checkPipeline, verificationWarning, type BuiltinOptions } from "./builtins.js";
+import { BUILTIN_NAMES, checkPipeline, verificationWarning, type BuiltinOptions } from "./builtins.js";
 import { chatLoop, type Observer } from "./chat.js";
 import { contextFrom, runChecks, type Check } from "./checks.js";
 import { markShown } from "./claims.js";
 import { resolveModel } from "./models/resolve.js";
 import type { Model, ModelMessage } from "./models/types.js";
+import { loadJourneys, type LoadedJourneys } from "./journeys.js";
 import { isPersonalName } from "./privacy.js";
 import { createSession, currentTurn, type Json, type Session } from "./session.js";
 import { runTool, toolSpec, type Tool } from "./tools.js";
@@ -15,6 +16,7 @@ export interface AgentOptions {
   tools: Tool[];
   checks?: Check[];
   builtins?: BuiltinOptions;
+  journeys?: string | string[];      // YAML files or directories, validated here
   strictVisibility?: boolean;
   trace?: TraceSink | false;
   maxToolCalls?: number;
@@ -38,6 +40,8 @@ export class Agent {
   private byName = new Map<string, Tool>();
   private checks: Check[];
   private system: string;
+  private operatorText: string[];
+  private journeys: LoadedJourneys = { prompts: [], checks: [], handoffs: [] };
   private trace?: TraceSink;
 
   constructor(opts: AgentOptions) {
@@ -47,8 +51,14 @@ export class Agent {
       this.byName.set(t.name, t);
     }
     this.model = resolveModel(opts.model);
-    this.checks = checkPipeline(opts.builtins, [], opts.checks);
-    this.system = [opts.instructions, DATA_RULE].join("\n\n");
+    if (opts.journeys) {
+      const disabled = Object.entries(opts.builtins ?? {}).filter(([, v]) => v === false).map(([k]) => k);
+      this.journeys = loadJourneys(opts.journeys, { tools: [...this.byName.keys()], disabled,
+        checks: [...BUILTIN_NAMES.filter((n) => !disabled.includes(n)), ...(opts.checks ?? []).map((c) => c.name)] });
+    }
+    this.checks = checkPipeline(opts.builtins, this.journeys.checks, opts.checks);
+    this.operatorText = [opts.instructions, ...this.journeys.prompts];
+    this.system = [...this.operatorText, DATA_RULE].join("\n\n");
     this.trace = opts.trace === false ? undefined : opts.trace ?? jsonl();
     const warning = opts.builtins?.verified_first !== false && verificationWarning(opts.tools);
     if (warning) console.warn(`⚠️  ${warning}`);
@@ -69,7 +79,7 @@ export class Agent {
       : "no visible list; fields with personal names (email, phone, address, dob, ssn, card) are hidden, personal data in other text is masked";
   }
 
-  private ctx = (s: Session) => contextFrom(s, this.opts.tools, [this.opts.instructions]);
+  private ctx = (s: Session) => contextFrom(s, this.opts.tools, this.operatorText);
 
   /** The model's view of earlier turns: customer text fenced, tool calls without bound fields, visible output only. */
   private history(s: Session): ModelMessage[] {
@@ -106,6 +116,10 @@ export class Agent {
     };
     const handoffNow = (summary: string, reason: string) => finish(this.opts.handoffMessage, { summary, reason });
 
+    for (const due of this.journeys.handoffs) {          // deterministic handoffs need no model call
+      const summary = due(this.ctx(s));
+      if (summary) return handoffNow(summary, "journey");
+    }
     for (;;) {
       const res = await this.model.generate({ system: this.system, messages: msgs, tools });
       if (res.toolCalls.length) {
