@@ -134,7 +134,7 @@ new Agent({ ..., checks: [noRefundsOver100] });
 
   **Derived values aren't allowed in v0.1.** Sums, differences and "you'll save $10" aren't computed or accepted. Design rule: tools return every number the agent may say (e.g. `quote_plan_change` returns `monthlySavings`).
 
-  **"Done" language** needs a successful write this session, with no later failed call of that same tool.
+  **"Done" language** needs a successful write this session, and is blocked while any write has an unresolved failure (a failed call with no later success of that same tool), even if other writes succeeded.
 
   The block reason names the offending value, e.g. *"Reply states 18.99 but no tool returned 18.99. Use a returned value or don't state a price."*
 - **untrusted_text_is_data.** Two parts:

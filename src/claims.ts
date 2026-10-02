@@ -66,11 +66,10 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   if (c.done.length) {
     const writes = new Set(ctx.tools.filter((t) => t.kind === "write").map((t) => t.name));
     const calls = ctx.results.filter((r) => writes.has(r.tool));
-    const succeeded = calls.some((r, i) => r.ok && !calls.slice(i + 1).some((l) => l.tool === r.tool && !l.ok));
-    if (!succeeded) {
-      const failed = calls.filter((r) => !r.ok).map((r) => r.tool);
-      return `Reply says "${c.done[0]}", but no write succeeded this session${failed.length ? ` (${[...new Set(failed)].join(", ")} failed)` : ""}. Say what actually happened.`;
-    }
+    const unresolved = [...new Set(calls.filter((r, i) => !r.ok && !calls.slice(i + 1).some((l) => l.tool === r.tool && l.ok)).map((r) => r.tool))];
+    if (unresolved.length)
+      return `Reply says "${c.done[0]}", but ${unresolved.join(", ")} failed and hasn't succeeded since. Say what actually happened.`;
+    if (!calls.some((r) => r.ok)) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
   }
 }
 
