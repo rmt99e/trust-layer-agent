@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isPersonalName, maskText } from "./privacy.js";
 import { currentTurn, type Commitment, type Json, type Session, type ToolResult } from "./session.js";
 
 /** Throw from a tool to send the model a structured error it can act on. */
@@ -51,18 +52,8 @@ export function toolSpec(tool: Tool): { name: string; description: string; input
   return { name: tool.name, description: tool.description, inputSchema };
 }
 
-// Field visibility. Listed paths ("plan.name", "invoices[].amount") are shown; with no list,
-// personal-data-shaped fields are hidden; strict hides everything not listed.
-const PII_NAME = /e-?mail|phone|mobile|address|street|postcode|postal|zip|dob|birth|ssn|social_?security|card_?(number|num|no)|iban/i;
-const PII_VALUE = [
-  /[^\s@]+@[^\s@]+\.[^\s@]+/,                                     // email, anywhere in the text
-  /^\d{3}-\d{2}-\d{4}$/,                                          // ssn
-  /\b\d{1,6}\s+(\w+\s)+(street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b/i,
-];
-const digits = (s: string) => s.replace(/\D/g, "");
-const looksPersonal = (v: unknown) => typeof v === "string" &&
-  (PII_VALUE.some((re) => re.test(v)) || (/^\+?[\d\s().-]+$/.test(v) && digits(v).length >= 10));
-
+// Field visibility. Listed paths ("plan.name", "invoices[].amount") are shown; with no list, fields with
+// personal names are hidden and personal data inside other strings is masked; strict hides everything not listed.
 export function visibleOutput(output: unknown, visible?: string[], strict = false): { value: Json; hidden: string[] } {
   const hidden: string[] = [];
   const listed = visible ? new Set(visible) : undefined;
@@ -71,8 +62,8 @@ export function visibleOutput(output: unknown, visible?: string[], strict = fals
       if (listed.has(path) || [...listed].some((p) => path.startsWith(p + ".") || path.startsWith(p + "[]"))) return v;
       if (path && ![...listed].some((p) => p.startsWith(path + ".") || p.startsWith(path + "[]"))) return undefined;
     } else if (strict) return undefined;
-    else if ((path && PII_NAME.test(path.split(/[.[\]]/).filter(Boolean).pop()!)) || looksPersonal(v)) {
-      hidden.push(path || "(value)");
+    else if (path && isPersonalName(path.split(/[.[\]]/).filter(Boolean).pop()!)) {
+      hidden.push(path);
       return undefined;
     }
     if (Array.isArray(v)) {
@@ -83,7 +74,7 @@ export function visibleOutput(output: unknown, visible?: string[], strict = fals
       const kept = Object.entries(v).map(([k, x]) => [k, walk(x, path ? `${path}.${k}` : k)]).filter(([, x]) => x !== undefined);
       return kept.length || !Object.keys(v).length ? Object.fromEntries(kept) : undefined;
     }
-    return listed ? undefined : v;
+    return listed ? undefined : typeof v === "string" ? maskText(v) : v;
   };
   return { value: walk(output, "") ?? null, hidden: [...new Set(hidden)] };
 }

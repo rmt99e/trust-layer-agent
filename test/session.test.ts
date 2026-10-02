@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createSession, forget, read, runTool, z } from "../src/index.js";
+import { createSession, forget, read, z } from "../src/index.js";
+import { runTool } from "../src/tools.js";
 
 describe("session", () => {
   it("starts empty, versioned, with trusted facts from the app", () => {

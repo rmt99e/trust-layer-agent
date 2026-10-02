@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSession, read, runTool, toolSpec, ToolError, visibleOutput, write, z } from "../src/index.js";
+import { createSession, read, ToolError, write, z } from "../src/index.js";
+import { runTool, toolSpec, visibleOutput } from "../src/tools.js";
 
 const verified = () => createSession({ facts: { verified: true, accountId: "acc_1" } });
 
@@ -50,10 +51,16 @@ describe("visibility", () => {
     expect(value).toEqual({ id: "acc_1", plan: { name: "Basic" }, invoices: [{ amount: 9 }] });
   });
 
-  it("by default hides personal-data-shaped fields by name and by value", () => {
+  it("by default hides fields with personal names and masks personal data inside other text", () => {
     const { value, hidden } = visibleOutput(account);
-    expect(value).toEqual({ id: "acc_1", plan: { name: "Basic", price: 9 }, invoices: [{ id: "inv_1", amount: 9 }] });
-    expect(hidden.sort()).toEqual(["dob", "email", "homeAddress", "invoices[].cardNumber", "note", "phone", "ssn"]);
+    expect(value).toEqual({ id: "acc_1", plan: { name: "Basic", price: 9 }, note: "reach me at [email]",
+      invoices: [{ id: "inv_1", amount: 9 }] });
+    expect(hidden.sort()).toEqual(["dob", "email", "homeAddress", "invoices[].cardNumber", "phone", "ssn"]);
+  });
+
+  it("masks phone, card, ssn and address inside free text, keeping dates and prices", () => {
+    const { value } = visibleOutput({ memo: "Called +1 (415) 555-0100 on 2026-11-01 about $1,019.90; card 4111 1111 1111 1111, ssn 123-45-6789, lives at 12 Oak Street." });
+    expect(value).toEqual({ memo: "Called [phone] on 2026-11-01 about $1,019.90; card [card], ssn [ssn], lives at [address]" });
   });
 
   it("strictVisibility hides everything unlisted", () => {
