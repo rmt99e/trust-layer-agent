@@ -1,4 +1,6 @@
 export { z } from "zod";
+export { Agent } from "./agent.js";
+export type { AgentOptions, Reply } from "./agent.js";
 export { read, write, ToolError } from "./tools.js";
 export type { Tool, ToolDef, ToolContext, Records } from "./tools.js";
 export { check, allow, block, rewrite, handoff } from "./checks.js";
@@ -6,3 +8,7 @@ export type { Check, CheckEvent, CheckContext, CheckResult, ToolInfo } from "./c
 export type { BuiltinOptions } from "./builtins.js";
 export { createSession, forget } from "./session.js";
 export type { Session, ForgottenSession, Commitment, ToolResult, Message, Json } from "./session.js";
+export { ModelError } from "./models/types.js";
+export type { Model, ModelRequest, ModelResponse, ModelMessage, ToolSpec, ToolCall } from "./models/types.js";
+export { jsonl } from "./trace.js";
+export type { TraceSink } from "./trace.js";
