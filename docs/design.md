@@ -138,7 +138,7 @@ new Agent({ ..., checks: [noRefundsOver100] });
 
   The block reason names the offending value, e.g. *"Reply states 18.99 but no tool returned 18.99. Use a returned value or don't state a price."*
 - **untrusted_text_is_data.** Two parts:
-  - **Structural:** customer text and tool output reach the model only as fenced data in user and tool turns, never in the system prompt.
+  - **Structural:** customer text and tool output reach the model only as fenced data in user and tool turns (`<customer_message>…</customer_message>`, `<tool_result>…</tool_result>`), never in the system prompt. Angle brackets inside a fence are escaped, so the text can't close its fence or forge a `<system_note>`. Trust-layer notes (retry and blocked-action reasons) sit outside the fences, where only code can put them, and the system prompt says so.
   - **Injection, not detection:** `bind` fields (say `accountId`) are filled from session facts and never shown to the model. No text, from the customer or from a tool, can point a call at another account. Design rule: writes take ids of commitments (`quoteId`), never raw prices.
 - **handoff_after_failures.** After N consecutive failures (default 2), returns `handoff` with a generated summary. Failures are failed tools or replies still blocked after retries.
 
