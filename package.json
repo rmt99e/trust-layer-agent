@@ -20,7 +20,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "npm run build && node --env-file=.env scripts/smoke.mjs"
   },
   "dependencies": {
     "yaml": "^2.9.1",

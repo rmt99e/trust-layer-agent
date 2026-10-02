@@ -192,6 +192,8 @@ interface ModelResponse { text: string; toolCalls: ToolCall[]; stop: "end" | "to
 - **Options live on the adapter, not on Agent:** `anthropic({ model, apiKey?, baseUrl?, maxTokens?, extra? })` and `openaiCompatible({ model, baseUrl, apiKey?, headers?, extra? })`. Different roles (agent, reviewer, simulated customer) can point at different endpoints, and Agent stays provider-free.
 - **Strings:** `"provider:model"` is shorthand. `"anthropic:<model>"` reads `ANTHROPIC_API_KEY`; `"openai-compatible:<model>"` reads `OPENAI_API_KEY` and `OPENAI_BASE_URL`.
 - **Your own models:** any object with `id` and `generate()` works.
+- **`raw`:** a response may carry the provider's own content blocks as `raw`. Within one turn's tool loop the agent passes them back on the assistant message, so the adapter can echo provider-internal blocks (such as reasoning blocks) unchanged. Earlier turns are rebuilt from the session without them.
+- **Sampling and retries:** adapters send no sampling parameters unless you pass them in `extra`. They retry once on 429, 5xx or a network error, and otherwise throw `ModelError` with the provider's message. A `refusal` stop hands off.
 
 ## 6. Agent API
 

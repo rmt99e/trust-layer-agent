@@ -122,8 +122,9 @@ export class Agent {
     }
     for (;;) {
       const res = await this.model.generate({ system: this.system, messages: msgs, tools });
+      if (res.stop === "refusal") return handoffNow("The model declined to respond.", "refusal");
       if (res.toolCalls.length) {
-        msgs.push({ role: "assistant", content: res.text, toolCalls: res.toolCalls });
+        msgs.push({ role: "assistant", content: res.text, toolCalls: res.toolCalls, raw: res.raw });
         for (const call of res.toolCalls) {
           const answer = (content: string, isError = false) =>
             msgs.push({ role: "tool", toolCallId: call.id, name: call.name, content, isError });
@@ -157,7 +158,7 @@ export class Agent {
           s = { ...s, failures: s.failures + 1 };
           return handoffNow(`Reply still blocked after ${this.opts.maxRetries} retries: ${v.result.block}`, v.by!);
         }
-        msgs.push({ role: "assistant", content: res.text },
+        msgs.push({ role: "assistant", content: res.text, raw: res.raw },
           { role: "user", content: note(`That draft was not sent. ${v.result.block} Write a new reply.`) });
         continue;
       }
