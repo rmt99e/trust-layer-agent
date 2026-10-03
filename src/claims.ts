@@ -13,6 +13,8 @@ const RELATIVE = /\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|mo
 // "No problem, your plan has been switched" keep their claims; "no problem"/"no worries" are interjections, never negations.
 const NEGATED = /\b(?:not|never|no longer|nothing|none|no)\b|n't\b/i;
 const INTERJECTION = /^\s*no (?:problem|worries|worry)\b/i;
+// "You're all set staying on Starter" reports that nothing changed: status, not a claim that something was done.
+const STATUS_AFTER = /^\s+(?:staying|to stay|on your (?:current|existing)|with your (?:current|existing))\b/i;
 const DONE = /\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully)\b/gi;
 
 /** Normalize a number token: strip commas and currency, compare to the cent. */
@@ -37,7 +39,8 @@ export function extractClaims(text: string): Claims {
       .map((m) => (m[3] ? `${m[3]}-` : "") + md(+m[1], m[2])),
   ];
   const clauseBefore = (i: number) => (text.slice(0, i).split(/[.!?;:,\n]|\bbut\b/i).pop() ?? "").replace(INTERJECTION, "");
-  const done = all(DONE).filter((m) => !NEGATED.test(clauseBefore(m.index!))).map((m) => m[0].toLowerCase());
+  const isStatus = (m: RegExpMatchArray) => /all set/i.test(m[0]) && STATUS_AFTER.test(text.slice(m.index! + m[0].length));
+  const done = all(DONE).filter((m) => !NEGATED.test(clauseBefore(m.index!)) && !isStatus(m)).map((m) => m[0].toLowerCase());
   return { money, percents, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done };
 }
 

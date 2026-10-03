@@ -122,6 +122,28 @@ describe("negated subjects (fix 1)", () => {
   });
 });
 
+describe("status vs action (fix 2)", () => {
+  const sessions = {
+    failed: () => ctx({ results: [failed("change_plan")] }),                       // a change failed and never succeeded
+    nothing: () => ctx({ results: [ok("get_account", { plan: "Starter", monthlyPrice: 79 })] }),   // no writes at all
+  };
+  it.each([
+    ["You're all set staying on your Starter plan.", "nothing", "allow"],
+    ["You're all set to stay on Pro.", "nothing", "allow"],
+    ["You're still on Pro at $79 a month.", "failed", "allow"],
+    ["You're all set with your current plan.", "nothing", "allow"],
+    // Attacks: a status phrase can't carry a done claim along with it.
+    ["You're all set, your plan has been switched.", "failed", "block"],
+    ["You're all set staying on Starter, and your refund has been processed.", "failed", "block"],
+    ["You're all set! Plus is active now.", "failed", "block"],
+    ["You're all set.", "failed", "block"],
+  ] as const)("%s (%s) → %s", async (reply, session, want) => {
+    const c = session === "failed" ? ctx({ results: [failed("change_plan"), ok("get_account", { monthlyPrice: 79 })] }) : sessions.nothing();
+    const result = await verdict(reply, c);
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);
