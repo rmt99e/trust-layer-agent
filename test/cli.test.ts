@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compare, estimatePerTrial, gate, libraryFiles, overall, summarize, type Run } from "../src/cli.js";
+import { compare, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
 import type { Suite } from "../src/sim/simulator.js";
 import { says } from "../src/sim/grade.js";
 import type { Trial } from "../src/sim/simulator.js";
@@ -83,5 +83,17 @@ describe("cost estimate", () => {
     const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, customerModel: "big" } as unknown as Suite);
     expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + customer 0.06
     expect(at("small")).toBeCloseTo(0.1 + 0.05 + 0.06);        // switching the agent model halves its part
+  });
+});
+
+describe("--against", () => {
+  it("picks the named snapshot, else the newest, and fails loudly on an unknown name", () => {
+    const d = mkdtempSync(join(tmpdir(), "tla-snap-"));
+    writeFileSync(join(d, "v1.json"), "{}");
+    writeFileSync(join(d, "v2.json"), "{}");
+    expect(pickSnapshot(d, "v1")).toBe(join(d, "v1.json"));
+    expect(pickSnapshot(d)).toMatch(/v[12]\.json$/);
+    expect(() => pickSnapshot(d, "v9")).toThrow(`--against v9: no snapshot at ${join(d, "v9.json")}`);
+    expect(pickSnapshot(join(d, "missing"))).toBeUndefined();
   });
 });

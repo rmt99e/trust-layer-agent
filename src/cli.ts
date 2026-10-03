@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// npx trust-layer-agent test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10]
+// npx trust-layer-agent test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against v1]
 // npx trust-layer-agent snapshot --suite <dir> --name v1
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -91,10 +91,18 @@ const newest = (dir: string) => existsSync(dir)
   ? readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => join(dir, f)).sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs).pop() : undefined;
 const json = (f: string) => JSON.parse(readFileSync(f, "utf8"));
 
+/** The snapshot to diff against: the one named by --against, or else the newest in the directory. */
+export function pickSnapshot(dir: string, name?: string): string | undefined {
+  if (!name) return newest(dir);
+  const file = join(dir, `${name}.json`);
+  if (!existsSync(file)) throw new Error(`--against ${name}: no snapshot at ${file}`);
+  return file;
+}
+
 export async function main([cmd, ...args]: string[]) {
   const flag = (n: string, d?: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
   try { process.loadEnvFile(); } catch { /* no .env: keys come from the environment */ }
-  if (cmd !== "test" && cmd !== "snapshot") return console.log("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--name v1]");
+  if (cmd !== "test" && cmd !== "snapshot") return console.log("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--against v1] [--name v1]");
   const suiteFile = join(resolve(flag("suite", ".")!), "suite.js");
   const suite: Suite = (await import(pathToFileURL(suiteFile).href)).default;
   if (flag("agent-model")) suite.agentModel = flag("agent-model")!;
@@ -110,6 +118,7 @@ export async function main([cmd, ...args]: string[]) {
     return console.log(`snapshots/${name}.json: pass^${r.k} ${pct(r.overall)} over ${Object.keys(r.summary).length} tasks`);
   }
 
+  const snap = pickSnapshot("snapshots", flag("against"));          // resolve first: a bad name must fail before any model call
   const k = Number(flag("k", "4")), maxCost = Number(flag("max-cost", "10")), minPass = Number(flag("min-pass", "1")), only = flag("tasks")?.split(",");
   const n = loadTasks(suite.tasks).filter((t) => !only || only.includes(t.id)).length, prev = newest("results");
   const perTrial = estimatePerTrial(prev ? json(prev).trials : [], suite);
@@ -124,7 +133,6 @@ export async function main([cmd, ...args]: string[]) {
   mkdirSync("results", { recursive: true });
   const file = `results/${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   writeFileSync(file, JSON.stringify({ ...cur, k, createdAt: new Date().toISOString(), trials: run.trials }) + "\n");
-  const snap = newest("snapshots");
   if (snap) console.log(`\nvs ${snap}:\n${compare(json(snap), cur).join("\n")}`);
   const g = gate(cur, snap ? json(snap) : undefined, minPass);
   process.exitCode = g.code;
