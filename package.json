@@ -1,8 +1,21 @@
 {
   "name": "trust-layer-agent",
-  "version": "0.0.1",
-  "description": "A small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, and need-to-know customer data.",
+  "version": "0.1.0",
+  "description": "trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.",
+  "keywords": [
+    "ai",
+    "agents",
+    "guardrails",
+    "customer-support",
+    "llm",
+    "evals"
+  ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/trust-layer-agent.git"
+  },
+  "homepage": "https://github.com/OWNER/trust-layer-agent#readme",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,8 +29,14 @@
       "import": "./dist/sim/simulator.js"
     }
   },
+  "bin": {
+    "trust-layer-agent": "./dist/cli.js"
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "SPEC.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
@@ -25,7 +44,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "smoke": "npm run build && node --env-file=.env scripts/smoke.mjs"
+    "smoke": "npm run build && node --env-file=.env scripts/smoke.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "yaml": "^2.9.1",
@@ -35,8 +55,5 @@
     "@types/node": "^26.6.4",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
-  },
-  "bin": {
-    "trust-layer-agent": "./dist/cli.js"
   }
 }
