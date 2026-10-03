@@ -44,7 +44,7 @@ Internal milestone: the simulator, a v1 baseline, and three fixes it found. pass
 
 ## [v1] - 2026-10-02
 
-Internal milestone: the runtime, both model adapters and the subscriptions example. The runtime is tested with a scripted fake model; the adapters were smoke-tested with real calls.
+Internal milestone: the runtime, both model adapters and the subscriptions example. The runtime is tested with a scripted fake model; the anthropic adapter was smoke-tested with a real call, and the openai-compatible adapter only against mocked HTTP.
 
 ### Added
 
