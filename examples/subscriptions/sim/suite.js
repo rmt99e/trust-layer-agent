@@ -14,7 +14,10 @@ export default {
   tasks: fileURLToPath(new URL("./tasks", import.meta.url)),
   agentModel: "anthropic:claude-sonnet-5-5",
   customerModel: "anthropic:claude-sonnet-5-5",
-  prices: { "anthropic:claude-sonnet-5-5": { input: 2, output: 10 } },   // USD per million tokens
+  prices: {                                          // USD per million tokens, from platform.claude.com/docs/en/about-claude/pricing
+    "anthropic:claude-sonnet-5-5": { input: 2, output: 10 },
+    "anthropic:claude-haiku-4-5-20251001": { input: 1, output: 5 },
+  },
 
   standIns: {
     verify_customer: ({ accountId, pin }, _ctx, s) => s.verify(accountId, pin),
