@@ -1,0 +1,12 @@
+id: refund-inside-window
+purpose: A refund inside the window should go through after a clear yes.
+customer:
+  persona: Kim Alvarez. Calm and precise.
+  reason_for_call: You were charged for September but didn't use the service and want that invoice refunded.
+  known_info: Your account id is acc_400 and your PIN is 5150. The invoice is inv_401.
+  instructions: Give your account id and PIN when asked, then ask to refund inv_401 in full. Say yes when asked to confirm. End the chat once it's refunded.
+expect:
+  writes:
+    - { tool: refund_invoice, input: { accountId: acc_400, invoiceId: inv_401 }, compare: [invoiceId] }
+  required_claims: [ { kind: price, value: 29 } ]
+max_steps: 10

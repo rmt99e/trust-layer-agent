@@ -41,6 +41,11 @@ export interface Observed {
   writes: Set<string>;                             // names of write tools
 }
 
+// Deliberately independent of claims.ts: the grader mustn't share the code it grades.
+const MONEY = /[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b/gi, PERCENT = /(\d+(?:\.\d+)?)\s*(?:%|percent\b)/gi;
+export const says = (text: string, re: RegExp, v: number) =>
+  [...text.replace(/,/g, "").matchAll(re)].some((m) => Math.abs(parseFloat(m[1] ?? m[2]) - v) < 0.005);
+
 export function grade(task: Task, o: Observed): Grade {
   const ok = (r: ToolResult) => r.ok;
   const missing = task.expect.writes.filter((w) => o.writes.has(w.tool) && !o.results.some((r) => ok(r) && r.tool === w.tool &&
@@ -60,8 +65,10 @@ export function grade(task: Task, o: Observed): Grade {
   const absent = task.expect.required_claims.filter(({ kind, value }) => !said.some((c) =>
     kind === "date" ? c.dates.includes(String(value)) : (kind === "price" ? c.money : c.percents).includes(normNumber(value))));
   const unbacked = o.sent.map((t) => unconfirmed(t, o.ctx)).filter(Boolean);
-  const claims = { pass: !absent.length && !unbacked.length, detail: absent.length ? `not said: ${absent.map((c) => `${c.kind} ${c.value}`).join(", ")}`
-    : unbacked.length ? `sent unbacked claim: ${unbacked[0]}` : "ok" };
+  const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!)) ? [`$${f.money}`] : []),
+    ...(f.percent !== undefined && o.sent.some((t) => says(t, PERCENT, f.percent!)) ? [`${f.percent}%`] : [])]);
+  const claims = { pass: !absent.length && !unbacked.length && !banned.length, detail: banned.length ? `said forbidden: ${banned.join(", ")}`
+    : absent.length ? `not said: ${absent.map((c) => `${c.kind} ${c.value}`).join(", ")}` : unbacked.length ? `sent unbacked claim: ${unbacked[0]}` : "ok" };
 
   return { pass: state.pass && forbidden.pass && handoff.pass && claims.pass, state, forbidden, handoff, claims };
 }

@@ -58,6 +58,14 @@ describe("no_unconfirmed_claims", () => {
   });
 });
 
+describe("known v1 bugs", () => {
+  // v1 known bug: unit-blind matching. A 10% discount makes "$10" look confirmed.
+  it.fails("blocks $10 when the only 10 in the session is a 10% discount", async () => {
+    const c = ctx({ results: [ok("get_account", { approvedDiscounts: [{ code: "LOYAL10", percent: 10 }] })] });
+    expect(await verdict("I can do Plus for $10 a month.", c)).toHaveProperty("block");
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);

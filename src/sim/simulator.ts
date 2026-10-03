@@ -23,7 +23,7 @@ export interface Suite {
 export interface Trial {
   task: string; trial: number; status: "pass" | "fail" | "infra" | "stopped";
   ended?: "stop" | "transfer" | "out_of_scope" | "handoff" | "max_steps"; grade?: Grade; error?: string;
-  turns: number; cost: number; transcript: { role: "customer" | "agent"; text: string }[]; events: Record<string, any>[];
+  turns: number; cost: number; friction?: number; transcript: { role: "customer" | "agent"; text: string }[]; events: Record<string, any>[];
 }
 
 const END = /###(STOP|TRANSFER|OUT-OF-SCOPE)###/;
@@ -62,6 +62,7 @@ export async function runSuite(suite: Suite, opts: { k?: number; tasks?: string[
   for (const task of tasks) for (let i = 1; i <= (opts.k ?? 1); i++) {
     const t = budget.spent > budget.max ? { task: task.id, trial: i, status: "stopped" as const, turns: 0, cost: 0, transcript: [], events: [] }
       : await runTrial(suite, task, i, models, budget);
+    t.friction = t.events.filter((l) => l.type === "check" && l.result?.block).length;   // blocked drafts + actions
     trials.push(t);
     opts.onTrial?.(t);
   }

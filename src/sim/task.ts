@@ -14,6 +14,7 @@ const TaskFile = z.object({
     forbidden_actions: z.array(str).default([]),
     must_handoff: z.boolean().default(false),
     required_claims: z.array(z.object({ kind: z.enum(["price", "percent", "date"]), value: z.union([z.number(), str]) }).strict()).default([]),
+    forbidden_claims: z.array(z.object({ money: z.number().optional(), percent: z.number().optional() }).strict()).default([]),
   }).strict(),
   max_steps: z.number().int().positive().default(20),                   // customer turns before the run counts as a fail
 }).strict();
