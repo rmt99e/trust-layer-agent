@@ -27,7 +27,7 @@ const JourneyFile = z.object({
 }).strict();
 
 export interface LoadedJourneys { prompts: string[]; checks: Check[]; handoffs: ((ctx: CheckContext) => string | undefined)[] }
-type Issue = { path: (string | number)[]; message: string; keys?: string[] };
+export type Issue = { path: (string | number)[]; message: string; keys?: string[] };
 
 /** Values at a path like "plans[].id" in a tool's visible output. */
 const pluck = (v: unknown, path: string): unknown[] => path.split(".").reduce<unknown[]>((vals, seg) => vals.flatMap((x) => {
@@ -35,7 +35,7 @@ const pluck = (v: unknown, path: string): unknown[] => path.split(".").reduce<un
   return many ? (Array.isArray(y) ? y : []) : y === undefined ? [] : [y];
 }), [v]);
 
-function where(file: string, doc: Document, lines: LineCounter, issue: Issue): string {
+export function where(file: string, doc: Document, lines: LineCounter, issue: Issue): string {
   let node: any, p = issue.path;
   for (;;) { node = p.length ? doc.getIn(p, true) : doc.contents; if (node || !p.length) break; p = p.slice(0, -1); }
   const key = issue.keys && node?.items?.find((i: any) => i.key?.value === issue.keys![0])?.key;
@@ -43,8 +43,15 @@ function where(file: string, doc: Document, lines: LineCounter, issue: Issue): s
   const at = issue.path.map((s) => (typeof s === "number" ? `[${s}]` : `.${s}`)).join("").replace(/^\./, "");
   return `${file}:${pos.line}:${pos.col} ${at ? at + ": " : ""}${issue.message}`;
 }
-const fromZod = (e: z.ZodError, prefix: (string | number)[] = []): Issue[] => e.issues.map((i) => ({ path: [...prefix, ...(i.path as (string | number)[])],
+export const fromZod = (e: z.ZodError, prefix: (string | number)[] = []): Issue[] => e.issues.map((i) => ({ path: [...prefix, ...(i.path as (string | number)[])],
   message: i.code === "unrecognized_keys" ? `unknown field "${i.keys[0]}"` : i.message, keys: i.code === "unrecognized_keys" ? i.keys : undefined }));
+
+/** Parse a YAML file keeping positions; syntax errors throw with file and line. */
+export function readYaml(file: string) {
+  const lines = new LineCounter(), doc = parseDocument(readFileSync(file, "utf8"), { lineCounter: lines, prettyErrors: false });
+  if (doc.errors.length) throw new Error(`${file}:${lines.linePos(doc.errors[0].pos[0]).line} ${doc.errors[0].message.split("\n")[0]}`);
+  return { doc, lines };
+}
 
 /** Files named directly, plus matching files inside any directories named. */
 export function listFiles(paths: string | string[], ext = /\.ya?ml$/): string[] {
@@ -56,8 +63,7 @@ export function listFiles(paths: string | string[], ext = /\.ya?ml$/): string[] 
 export function loadJourneys(paths: string | string[], known: { tools: string[]; checks: string[]; disabled: string[] }): LoadedJourneys {
   const out: LoadedJourneys = { prompts: [], checks: [], handoffs: [] }, ids = new Set<string>();
   for (const file of listFiles(paths)) {
-    const lines = new LineCounter(), doc = parseDocument(readFileSync(file, "utf8"), { lineCounter: lines, prettyErrors: false });
-    if (doc.errors.length) throw new Error(`${file}:${lines.linePos(doc.errors[0].pos[0]).line} ${doc.errors[0].message.split("\n")[0]}`);
+    const { doc, lines } = readYaml(file);
     const parsed = JourneyFile.safeParse(doc.toJS());
     const issues: Issue[] = parsed.success ? [] : fromZod(parsed.error);
     const j = parsed.success ? parsed.data : undefined;

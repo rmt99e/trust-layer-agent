@@ -22,10 +22,12 @@ export interface AgentOptions {
   strictVisibility?: boolean;
   trace?: TraceSink | false;
   maxToolCalls?: number;
+  now?: () => Date;                  // the clock checks use (quote expiry); default: real time
   maxRetries?: number;
   handoffMessage?: string;
 }
-export interface Reply { reply: string; session: Session; handoff?: { summary: string; reason: string } }
+export interface Usage { inputTokens: number; outputTokens: number; calls: number }
+export interface Reply { reply: string; session: Session; handoff?: { summary: string; reason: string }; usage: Usage }
 
 // Library-authored, so it may live in the system prompt. Customer and tool text never do: they arrive
 // fenced, with every angle bracket escaped, so they can't close a fence or open a <system_note>.
@@ -42,7 +44,7 @@ export class Agent {
   private byName = new Map<string, Tool>();
   private checks: Check[];
   private system: string;
-  private operatorText: string[];
+  readonly operatorText: string[];                 // instructions, journeys, knowledge: what claims may cite
   private journeys: LoadedJourneys = { prompts: [], checks: [], handoffs: [] };
   private trace?: TraceSink;
 
@@ -77,7 +79,7 @@ export class Agent {
     return chatLoop((s, m, observe) => this.turn(s, m, observe), opts);
   }
 
-  private ctx = (s: Session) => contextFrom(s, this.opts.tools, this.operatorText);
+  private ctx = (s: Session) => contextFrom(s, this.opts.tools, this.operatorText, this.opts.now?.() ?? new Date());
 
   /** The model's view of earlier turns: customer text fenced, tool calls without bound fields, visible output only. */
   private history(s: Session): ModelMessage[] {
@@ -94,7 +96,8 @@ export class Agent {
 
   private async turn(session: Session | null, message: string, observe?: Observer): Promise<Reply> {
     let s: Session = session ? structuredClone(session) : createSession();
-    if (s.status === "handed_off") return { reply: this.opts.handoffMessage, session: s, handoff: { summary: "Already handed off.", reason: "handed_off" } };
+    if (s.status === "handed_off") return { reply: this.opts.handoffMessage, session: s, usage: { inputTokens: 0, outputTokens: 0, calls: 0 },
+      handoff: { summary: "Already handed off.", reason: "handed_off" } };
     s = { ...s, messages: [...s.messages, { role: "customer", text: message, turn: currentTurn(s) + 1 }] };
     const turn = currentTurn(s);
     const emit = (type: string, data: Record<string, unknown>) => {
@@ -105,12 +108,13 @@ export class Agent {
     const msgs = this.history(s);
     const tools = this.opts.tools.map(toolSpec);
     let calls = 0, retries = 0;
+    const usage: Usage = { inputTokens: 0, outputTokens: 0, calls: 0 };
 
     const finish = (text: string, handoff?: Reply["handoff"]): Reply => {
       s = { ...s, rev: s.rev + 1, status: handoff ? "handed_off" : s.status,
         messages: [...s.messages, { role: "agent", text, turn }], commitments: markShown(s.commitments, text, turn) };
-      emit("turn", { customer: message, reply: text, retries, model: this.model.id, ...(handoff && { handoff }) });
-      return { reply: text, session: s, ...(handoff && { handoff }) };
+      emit("turn", { customer: message, reply: text, retries, model: this.model.id, usage, ...(handoff && { handoff }) });
+      return { reply: text, session: s, usage, ...(handoff && { handoff }) };
     };
     const handoffNow = (summary: string, reason: string) => finish(this.opts.handoffMessage, { summary, reason });
 
@@ -120,6 +124,7 @@ export class Agent {
     }
     for (;;) {
       const res = await this.model.generate({ system: this.system, messages: msgs, tools });
+      usage.calls++; usage.inputTokens += res.usage?.inputTokens ?? 0; usage.outputTokens += res.usage?.outputTokens ?? 0;
       if (res.stop === "refusal") return handoffNow("The model declined to respond.", "refusal");
       if (res.toolCalls.length) {
         msgs.push({ role: "assistant", content: res.text, toolCalls: res.toolCalls, raw: res.raw });

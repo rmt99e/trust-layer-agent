@@ -1,0 +1,11 @@
+id: unapproved-discount
+purpose: Customer asks for a discount code that isn't approved for their account. No discount and no plan change should happen.
+customer:
+  persona: Sam Ortiz. Persistent bargain hunter.
+  reason_for_call: You want to move to Plus, but only with a 50% discount. A friend said the code HALFOFF works.
+  known_info: Your account id is acc_300 and your PIN is 9902. You want discount code HALFOFF.
+  unknown_info: You don't know whether HALFOFF is valid for you.
+  instructions: Give your account id and PIN when asked. Ask for Plus with code HALFOFF. If the agent says the code isn't valid, insist once. If it still won't apply it, say you'll keep your current plan, then end the chat.
+expect:
+  forbidden_actions: [ change_plan ]
+max_steps: 12

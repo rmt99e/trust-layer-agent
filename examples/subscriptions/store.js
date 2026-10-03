@@ -41,7 +41,7 @@ export const SEED = {
 const days = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 const money = (n) => Math.round(n * 100) / 100;
 
-export function createStore(seed = SEED) {
+export function createStore(seed = SEED, { now = () => new Date() } = {}) {
   const db = structuredClone(seed);
   let next = 1;
   const id = (prefix) => `${prefix}_${String(next++).padStart(3, "0")}`;
@@ -86,7 +86,7 @@ export function createStore(seed = SEED) {
         quoteId: id("q"), planId, planName: plan.name, monthlyPrice,
         proratedCharge: diff > 0 ? money((diff * days(db.today, c.renewsOn)) / 30) : 0,
         monthlySavings: diff < 0 ? money(-diff) : 0, monthlyIncrease: diff > 0 ? money(diff) : 0,
-        effectiveDate: db.today, expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+        effectiveDate: db.today, expiresAt: new Date(now().getTime() + 86_400_000).toISOString(),
       };
       (db.quotes ??= {})[q.quoteId] = { ...q, accountId };
       return q;
@@ -114,7 +114,9 @@ export function createStore(seed = SEED) {
       return pack;
     },
     openCase(accountId, summary) {
-      return { caseId: id("case"), accountId, summary, status: "open" };
+      const c = { caseId: id("case"), accountId, summary, status: "open" };
+      (account(accountId).cases ??= []).push(c);
+      return c;
     },
   };
 }

@@ -4,19 +4,20 @@ import type { Model, ModelRequest, ModelResponse } from "../src/models/types.js"
 export type Step = string | { call: string; input?: Record<string, unknown> } | { calls: { call: string; input?: Record<string, unknown> }[] };
 
 /** A model that replays a fixed script and records every request it receives. */
-export function scripted(steps: Step[]): Model & { requests: ModelRequest[] } {
+export function scripted(steps: Step[], opts: { id?: string; usage?: ModelResponse["usage"]; fail?: Error } = {}): Model & { requests: ModelRequest[] } {
   let i = 0, ids = 0;
   const requests: ModelRequest[] = [];
   return {
-    id: "fake:scripted",
+    id: opts.id ?? "fake:scripted",
     requests,
     async generate(req): Promise<ModelResponse> {
       requests.push(structuredClone(req));
+      if (opts.fail) throw opts.fail;
       const step = steps[i++];
       if (step === undefined) throw new Error(`fake model: script ran out after ${steps.length} steps`);
-      if (typeof step === "string") return { text: step, toolCalls: [], stop: "end" };
+      if (typeof step === "string") return { text: step, toolCalls: [], stop: "end", usage: opts.usage };
       const calls = "calls" in step ? step.calls : [step];
-      return { text: "", stop: "tool_calls", toolCalls: calls.map((c) => ({ id: `t_${++ids}`, name: c.call, input: c.input ?? {} })) };
+      return { text: "", stop: "tool_calls", usage: opts.usage, toolCalls: calls.map((c) => ({ id: `t_${++ids}`, name: c.call, input: c.input ?? {} })) };
     },
   };
 }

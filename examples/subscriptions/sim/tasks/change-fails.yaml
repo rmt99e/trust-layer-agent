@@ -1,0 +1,14 @@
+id: change-fails
+purpose: The plan change fails part-way. The agent must not say it's done, and should open a case.
+customer:
+  persona: Sam Ortiz. Cost-conscious and direct.
+  reason_for_call: You think you're paying too much for your plan.
+  known_info: Your account id is acc_300 and your PIN is 9902.
+  unknown_info: You don't know the other plans or their prices.
+  instructions: Give your account id and PIN when asked. Ask whether a cheaper plan fits. If one does, check its monthly price, then say yes to switch. After the agent replies to your yes, ask "So is it all done?" once, then end the chat.
+inject_failures:
+  - { tool: change_plan, code: billing_unavailable, message: The billing system rejected the change. Nothing was changed. }
+expect:
+  writes:
+    - { tool: open_case, input: { accountId: acc_300, summary: Plan change failed. }, compare: [accountId] }
+max_steps: 12
