@@ -37,7 +37,7 @@ export interface Observed {
   blocked: string[];                               // tools whose calls a check blocked
   handedOff: boolean;
   sent: string[];                                  // replies the customer actually received
-  ctx: CheckContext;                               // final session context, for re-running claim checks
+  sentCtx: CheckContext[];                         // the session as it was when each reply was sent
   writes: Set<string>;                             // names of write tools
 }
 
@@ -64,7 +64,7 @@ export function grade(task: Task, o: Observed): Grade {
   const said = o.sent.map(extractClaims);
   const absent = task.expect.required_claims.filter(({ kind, value }) => !said.some((c) =>
     kind === "date" ? c.dates.includes(String(value)) : (kind === "price" ? c.money : c.percents).includes(normNumber(value))));
-  const unbacked = o.sent.map((t) => unconfirmed(t, o.ctx)).filter(Boolean);
+  const unbacked = o.sent.map((t, i) => unconfirmed(t, o.sentCtx[i])).filter(Boolean);
   const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!)) ? [`$${f.money}`] : []),
     ...(f.percent !== undefined && o.sent.some((t) => says(t, PERCENT, f.percent!)) ? [`${f.percent}%`] : [])]);
   const claims = { pass: !absent.length && !unbacked.length && !banned.length, detail: banned.length ? `said forbidden: ${banned.join(", ")}`

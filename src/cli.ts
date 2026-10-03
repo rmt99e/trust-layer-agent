@@ -46,8 +46,20 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
     tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies, before: t.beforeVerification }))),
     checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name) }),
     suite: hash(readFileSync(suiteFile, "utf8")),
-    library: hash(read(fileURLToPath(new URL(".", import.meta.url)), /\.js$/)),   // this package's own code: checks, agent loop
+    library: hash(libraryFiles()),                  // this package's own code: checks, agent loop, simulator, adapters
   };
+}
+
+// Every compiled .js file in this package, recursively (sim/, models/ too), in a stable order.
+export const libraryFiles = (dir = fileURLToPath(new URL(".", import.meta.url))) => readdirSync(dir, { recursive: true }).map(String)
+  .filter((f) => f.endsWith(".js")).sort().map((f) => readFileSync(join(dir, f), "utf8"));
+
+/** Exit 1 when pass^k is below minPass or any task flipped pass→fail since the snapshot; reasons say why. */
+export function gate(cur: Run, prev: Run | undefined, minPass: number): { code: 0 | 1; reasons: string[] } {
+  const flipped = prev ? Object.keys(cur.summary).filter((t) => prev.summary[t]?.passK && !cur.summary[t].passK) : [];
+  const reasons = [...(cur.overall < minPass ? [`pass^k ${pct(cur.overall)} is below --min-pass ${pct(minPass)}`] : []),
+    ...(flipped.length ? [`pass→fail since the snapshot: ${flipped.join(", ")}`] : [])];
+  return { code: reasons.length ? 1 : 0, reasons };
 }
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
@@ -64,6 +76,17 @@ export function compare(prev: Run & { name: string }, cur: Run): string[] {
   return out;
 }
 
+/** Cost per trial: the last run's tokens per trial, priced at the CURRENT models' prices. */
+export function estimatePerTrial(trials: Trial[], suite: Suite): number {
+  const id = (m: string | Model) => (typeof m === "string" ? m : m.id), withTokens = trials.filter((t) => t.tokens);
+  if (!withTokens.length) return trials.length ? trials.reduce((a, t) => a + t.cost, 0) / trials.length : 0.08;
+  const price = (role: "agent" | "customer", m: string | Model) => {
+    const p = suite.prices[id(m)] ?? { input: 0, output: 0 };
+    return withTokens.reduce((a, t) => a + t.tokens![role].input * p.input + t.tokens![role].output * p.output, 0) / 1e6 / withTokens.length;
+  };
+  return price("agent", suite.agentModel) + price("customer", suite.customerModel);
+}
+
 const newest = (dir: string) => existsSync(dir)
   ? readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => join(dir, f)).sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs).pop() : undefined;
 const json = (f: string) => JSON.parse(readFileSync(f, "utf8"));
@@ -71,7 +94,7 @@ const json = (f: string) => JSON.parse(readFileSync(f, "utf8"));
 export async function main([cmd, ...args]: string[]) {
   const flag = (n: string, d?: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
   try { process.loadEnvFile(); } catch { /* no .env: keys come from the environment */ }
-  if (cmd !== "test" && cmd !== "snapshot") return console.log("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--name v1]");
+  if (cmd !== "test" && cmd !== "snapshot") return console.log("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--name v1]");
   const suiteFile = join(resolve(flag("suite", ".")!), "suite.js");
   const suite: Suite = (await import(pathToFileURL(suiteFile).href)).default;
   if (flag("agent-model")) suite.agentModel = flag("agent-model")!;
@@ -87,9 +110,9 @@ export async function main([cmd, ...args]: string[]) {
     return console.log(`snapshots/${name}.json: pass^${r.k} ${pct(r.overall)} over ${Object.keys(r.summary).length} tasks`);
   }
 
-  const k = Number(flag("k", "4")), maxCost = Number(flag("max-cost", "10")), only = flag("tasks")?.split(",");
+  const k = Number(flag("k", "4")), maxCost = Number(flag("max-cost", "10")), minPass = Number(flag("min-pass", "1")), only = flag("tasks")?.split(",");
   const n = loadTasks(suite.tasks).filter((t) => !only || only.includes(t.id)).length, prev = newest("results");
-  const perTrial = prev ? json(prev).cost / json(prev).trials.length : 0.08;
+  const perTrial = estimatePerTrial(prev ? json(prev).trials : [], suite);
   console.log(`Estimated cost: ~$${(n * k * perTrial).toFixed(2)} (${n} tasks × ${k} trials × ~$${perTrial.toFixed(3)}); stops at $${maxCost}.`);
   const run = await runSuite(suite, { k, tasks: only, maxCost,
     onTrial: (t) => console.log(`  ${t.task} #${t.trial}: ${t.status}  $${t.cost.toFixed(3)}  friction ${t.friction}${t.error ? `  (${t.error})` : ""}`) });
@@ -103,8 +126,11 @@ export async function main([cmd, ...args]: string[]) {
   writeFileSync(file, JSON.stringify({ ...cur, k, createdAt: new Date().toISOString(), trials: run.trials }) + "\n");
   const snap = newest("snapshots");
   if (snap) console.log(`\nvs ${snap}:\n${compare(json(snap), cur).join("\n")}`);
+  const g = gate(cur, snap ? json(snap) : undefined, minPass);
+  process.exitCode = g.code;
+  console.log(g.code ? `\nFAILED the gate (exit 1): ${g.reasons.join("; ")}` : "\nPassed the gate (exit 0).");
   console.log(`results: ${file}`);
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url))
-  main(process.argv.slice(2)).catch((e) => { console.error(`error: ${e.message}`); process.exitCode = 1; });
+  main(process.argv.slice(2)).catch((e) => { console.error(`error: ${e.message}`); process.exitCode = 2; });

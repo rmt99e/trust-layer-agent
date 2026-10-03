@@ -34,8 +34,8 @@ const suite = (agent: Step[], customer: Step[], over: Partial<Suite> = {}): Suit
   prices: { "fake:agent": { input: 1, output: 1 }, "fake:customer": { input: 1, output: 1 } }, now: "2026-10-03T12:00:00Z", ...over,
 });
 
-const observed = (o: Partial<Observed> = {}): Observed => ({ live: SEED, gold: SEED, results: [], blocked: [], handedOff: false, sent: [],
-  ctx: ctx(), writes: new Set(["set_plan"]), ...o });
+const observed = ({ ctx: c = ctx(), ...o }: Partial<Observed> & { ctx?: ReturnType<typeof ctx> } = {}): Observed => ({ live: SEED, gold: SEED,
+  results: [], blocked: [], handedOff: false, sent: [], writes: new Set(["set_plan"]), ...o, sentCtx: o.sentCtx ?? (o.sent ?? []).map(() => c) });
 const okCall = (tool: string, input: any, output: any = {}) => ({ id: "c", tool, turn: 1, ok: true, input, output });
 
 describe("grader", () => {
@@ -68,6 +68,24 @@ describe("grader", () => {
     expect(grade(tk, observed({ ctx: c, sent: ["It's $1,019.90 a month from November 1, 2026."] })).claims.pass).toBe(true);
     expect(grade(tk, observed({ ctx: c, sent: ["It's $1,019.90 a month."] })).claims).toMatchObject({ pass: false, detail: "not said: date 2026-11-01" });
     expect(grade(t("  {}"), observed({ ctx: c, sent: ["It's $5."] })).claims).toMatchObject({ pass: false, detail: expect.stringContaining("Reply states the amount 5") });
+  });
+});
+
+describe("grader timing and async state", () => {
+  it("judges each reply against the session as it was when it was sent", async () => {
+    task("timing", "expect: {}");
+    // The agent says "$9" before any tool returned it, then looks it up. Graded at send time, that's unbacked.
+    const s = suite(["It's $9.", { call: "get_plan", input: { id: "a1" } }, "Confirmed: basic at $9."], ["How much?", "Check please.", "###STOP###"],
+      { agent: { instructions: "Help.", builtins: { no_unconfirmed_claims: false } } });   // let the early "$9" through at runtime
+    const { trials } = await runSuite(s, { tasks: ["timing"] });
+    expect(trials[0].grade!.claims).toMatchObject({ pass: false, detail: expect.stringContaining("Reply states the amount 9") });
+  });
+  it("awaits an async state() (e.g. a database read)", async () => {
+    task("async", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, compare: [plan] }");
+    const s = suite([{ call: "set_plan", input: { id: "a1", plan: "plus" } }, "Done, you're on plus."], ["Move me to plus, yes.", "###STOP###"],
+      { state: async (st: any) => { await new Promise((r) => setTimeout(r, 5)); return st.db; } });
+    const { trials } = await runSuite(s, { tasks: ["async"] });
+    expect(trials[0].grade!.state).toMatchObject({ pass: true, detail: "matches" });
   });
 });
 

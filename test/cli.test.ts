@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compare, overall, summarize, type Run } from "../src/cli.js";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { compare, estimatePerTrial, gate, libraryFiles, overall, summarize, type Run } from "../src/cli.js";
+import type { Suite } from "../src/sim/simulator.js";
 import { says } from "../src/sim/grade.js";
 import type { Trial } from "../src/sim/simulator.js";
 
@@ -43,5 +47,41 @@ describe("diff against a snapshot", () => {
   it("warns when pinned configuration differs", () => {
     const lines = compare({ ...run({ a: "PP" }), name: "v1" }, run({ a: "PP" }, { config: { ...config, customerModel: "openai-compatible:x", journeys: "bbb" } }));
     expect(lines.slice(0, 2)).toEqual(['⚠️  config differs from snapshot "v1": customerModel', '⚠️  config differs from snapshot "v1": journeys']);
+  });
+});
+
+describe("the release gate", () => {
+  const run = (marks: Record<string, string>): Run => {
+    const s = summarize(Object.entries(marks).flatMap(([task, m]) => [...m].map((c) => trial(task, c === "P" ? "pass" : "fail"))));
+    return { config: {}, summary: s, overall: overall(s), cost: 1 };
+  };
+  it("passes when everything passes and nothing flipped", () => {
+    expect(gate(run({ a: "PP", b: "PP" }), run({ a: "PP", b: "FF" }), 1)).toEqual({ code: 0, reasons: [] });
+  });
+  it("fails below --min-pass and on any pass→fail flip, saying why", () => {
+    expect(gate(run({ a: "PP", b: "PF" }), undefined, 1)).toEqual({ code: 1, reasons: ["pass^k 50% is below --min-pass 100%"] });
+    expect(gate(run({ a: "PP", b: "PF" }), undefined, 0.5).code).toBe(0);
+    expect(gate(run({ a: "PF", b: "PP" }), run({ a: "PP", b: "PP" }), 0.5))
+      .toEqual({ code: 1, reasons: ["pass→fail since the snapshot: a"] });
+  });
+});
+
+describe("library fingerprint", () => {
+  it("covers every .js file recursively, in a stable order", () => {
+    const d = mkdtempSync(join(tmpdir(), "tla-lib-"));
+    mkdirSync(join(d, "sim")); mkdirSync(join(d, "models"));
+    writeFileSync(join(d, "index.js"), "a"); writeFileSync(join(d, "sim", "grade.js"), "b"); writeFileSync(join(d, "models", "x.js"), "c");
+    writeFileSync(join(d, "index.d.ts"), "types");
+    expect(libraryFiles(d)).toEqual(["a", "c", "b"]);          // index.js, models/x.js, sim/grade.js
+  });
+});
+
+describe("cost estimate", () => {
+  it("prices the last run's tokens at the current models' prices", () => {
+    const t = { ...trial("a", "pass"), tokens: { agent: { input: 100_000, output: 10_000 }, customer: { input: 20_000, output: 2_000 } } };
+    const prices = { big: { input: 2, output: 10 }, small: { input: 1, output: 5 } };
+    const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, customerModel: "big" } as unknown as Suite);
+    expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + customer 0.06
+    expect(at("small")).toBeCloseTo(0.1 + 0.05 + 0.06);        // switching the agent model halves its part
   });
 });

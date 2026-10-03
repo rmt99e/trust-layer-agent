@@ -13,7 +13,7 @@ export interface Suite {
   standIns: Record<string, StandIn>;                                // run functions by tool name, over the trial's store
   seed: unknown;
   createStore(seed: unknown, opts: { now: () => Date }): unknown;   // a fresh store per trial
-  state(store: unknown): unknown;                                   // what the grader compares
+  state(store: unknown): unknown | Promise<unknown>;               // what the grader compares; may read a database
   tasks: string | string[];
   agentModel: string | Model;
   customerModel: string | Model;                                    // pinned for the whole run
@@ -23,7 +23,7 @@ export interface Suite {
 export interface Trial {
   task: string; trial: number; status: "pass" | "fail" | "infra" | "stopped";
   ended?: "stop" | "transfer" | "out_of_scope" | "handoff" | "max_steps"; grade?: Grade; error?: string;
-  turns: number; cost: number; friction?: number; transcript: { role: "customer" | "agent"; text: string }[]; events: Record<string, any>[];
+  turns: number; cost: number; friction?: number; tokens?: Record<"agent" | "customer", { input: number; output: number }>; transcript: { role: "customer" | "agent"; text: string }[]; events: Record<string, any>[];
 }
 
 const END = /###(STOP|TRANSFER|OUT-OF-SCOPE)###/;
@@ -84,25 +84,28 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
   const agent = new Agent({ ...suite.agent, model: models.agent, tools, now, trace: { write: (l) => events.push(l) } });
   console.warn = warn;
 
-  const cost = (id: string, u?: Partial<Usage>) => {
+  const tokens = { agent: { input: 0, output: 0 }, customer: { input: 0, output: 0 } };
+  const cost = (id: string, u?: Partial<Usage>, role: "agent" | "customer" = id === models.agent.id ? "agent" : "customer") => {
+    tokens[role].input += u?.inputTokens ?? 0;
+    tokens[role].output += u?.outputTokens ?? 0;
     const p = suite.prices[id], c = ((u?.inputTokens ?? 0) * p.input + (u?.outputTokens ?? 0) * p.output) / 1e6;
     budget.spent += c;
     return c;
   };
-  const r: Trial = { task: task.id, trial, status: "fail", turns: 0, cost: 0, transcript: [], events };
+  const r: Trial = { task: task.id, trial, status: "fail", turns: 0, cost: 0, tokens, transcript: [], events };
   const convo: ModelMessage[] = [{ role: "user", content: "(The support chat is open. Write your first message.)" }];
   let session: Session | null = null, handedOff = false;
   try {
     for (; r.turns < task.max_steps && !r.ended; r.turns++) {
       const said = await models.customer.generate({ system: customerPrompt(task), messages: convo, tools: [] });
-      r.cost += cost(models.customer.id, said.usage);
+      r.cost += cost(models.customer.id, said.usage, "customer");
       const end = END.exec(said.text);
       const text = said.text.replace(END, "").trim();
       if (end && !text) { r.ended = end[1].toLowerCase().replace(/-/g, "_") as Trial["ended"]; break; }
       convo.push({ role: "assistant", content: text });
       r.transcript.push({ role: "customer", text });
       const res = await agent.respond(session, text);
-      r.cost += cost(models.agent.id, res.usage);
+      r.cost += cost(models.agent.id, res.usage, "agent");
       session = res.session;
       r.transcript.push({ role: "agent", text: res.reply });
       convo.push({ role: "user", content: res.reply });
@@ -118,10 +121,11 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
   await applyExpected(task, gold, suite.standIns);
   const s = session ?? { messages: [], results: [], commitments: [], facts: {}, failures: 0 } as unknown as Session;
   r.grade = grade(task, {
-    live: suite.state(store), gold: suite.state(gold), results: s.results, handedOff,
+    live: await suite.state(store), gold: await suite.state(gold), results: s.results, handedOff,
     blocked: events.filter((l) => l.type === "check" && l.event === "action").map((l) => l.tool),
     sent: s.messages.filter((m) => m.role === "agent").map((m) => m.text),
-    ctx: contextFrom(s, suite.tools, agent.operatorText, now()),
+    sentCtx: s.messages.flatMap((m, i) => m.role !== "agent" ? [] : [contextFrom({ ...s, messages: s.messages.slice(0, i),
+      results: s.results.filter((x) => x.turn <= m.turn), commitments: s.commitments.filter((k) => k.turn <= m.turn) }, suite.tools, agent.operatorText, now())]),
     writes: new Set(suite.tools.filter((t) => t.kind === "write").map((t) => t.name)),
   });
   r.status = r.grade.pass && r.ended !== "max_steps" ? "pass" : "fail";
