@@ -102,6 +102,26 @@ describe("negated done-language", () => {
   });
 });
 
+describe("negated subjects (fix 1)", () => {
+  const afterFailure = () => ctx({ results: [failed("change_plan"), ok("open_case", { caseId: "4417" })] });
+  it.each([
+    ["Nothing has been changed.", "allow"],
+    ["No changes were made.", "allow"],
+    ["None of your settings have been changed.", "allow"],
+    ["Nothing was switched.", "allow"],
+    ["Sorry, nothing was switched yet.", "allow"],
+    // Attacks: interjections are not negations.
+    ["No problem, your plan has been switched.", "block"],
+    ["No worries your refund has been processed.", "block"],
+    ["No, it's done: you've been switched.", "block"],
+    ["No problem! Your plan has been switched.", "block"],
+    ["Nope, all good, it's done.", "block"],
+  ])("%s → %s after a failed change_plan", async (reply, want) => {
+    const result = await verdict(reply, afterFailure());
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);

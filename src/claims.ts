@@ -8,7 +8,11 @@ const NUM = String.raw`\d[\d,]*(?:\.\d+)?`;
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const MONTH = String.raw`(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?`;
 const RELATIVE = /\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|this (?:week|weekend|month))\b/gi;
-const NEGATED = /\b(?:not|never|no longer)\b|n't\b/i;              // "haven't switched", "has not been switched", "not yet"
+// A done phrase is negated when its own clause negates it: "haven't switched", "not yet", "nothing was switched",
+// "none of your settings have been changed". Clauses split on punctuation and "but", so "No, it's done" and
+// "No problem, your plan has been switched" keep their claims; "no problem"/"no worries" are interjections, never negations.
+const NEGATED = /\b(?:not|never|no longer|nothing|none|no)\b|n't\b/i;
+const INTERJECTION = /^\s*no (?:problem|worries|worry)\b/i;
 const DONE = /\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully)\b/gi;
 
 /** Normalize a number token: strip commas and currency, compare to the cent. */
@@ -32,7 +36,7 @@ export function extractClaims(text: string): Claims {
     ...all(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/g).filter((m) => +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31)
       .map((m) => (m[3] ? `${m[3]}-` : "") + md(+m[1], m[2])),
   ];
-  const clauseBefore = (i: number) => text.slice(0, i).split(/[.!?;:\n]|\bbut\b/i).pop() ?? "";
+  const clauseBefore = (i: number) => (text.slice(0, i).split(/[.!?;:,\n]|\bbut\b/i).pop() ?? "").replace(INTERJECTION, "");
   const done = all(DONE).filter((m) => !NEGATED.test(clauseBefore(m.index!))).map((m) => m[0].toLowerCase());
   return { money, percents, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done };
 }
