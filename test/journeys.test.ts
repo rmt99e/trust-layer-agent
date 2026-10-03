@@ -75,6 +75,7 @@ describe("journeys", () => {
     const agent = new Agent({ model, instructions: "Help.", tools, trace: false, journeys: f, checks: [check("noop", () => allow())] });
     await agent.respond(createSession({ facts: { verified: true } }), "Quote me Enterprise");
     expect(model.requests[2].messages.at(-1)!.content).toBe(
-      "<system_note>Not run. Blocked: planId must be one of the values get_eligible_plans returned (plus, pro).</system_note>");
+      "<system_note>Not run. Blocked: planId must be one of the values get_eligible_plans returned (plus, pro). " +
+      "Never mention checks, blocks or internal reasons to the customer; just give the corrected reply.</system_note>");
   });
 });

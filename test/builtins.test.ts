@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { builtinChecks, checkPipeline, isAffirmative, verificationWarning } from "../src/builtins.js";
+import { builtinChecks, checkPipeline, isAffirmative, isProceed, verificationWarning } from "../src/builtins.js";
 import { allow, block, check, handoff, rewrite, runChecks, type CheckEvent } from "../src/checks.js";
 import { ctx, failed, quote, tools } from "./fixtures.js";
 
@@ -31,6 +31,15 @@ describe("verified_first", () => {
 describe("yes_after_quote", () => {
   it.each(["yes", "Yes!", "yeah go ahead", "ok, do it", "sounds good"])("%s is a yes", (t) => expect(isAffirmative(t)).toBe(true));
   it.each(["no", "not yet", "yes but what's the fee?", "nope", "wait", "is that the final price?"])("%s is not a yes", (t) => expect(isAffirmative(t)).toBe(false));
+  it.each(["Can you just switch me?", "go ahead and switch", "please switch me", "do it 👍"])("%s is a request to proceed", (t) => expect(isProceed(t)).toBe(true));
+  it.each(["what would it cost?", "Before you change anything, what exactly would it cost me?", "don't switch me yet"])("%s is not", (t) => expect(isProceed(t)).toBe(false));
+
+  it("counts a proceed-request as consent only after the quote was shown in an earlier reply", async () => {
+    expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: Can you just switch me?"])).result).toEqual(allow());
+    expect((await run(["c: switch me to Plus", "a: Let me check.", "c: Can you just switch me?"], [quote({ shownTurn: undefined })])).result).toHaveProperty("block");
+    expect((await run(["c: Can you just switch me?"], [])).result).toHaveProperty("block");
+    expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: what would it cost?"])).result).toHaveProperty("block");
+  });
 
   const run = (say: string[], commitments = [quote()], now?: Date) =>
     runChecks(action("change_plan", { quoteId: "q_1" }), ctx({ say, commitments, now }), only("yes_after_quote"));

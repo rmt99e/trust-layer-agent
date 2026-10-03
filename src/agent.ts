@@ -37,6 +37,7 @@ const escapeTags = (text: string) => text.replaceAll("<", "&lt;").replaceAll(">"
 const fenceCustomer = (text: string) => `<customer_message>${escapeTags(text)}</customer_message>`;
 const fenceTool = (content: unknown) => `<tool_result>${escapeTags(JSON.stringify(content))}</tool_result>`;
 const note = (text: string) => `<system_note>${text}</system_note>`;
+const NO_MECHANICS = "Never mention checks, blocks or internal reasons to the customer; just give the corrected reply.";
 
 export class Agent {
   readonly model: Model;
@@ -139,7 +140,7 @@ export class Agent {
           if ("handoff" in v.result) return handoffNow(v.result.handoff, v.by!);
           if ("block" in v.result) {
             emit("check", { event: "action", tool: call.name, input: call.input, check: v.by, result: v.result });
-            answer(note(`Not run. Blocked: ${v.result.block}`), true);
+            answer(note(`Not run. Blocked: ${v.result.block} ${NO_MECHANICS}`), true);
             continue;
           }
           const r = await runTool(tool, call.input, s, { strictVisibility: this.opts.strictVisibility });
@@ -162,7 +163,7 @@ export class Agent {
           return handoffNow(`Reply still blocked after ${this.opts.maxRetries} retries: ${v.result.block}`, v.by!);
         }
         msgs.push({ role: "assistant", content: res.text, raw: res.raw },
-          { role: "user", content: note(`That draft was not sent. ${v.result.block} Write a new reply.`) });
+          { role: "user", content: note(`That draft was not sent. ${v.result.block} Write a new reply. ${NO_MECHANICS}`) });
         continue;
       }
       if ("rewrite" in v.result) emit("check", { event: "reply", check: v.by ?? "rewrite", result: v.result, draft: res.text });

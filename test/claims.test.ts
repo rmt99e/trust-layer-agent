@@ -91,6 +91,17 @@ describe("dates from timestamps and the clock", () => {
   });
 });
 
+describe("negated done-language", () => {
+  it.each([
+    ["I haven't switched your plan yet.", "allow"], ["Your plan has not been switched.", "allow"],
+    ["It's not done yet, but I've opened case 4417.", "allow"], ["Your plan has been switched.", "block"],
+    ["I couldn't do it, but your plan has been switched.", "block"],
+  ])("%s → %s after a failed change_plan", async (reply, want) => {
+    const result = await verdict(reply, ctx({ results: [failed("change_plan"), ok("open_case", { caseId: "4417" })] }));
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);

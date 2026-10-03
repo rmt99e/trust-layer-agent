@@ -22,6 +22,11 @@ export function isAffirmative(text: string, phrases = YES): boolean {
   return !NOT_YES.test(t) && phrases.some((p) => new RegExp(String.raw`(^|\b)${escape(p)}\b`).test(t));
 }
 
+// After a quote was shown in an earlier reply, a request to go ahead is consent too. Questions aren't.
+const PROCEED = /\b(?:(?:just |please )?switch me|switch it|go ahead|do it|make the (?:switch|change)|proceed|let's do (?:it|that))\b/i;
+const NOT_PROCEED = /\b(?:no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|cost|price|how much|fee|charge|details?|before you|what would|what will)\b/i;
+export const isProceed = (text: string) => PROCEED.test(text) && !NOT_PROCEED.test(text);
+
 /** The warning the Agent constructor prints when verified_first can't do anything. */
 export function verificationWarning(tools: readonly ToolInfo[]): string | undefined {
   if (!tools.some((t) => t.verifies))
@@ -39,12 +44,12 @@ const yesAfterQuote = (phrases?: string[]) => check("yes_after_quote", (e, ctx) 
   if (e.kind !== "action" || e.tool.kind !== "write" || e.tool.confirm === false) return allow();
   const lastAgent = ctx.messages.findLastIndex((m) => m.role === "agent");
   const last = ctx.messages.at(-1);
-  if (lastAgent < 0 || last?.role !== "customer" || !isAffirmative(last.text, phrases))
-    return block(`Before ${e.tool.name}, tell the customer exactly what will happen and wait for a clear yes.`);
-  const c = e.tool.confirm;
+  const c = e.tool.confirm, id = c ? e.input[c.by] : undefined;
+  const k = c ? ctx.commitments.find((x) => x.type === c.commitment && x.id === id) : undefined;
+  const shownEarlier = k?.shownTurn !== undefined && k.shownTurn < ctx.turn;
+  const consent = last?.role === "customer" && (isAffirmative(last.text, phrases) || (shownEarlier && isProceed(last.text)));
+  if (lastAgent < 0 || !consent) return block(`Before ${e.tool.name}, tell the customer exactly what will happen and wait for a clear yes.`);
   if (!c) return allow();
-  const id = e.input[c.by];
-  const k = ctx.commitments.find((x) => x.type === c.commitment && x.id === id);
   if (!k) return block(`No ${c.commitment} "${id}" exists in this conversation. Create one and show it to the customer first.`);
   if (k.status !== "open") return block(`${c.commitment} "${id}" was already used. Create a new one.`);
   if (k.expiresAt && new Date(k.expiresAt) <= ctx.now) return block(`${c.commitment} "${id}" has expired. Create a new one and show it.`);

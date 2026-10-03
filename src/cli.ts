@@ -46,6 +46,7 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
     tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies, before: t.beforeVerification }))),
     checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name) }),
     suite: hash(readFileSync(suiteFile, "utf8")),
+    library: hash(read(fileURLToPath(new URL(".", import.meta.url)), /\.js$/)),   // this package's own code: checks, agent loop
   };
 }
 

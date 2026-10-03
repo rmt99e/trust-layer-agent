@@ -117,7 +117,7 @@ new Agent({ ..., checks: [noRefundsOver100] });
 
 **Built-ins** (all on by default; disable one with `builtins: { name: false }`):
 - **verified_first.** Blocks any tool not marked `beforeVerification` until `facts.verified === true`. It applies only when verification is possible: some tool declares `verifies: true`, or the session was created with `createSession({ facts: { verified } })`. Otherwise the check is off, and the Agent constructor prints a loud warning: `verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified customers.`
-- **yes_after_quote.** For writes, the customer's latest message must be an affirmative after the agent's last reply. Affirmatives come from a phrase list, with negations rejected. Set `confirm: false` to skip this, e.g. for open_case. If a write declares `confirm: { commitment: "quote", by: "quoteId" }`, the quote named in its input must also exist this session, have been shown in a reply, not have expired, and have been followed by that yes.
+- **yes_after_quote.** For writes, the customer's latest message must be an affirmative after the agent's last reply. Once the quote was shown in an earlier reply, a short request to proceed ("can you just switch me?", "go ahead") also counts; questions about cost or details don't. Affirmatives come from a phrase list, with negations rejected. Set `confirm: false` to skip this, e.g. for open_case. If a write declares `confirm: { commitment: "quote", by: "quoteId" }`, the quote named in its input must also exist this session, have been shown in a reply, not have expired, and have been followed by that yes.
 - **no_unconfirmed_claims.** Deterministic extraction from the draft reply:
   - **Money:** `$19.99`, `19.99 USD`, `€5`, `20 dollars`.
   - **Percentages.**
@@ -138,7 +138,7 @@ new Agent({ ..., checks: [noRefundsOver100] });
 
   **Derived values aren't allowed in v0.1.** Sums, differences and "you'll save $10" aren't computed or accepted. Design rule: tools return every number the agent may say (e.g. `quote_plan_change` returns `monthlySavings`).
 
-  **"Done" language** needs a successful write this session, and is blocked while any write has an unresolved failure (a failed call with no later success of that same tool), even if other writes succeeded.
+  **"Done" language** with a negation earlier in the same clause ("haven't switched", "not done yet") isn't a done claim. Otherwise it needs a successful write this session, and is blocked while any write has an unresolved failure (a failed call with no later success of that same tool), even if other writes succeeded.
 
   The block reason names the offending value, e.g. *"Reply states 18.99 but no tool returned 18.99. Use a returned value or don't state a price."*
 - **untrusted_text_is_data.** Two parts:
