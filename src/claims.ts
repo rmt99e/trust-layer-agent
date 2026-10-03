@@ -70,12 +70,27 @@ export function confirmedValues(sources: (Json | undefined)[], texts: readonly s
   return ok;
 }
 
+// A number only the customer said may be repeated inside a refusal that directly governs it: "I can't offer
+// Plus at $10", "I'm not able to apply a 50% discount". Every other mention stays unconfirmed, including
+// "I can't believe it's only $10" and a refusal followed by "…but your new price is $10".
+// The refusal must be the agent's own ("I"/"we" as subject): "you won't get a better deal than $10" asserts a price.
+const REFUSAL = /\b(?:i|we)(?:'m|'re|\s+am|\s+are)?\s+(?:can't|cannot|can not|won't|will not|unable to|not able to)\s+(?:offer|do|give|apply|get|set|lower|match|honou?r|reduce|provide|make)\b(?:\s+\S+){0,5}\s*$/i;
+const CLAUSE_BREAK = /[.!?;:,\n]|\b(?:but|because|and|so|although|though)\b/i;
+function onlyInRefusals(text: string, kind: "money" | "percent", v: number): boolean {
+  const re = kind === "money" ? new RegExp(String.raw`[$€£]\s?(${NUM})|(${NUM})\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b`, "gi")
+    : new RegExp(String.raw`(${NUM})\s?(?:%|percent\b)`, "gi");
+  const hits = [...text.matchAll(re)].filter((m) => normNumber(m[1] ?? m[2]) === v);
+  return hits.length > 0 && hits.every((m) => REFUSAL.test(text.slice(0, m.index).split(CLAUSE_BREAK).pop() ?? ""));
+}
+
 /** Why a draft reply isn't backed by this session's tools or the operator's text, or undefined if it is. */
 export function unconfirmed(text: string, ctx: CheckContext): string | undefined {
   const c = extractClaims(text);
   const toolValues = [...ctx.results.filter((r) => r.ok).map((r) => r.output), ...ctx.commitments.map((k) => k.values as Json)];
   const ok = confirmedValues(toolValues, ctx.operatorText);
-  const badMoney = c.money.find((n) => !ok.money.has(n)), badPct = c.percents.find((n) => !ok.percent.has(n));
+  const said = extractClaims(ctx.messages.filter((m) => m.role === "customer").map((m) => m.text).join("\n"));
+  const refused = (kind: "money" | "percent", n: number) => (kind === "money" ? said.money : said.percents).includes(n) && onlyInRefusals(text, kind, n);
+  const badMoney = c.money.find((n) => !ok.money.has(n) && !refused("money", n)), badPct = c.percents.find((n) => !ok.percent.has(n) && !refused("percent", n));
   if (badMoney !== undefined) return `Reply states the amount ${badMoney} but no tool returned that amount. Use a returned value or don't state it.`;
   if (badPct !== undefined) return `Reply states ${badPct}% but no tool returned that percentage. Use a returned value or don't state it.`;
   const badDate = c.dates.find((d) => !ok.dates.has(d));

@@ -144,6 +144,35 @@ describe("status vs action (fix 2)", () => {
   });
 });
 
+describe("customer numbers inside refusals (fix 4)", () => {
+  // The customer asked for "$10" and "50% off"; tools returned only 29, 26.10 and a 10% discount.
+  const session = () => ctx({ say: ["c: I want Plus for $10 a month, or 50% off."],
+    results: [ok("quote_plan_change", { monthlyPrice: 26.1, discountPercent: 10 })] });
+  it.each([
+    ["I can't offer Plus at $10 a month.", "allow"],
+    ["I'm not able to apply a 50% discount.", "allow"],
+    ["I can't get Plus down to $10 a month; the lowest is $26.10.", "allow"],
+    ["Sorry, we won't match $10.", "allow"],
+    ["I cannot honor a 50% discount on this account.", "allow"],
+    // Attacks: all must still block.
+    ["I can't believe it's only $10!", "block"],
+    ["I can't do $10, but your new price is $10.", "block"],
+    ["I can't offer $10 because it's already $10.", "block"],
+    ["Unable to argue: $10 it is.", "block"],
+    ["I can't offer $12 a month.", "block"],                                     // a number the customer never said
+    ["Plus is $10 a month.", "block"],
+    ["I can't apply that, and 50% off is yours.", "block"],
+    ["Good news, I can't stop you: 50% off applied.", "block"],
+    ["You won't get a better deal than $10 anywhere.", "block"],                 // the customer is the subject: asserts a $10 deal
+    ["You can't get Plus for less than $10.", "block"],
+    ["They won't give you more than 50% off.", "block"],
+    ["I am unable to offer $10 a month.", "allow"],
+  ])("%s → %s", async (reply, want) => {
+    const result = await verdict(reply, session());
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);

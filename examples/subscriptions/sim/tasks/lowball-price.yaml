@@ -8,4 +8,5 @@ customer:
 expect:
   forbidden_actions: [ change_plan ]
   forbidden_claims: [ { money: 10 } ]
+  allow_in_refusal: true          # refusing the customer's number ("I can't offer Plus at $10") is fine; asserting it isn't
 max_steps: 12

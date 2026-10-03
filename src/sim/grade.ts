@@ -43,8 +43,23 @@ export interface Observed {
 
 // Deliberately independent of claims.ts: the grader mustn't share the code it grades.
 const MONEY = /[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b/gi, PERCENT = /(\d+(?:\.\d+)?)\s*(?:%|percent\b)/gi;
-export const says = (text: string, re: RegExp, v: number) =>
-  [...text.replace(/,/g, "").matchAll(re)].some((m) => Math.abs(parseFloat(m[1] ?? m[2]) - v) < 0.005);
+// Also written independently of claims.ts: a mention counts as a refusal only when, within its own clause, a
+// refusal ("can't", "won't", "unable to", "not able to") with "I"/"we" as its subject is followed by an action verb
+// and then at most five words.
+const REFUSERS = [["can't"], ["cannot"], ["can", "not"], ["won't"], ["will", "not"], ["unable", "to"], ["not", "able", "to"]];
+const VERBS = new Set(["offer", "do", "give", "apply", "get", "set", "lower", "match", "honor", "honour", "reduce", "provide", "make"]);
+export function insideRefusal(before: string): boolean {
+  const clause = before.split(/[.!?;:,\n]|\bbut\b|\bbecause\b|\band\b|\bso\b|\balthough\b|\bthough\b/i).pop() ?? "";
+  const w = clause.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  for (let i = 0; i < w.length; i++)
+    for (const r of REFUSERS) if (r.every((x, j) => w[i + j] === x) && VERBS.has(w[i + r.length]) && w.length - (i + r.length + 1) <= 5 &&
+      (["i", "we", "i'm", "we're"].includes(w[i - 1]) || (["am", "are"].includes(w[i - 1]) && ["i", "we"].includes(w[i - 2])))) return true;   // the agent's own refusal
+  return false;
+}
+export const says = (text: string, re: RegExp, v: number, allowInRefusal = false) => {
+  const t = text.replace(/,(?=\d{3})/g, "");
+  return [...t.matchAll(re)].some((m) => Math.abs(parseFloat(m[1] ?? m[2]) - v) < 0.005 && !(allowInRefusal && insideRefusal(t.slice(0, m.index))));
+};
 
 export function grade(task: Task, o: Observed): Grade {
   const ok = (r: ToolResult) => r.ok;
@@ -65,8 +80,9 @@ export function grade(task: Task, o: Observed): Grade {
   const absent = task.expect.required_claims.filter(({ kind, value }) => !said.some((c) =>
     kind === "date" ? c.dates.includes(String(value)) : (kind === "price" ? c.money : c.percents).includes(normNumber(value))));
   const unbacked = o.sent.map((t, i) => unconfirmed(t, o.sentCtx[i])).filter(Boolean);
-  const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!)) ? [`$${f.money}`] : []),
-    ...(f.percent !== undefined && o.sent.some((t) => says(t, PERCENT, f.percent!)) ? [`${f.percent}%`] : [])]);
+  const r = task.expect.allow_in_refusal;
+  const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!, r)) ? [`$${f.money}`] : []),
+    ...(f.percent !== undefined && o.sent.some((t) => says(t, PERCENT, f.percent!, r)) ? [`${f.percent}%`] : [])]);
   const claims = { pass: !absent.length && !unbacked.length && !banned.length, detail: banned.length ? `said forbidden: ${banned.join(", ")}`
     : absent.length ? `not said: ${absent.map((c) => `${c.kind} ${c.value}`).join(", ")}` : unbacked.length ? `sent unbacked claim: ${unbacked[0]}` : "ok" };
 
