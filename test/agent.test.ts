@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Agent, createSession, jsonl, read, ToolError, write, z, type Session } from "../src/index.js";
+import { Agent, allow, check, createSession, jsonl, read, rewrite, ToolError, write, z, type Session } from "../src/index.js";
 import { scripted, type Step } from "./fake-model.js";
 
 let dir: string;
@@ -203,6 +203,26 @@ describe("Agent", () => {
     (Agent as any).warnedForget = false;
     agent.forget(a.session); agent.forget(b.session);
     expect(warn.mock.calls.flat().filter((m) => /no forget/.test(String(m)))).toHaveLength(1);
+  });
+
+  it("marks only the commitment matching both id and type as used", async () => {
+    const both = { ...loggedIn(), messages: [{ role: "customer" as const, text: "switch me", turn: 1 }, { role: "agent" as const, text: "It's $29. OK?", turn: 1 }],
+      commitments: [
+        { type: "quote", id: "q_1", by: "quote_plan_change", values: { monthlyPrice: 29 }, turn: 1, shownTurn: 1, status: "open" as const },
+        { type: "hold", id: "q_1", by: "other_tool", values: {}, turn: 1, shownTurn: 1, status: "open" as const },
+      ] };
+    const { agent } = agentWith([{ call: "change_plan", input: { quoteId: "q_1" } }, "Done, you're on Plus at $29."]);
+    const r = await agent.respond(both, "yes");
+    expect(r.session.commitments.map((k) => `${k.type}:${k.status}`)).toEqual(["quote:used", "hold:open"]);
+  });
+
+  it("names the check that rewrote a reply in the trace", async () => {
+    const lines: any[] = [];
+    const polite = check("polite", (e) => (e.kind === "reply" && e.text.startsWith("No.") ? rewrite("Sorry, I can't do that.") : allow()));
+    const agent = new Agent({ model: scripted(["No."]), instructions: "x", tools: [tools.account], checks: [polite], trace: { write: (l) => lines.push(l) } });
+    const r = await agent.respond(loggedIn(), "Can I have it free?");
+    expect(r.reply).toBe("Sorry, I can't do that.");
+    expect(lines.find((l) => l.type === "check")).toMatchObject({ event: "reply", check: "polite", result: { rewrite: "Sorry, I can't do that." } });
   });
 
   it("rejects duplicate tool names and warns when nothing can verify", () => {

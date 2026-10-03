@@ -18,6 +18,7 @@ describe("verified_first", () => {
   it("is off, with a warning, when no tool can verify", async () => {
     const noVerifier = tools.filter((t) => !t.verifies);
     expect(verificationWarning(noVerifier)).toMatch(/^verified_first is OFF/);
+    expect(verificationWarning(noVerifier)).toContain("doesn't apply to sessions your app creates with createSession({ facts: { verified } })");
     expect(verificationWarning(tools)).toBeUndefined();
     expect((await runChecks(action("get_account"), ctx({ facts: {}, tools: noVerifier }), only("verified_first"))).result).toEqual(allow());
   });
@@ -30,6 +31,10 @@ describe("verified_first", () => {
 
 describe("yes_after_quote", () => {
   it.each(["yes", "Yes!", "yeah go ahead", "ok, do it", "sounds good"])("%s is a yes", (t) => expect(isAffirmative(t)).toBe(true));
+  it("lower-cases custom phrases before matching", () => {
+    expect(isAffirmative("Make It So", ["Make It So"])).toBe(true);
+    expect(isAffirmative("make it so", ["MAKE IT SO"])).toBe(true);
+  });
   it.each(["no", "not yet", "yes but what's the fee?", "nope", "wait", "is that the final price?"])("%s is not a yes", (t) => expect(isAffirmative(t)).toBe(false));
   it.each(["Can you just switch me?", "go ahead and switch", "please switch me", "do it 👍"])("%s is a request to proceed", (t) => expect(isProceed(t)).toBe(true));
   it.each(["what would it cost?", "Before you change anything, what exactly would it cost me?", "don't switch me yet"])("%s is not", (t) => expect(isProceed(t)).toBe(false));
@@ -108,5 +113,6 @@ describe("pipeline", () => {
     expect([v.result, v.by]).toEqual([{ block: "stop" }, "c"]);
     const r = await runChecks({ kind: "reply", text: "one" }, ctx(), [see("a", rewrite("two"))]);
     expect(r.result).toEqual({ rewrite: "two" });
+    expect(r.by).toBe("a");                                         // the rewriting check is named
   });
 });

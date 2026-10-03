@@ -157,7 +157,8 @@ export class Agent {
           const r = await runTool(tool, call.input, s, { strictVisibility: this.opts.strictVisibility });
           s = { ...r.session, failures: r.result.ok ? 0 : s.failures + 1 };
           const used = tool.confirm && r.result.ok ? r.result.input[tool.confirm.by] : undefined;   // a quote is spent once
-          if (used !== undefined) s = { ...s, commitments: s.commitments.map((k) => k.id === used ? { ...k, status: "used", acceptedTurn: turn } : k) };
+          if (used !== undefined) s = { ...s, commitments: s.commitments.map((k) =>
+            k.id === used && tool.confirm && k.type === tool.confirm.commitment ? { ...k, status: "used", acceptedTurn: turn } : k) };
           emit("tool", { tool: call.name, input: r.result.input, ok: r.result.ok, output: r.result.output, error: r.result.error });
           answer(fenceTool(r.result.ok ? r.result.output : { error: r.result.error }), !r.result.ok);
           if (r.result.ok && tool.name === "handoff_to_person")
@@ -177,7 +178,7 @@ export class Agent {
           { role: "user", content: note(`That draft was not sent. ${v.result.block} Write a new reply. ${NO_MECHANICS}`) });
         continue;
       }
-      if ("rewrite" in v.result) emit("check", { event: "reply", check: v.by ?? "rewrite", result: v.result, draft: res.text });
+      if ("rewrite" in v.result) emit("check", { event: "reply", check: v.by, result: v.result, draft: res.text });
       return finish(v.text ?? res.text);
     }
   }

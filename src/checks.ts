@@ -35,7 +35,7 @@ export interface Verdict { result: CheckResult; by?: string; text?: string; trai
 /** Run checks in order. Actions: first non-allow wins. Replies: rewrites chain; block or handoff stops. */
 export async function runChecks(event: CheckEvent, ctx: CheckContext, checks: readonly Check[]): Promise<Verdict> {
   const trail: Verdict["trail"] = [];
-  let text = event.kind === "reply" ? event.text : undefined;
+  let text = event.kind === "reply" ? event.text : undefined, rewrittenBy: string | undefined;
   for (const c of checks) {
     const result = await c.run(event.kind === "reply" ? { kind: "reply", text: text! } : event, ctx);
     trail.push({ check: c.name, result });
@@ -43,9 +43,11 @@ export async function runChecks(event: CheckEvent, ctx: CheckContext, checks: re
     if ("rewrite" in result) {
       if (event.kind === "action") throw new Error(`check "${c.name}" returned rewrite for an action; rewrite applies to replies only`);
       text = result.rewrite;
+      rewrittenBy = c.name;                                         // named in the trace line for the sent reply
       continue;
     }
     return { result, by: c.name, text, trail };
   }
-  return { result: event.kind === "reply" && text !== event.text ? rewrite(text!) : allow(), text, trail };
+  const rewritten = event.kind === "reply" && text !== event.text;
+  return { result: rewritten ? rewrite(text!) : allow(), by: rewritten ? rewrittenBy : undefined, text, trail };
 }

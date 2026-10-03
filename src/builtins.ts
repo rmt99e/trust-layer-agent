@@ -19,7 +19,7 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A clear yes: an affirmative phrase, and no negation, hedge or question. */
 export function isAffirmative(text: string, phrases = YES): boolean {
   const t = text.toLowerCase().trim();
-  return !NOT_YES.test(t) && phrases.some((p) => new RegExp(String.raw`(^|\b)${escape(p)}\b`).test(t));
+  return !NOT_YES.test(t) && phrases.some((p) => new RegExp(String.raw`(^|\b)${escape(p.toLowerCase())}\b`).test(t));
 }
 
 // After a quote was shown in an earlier reply, a request to go ahead is consent too. Questions aren't.
@@ -30,7 +30,8 @@ export const isProceed = (text: string) => PROCEED.test(text) && !NOT_PROCEED.te
 /** The warning the Agent constructor prints when verified_first can't do anything. */
 export function verificationWarning(tools: readonly ToolInfo[]): string | undefined {
   if (!tools.some((t) => t.verifies))
-    return "verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified customers.";
+    return "verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified customers. " +
+      "This doesn't apply to sessions your app creates with createSession({ facts: { verified } }); those are still checked.";
 }
 
 const verifiedFirst = check("verified_first", (e, ctx) => {
