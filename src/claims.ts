@@ -23,7 +23,7 @@ export function extractClaims(text: string): Claims {
   ].map(normNumber);
   const percents = all(new RegExp(String.raw`(${NUM})\s?(?:%|percent\b)`, "gi")).map((m) => normNumber(m[1]));
   const dates = [
-    ...all(/\b(\d{4})-(\d{2})-(\d{2})\b/g).map((m) => `${m[1]}-${m[2]}-${m[3]}`),
+    ...all(/\b(\d{4})-(\d{2})-(\d{2})(?!\d)/g).map((m) => `${m[1]}-${m[2]}-${m[3]}`),     // also inside ISO timestamps
     ...all(new RegExp(String.raw`\b${MONTH}\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b`, "gi"))
       .map((m) => (m[3] ? `${m[3]}-` : "") + md(MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) + 1, m[2])),
     ...all(new RegExp(String.raw`\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?${MONTH}(?:,?\s+(\d{4}))?\b`, "gi"))
@@ -70,8 +70,9 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   if (badPct !== undefined) return `Reply states ${badPct}% but no tool returned that percentage. Use a returned value or don't state it.`;
   const badDate = c.dates.find((d) => !ok.dates.has(d));
   if (badDate) return `Reply states the date ${badDate} but no tool returned it. Use a returned date or don't state one.`;
-  if (c.relative.length && confirmedValues(toolValues).dates.size === 0)
-    return `Reply says "${c.relative[0]}" but no tool returned a date this session. Don't promise timing no tool confirmed.`;
+  const relative = c.relative.filter((r) => r !== "today");       // "today" is confirmed by the agent's clock (ctx.now)
+  if (relative.length && confirmedValues(toolValues).dates.size === 0)
+    return `Reply says "${relative[0]}" but no tool returned a date this session. Don't promise timing no tool confirmed.`;
   if (c.done.length) {
     const writes = new Set(ctx.tools.filter((t) => t.kind === "write").map((t) => t.name));
     const calls = ctx.results.filter((r) => writes.has(r.tool));

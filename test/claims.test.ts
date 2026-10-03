@@ -79,6 +79,18 @@ describe("values match by kind", () => {
   });
 });
 
+describe("dates from timestamps and the clock", () => {
+  it("confirms a date from an ISO timestamp a tool returned (the baseline expiry case)", async () => {
+    const c = ctx({ results: [ok("quote_plan_change", { quoteId: "q_001", expiresAt: "2026-10-04T12:00:00.000Z" })] });
+    expect(await verdict("The quote is good until 2026-10-04.", c)).toEqual({ allow: true });
+    expect(await verdict("The quote is good until October 4.", c)).toEqual({ allow: true });
+  });
+  it("allows \"today\" from the agent's clock, but tomorrow still needs a tool date", async () => {
+    expect(await verdict("Thanks, Sam, you're verified. How can I help today?", ctx())).toEqual({ allow: true });
+    expect(await verdict("I'll follow up tomorrow.", ctx())).toMatchObject({ block: expect.stringContaining("tomorrow") });
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);

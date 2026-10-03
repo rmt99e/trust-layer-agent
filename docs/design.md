@@ -126,6 +126,10 @@ new Agent({ ..., checks: [noRefundsOver100] });
 
   Numbers are normalized before matching: commas, currency signs and trailing zeros are stripped, so `$1,019.90` matches `1019.9`. Dates are normalized to ISO.
 
+  **Values match by kind:** money, percent, date or plain number. A tool-result value's kind comes from its field name (`price`, `charge`, `amount`, `savings`, `fee`, `cost`, `total`, `balance` → money; `percent`, `pct` → percent). An operator-text value's kind comes from how it's written (`$4.99`, `10%`). A plain number never confirms money or a percentage, so a 10% discount can't make "$10" look confirmed.
+
+  **Dates:** ISO timestamps in tool results confirm their calendar date. "Today" is confirmed by the agent's clock (`now`); other relative dates need a date a tool returned.
+
   **A value counts as confirmed if it appears in:**
   - a visible tool result or a commitment from this session;
   - operator-authored text: the agent's instructions, journey files or knowledge docs.
