@@ -17,6 +17,8 @@ The model chooses the words; code decides what's allowed. You write three things
 - [SPEC.md](SPEC.md): language-neutral spec: journey JSON Schema, check result shape, session JSON, simulation task format.
 - [docs/design.md](docs/design.md): the API design: tools, checks, session, Model interface, journeys, traces, commands.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents working on this repo.
+- [CHANGELOG.md](CHANGELOG.md): changes per version (Keep a Changelog format).
+- [docs/how-it-was-built.md](docs/how-it-was-built.md): build log: timeline, decision log, the improvement loop, costs.
 
 ## Prompts
 

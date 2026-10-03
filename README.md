@@ -248,6 +248,8 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - [docs/design.md](docs/design.md): the API design notes.
 - [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt): for coding agents.
 - Copy-paste prompts: [add this to my JS/TS app](docs/prompts/add-to-my-app.md) and [port this pattern to my language](docs/prompts/port-to-my-language.md).
+- [CHANGELOG.md](CHANGELOG.md): what changed in each version.
+- [docs/how-it-was-built.md](docs/how-it-was-built.md): the build log: timeline, decisions, and what it cost.
 
 ## Credits
 

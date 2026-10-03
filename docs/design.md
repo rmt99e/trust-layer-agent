@@ -1,5 +1,7 @@
 # trust-layer-agent: API design (v0.1 draft)
 
+> This is the approved design from before v1. SPEC.md describes current behavior; where they differ, SPEC.md is right.
+
 The model chooses the words; code decides what's allowed. This page defines the public API and becomes the seed of SPEC.md. Signatures are TypeScript; every example also runs as plain ES-module JavaScript.
 
 ## 1. Tools
@@ -408,7 +410,7 @@ export async function supportRoute(req, res) {
 }
 ```
 
-Writing this sketch changed the design in one place. A logged-in app already knows who the customer is, so `createSession({ facts })` was added (section 4): chat-based verification is only for anonymous channels. No core change is needed for the four target journeys (which plan fits, where's my request, general product questions, "I'm in danger"): each is tools + journey YAML + simulation tasks, and "I'm in danger" is a `handoff_when: { customer_says: [...] }` guardrail.
+Writing this sketch changed the design in one place. A logged-in app already knows who the customer is, so `createSession({ facts })` was added (section 4): chat-based verification is only for anonymous channels. No core change is needed for the four target journeys ("which plan fits me", "where's my request", general product questions, "I'm in danger"): each is tools + journey YAML + simulation tasks, and "I'm in danger" (escalate to a person) is a `handoff_when: { customer_says: [...] }` guardrail.
 
 ## 13. Decisions (formerly open questions)
 
