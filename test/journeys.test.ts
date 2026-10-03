@@ -67,6 +67,19 @@ describe("journeys", () => {
     expect(r.reply).toBe("There's a $4.99 restocking fee.");
   });
 
+  it.each([
+    ["the source tool returned nothing", [{ call: "get_eligible_plans" }], "(none)"],
+    ["the source tool wasn't called", [], "(not called yet)"],
+  ] as const)("allow_values says why when %s", async (_why, before, reason) => {
+    const tools = [stub("get_eligible_plans", "read", { plans: [] }), stub("quote_plan_change", "read", { quoteId: "q_1" })];
+    const f = fileWith("eligible.yaml", ["id: eligible", "goal: g", "guidance: [Quote eligible plans only.]", "guardrails:",
+      "  - allow_values: { tool: quote_plan_change, input: planId, from: get_eligible_plans, field: \"plans[].id\" }"].join("\n"));
+    const model = scripted([...before, { call: "quote_plan_change", input: { planId: "plus" } }, "Let me check."]);
+    const agent = new Agent({ model, instructions: "Help.", tools, trace: false, journeys: f });
+    await agent.respond(createSession({ facts: { verified: true } }), "Quote me Plus");
+    expect(model.requests.at(-1)!.messages.at(-1)!.content).toContain(`planId must be one of the values get_eligible_plans returned ${reason}.`);
+  });
+
   it("allow_values blocks values the source tool didn't return", async () => {
     const tools = [stub("get_eligible_plans", "read", { plans: [{ id: "plus" }, { id: "pro" }] }), stub("quote_plan_change", "read", { quoteId: "q_1" })];
     const f = fileWith("eligible.yaml", ["id: eligible", "goal: g", "guidance: [Quote eligible plans only.]", "guardrails:",

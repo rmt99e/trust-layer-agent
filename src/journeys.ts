@@ -108,8 +108,9 @@ function compile(id: string, kind: keyof typeof KINDS, s: any, out: LoadedJourne
   if (kind === "require_fact") on((_, ctx) => ctx.facts[s.fact] ? undefined : `${s.tool} needs the fact "${s.fact}" first.`);
   if (kind === "allow_values") on((input, ctx) => {
     if (input[s.input] === undefined) return;
-    const allowed = okOf(ctx, s.from).flatMap((r) => pluck(r.output, s.field));
-    return allowed.includes(input[s.input]) ? undefined : `${s.input} must be one of the values ${s.from} returned (${allowed.join(", ") || "none yet"}).`;
+    const calls = okOf(ctx, s.from), allowed = calls.flatMap((r) => pluck(r.output, s.field));
+    const list = allowed.join(", ") || (calls.length ? "none" : "not called yet");
+    return allowed.includes(input[s.input]) ? undefined : `${s.input} must be one of the values ${s.from} returned (${list}).`;
   });
   if (kind === "handoff_when") {
     const due = (ctx: CheckContext): string | undefined => {
