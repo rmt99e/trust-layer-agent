@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// npx trust-layer-agent test|snapshot --suite <dir> …  (run with no arguments for usage)
+// npx trust-layer-agent test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10]
+// npx trust-layer-agent snapshot --suite <dir> --name v1
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -9,6 +10,7 @@ import type { Model } from "./models/types.js";
 import { runSuite, type Suite, type Trial } from "./sim/simulator.js";
 import { loadTasks } from "./sim/task.js";
 import { toolSpec } from "./tools.js";
+
 export interface TaskSummary { trials: string; passK: boolean; pass1: number; friction: number; cost: number; infra: number }
 export interface Run { config: Record<string, string>; summary: Record<string, TaskSummary>; overall: number; cost: number }
 
@@ -31,6 +33,7 @@ export function summarize(trials: Trial[]): Record<string, TaskSummary> {
   return out;
 }
 export const overall = (s: Record<string, TaskSummary>) => { const v = Object.values(s); return v.length ? v.filter((x) => x.passK).length / v.length : 0; };
+
 const hash = (x: unknown) => createHash("sha256").update(typeof x === "string" ? x : JSON.stringify(x)).digest("hex").slice(0, 12);
 const read = (p?: string | string[], ext?: RegExp) => (p ? listFiles(p, ext).map((f) => readFileSync(f, "utf8")) : []);
 
@@ -45,6 +48,7 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
     suite: hash(readFileSync(suiteFile, "utf8")),
   };
 }
+
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 /** Lines describing what changed since a snapshot: config warnings, flipped tasks, friction and cost. */
 export function compare(prev: Run & { name: string }, cur: Run): string[] {
@@ -58,6 +62,7 @@ export function compare(prev: Run & { name: string }, cur: Run): string[] {
   out.push(`  overall pass^k ${pct(prev.overall)} → ${pct(cur.overall)}; cost $${prev.cost.toFixed(2)} → $${cur.cost.toFixed(2)}`);
   return out;
 }
+
 const newest = (dir: string) => existsSync(dir)
   ? readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => join(dir, f)).sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs).pop() : undefined;
 const json = (f: string) => JSON.parse(readFileSync(f, "utf8"));

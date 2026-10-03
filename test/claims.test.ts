@@ -12,7 +12,7 @@ const verdict = async (reply: string, c: ReturnType<typeof ctx>) => (await runCh
 const TABLE: { name: string; reply: string; c: ReturnType<typeof ctx>; expect: "allow" | "block"; reason?: string; note?: string }[] = [
   { name: "number normalization", reply: "Your new total is $1,019.90.", c: ctx({ results: [ok("get_account", { balance: 1019.9 })] }), expect: "allow" },
   { name: "other currency symbol", reply: "The add-on is €5.", c: ctx({ results: [ok("get_account", { addon: { amount: 5, currency: "EUR" } })] }), expect: "allow" },
-  { name: "made-up price", reply: "That's $18.99/month.", c: ctx({ results: [ok("quote_plan_change", { monthlyPrice: 29 })] }), expect: "block", reason: "18.99" },
+  { name: "made-up price", reply: "That's $18.99/month.", c: ctx({ results: [ok("quote_plan_change", { monthlyPrice: 29 })] }), expect: "block", reason: "amount 18.99" },
   { name: "operator-authored text", reply: "Refunds are allowed within 30 days.", c: ctx({ operatorText: ["Refunds are allowed within 30 days of the invoice date."] }),
     expect: "allow", note: "allowed because durations aren't a claim kind in v0.1; the operator text isn't what lets it through" },
   { name: "customer's number repeated", reply: "Sure, $1 works.", c: ctx({ say: ["c: Can I get Plus for $1?"], results: [ok("quote_plan_change", { monthlyPrice: 29, planId: "plus_1" })] }),
@@ -58,11 +58,24 @@ describe("no_unconfirmed_claims", () => {
   });
 });
 
-describe("known v1 bugs", () => {
-  // v1 known bug: unit-blind matching. A 10% discount makes "$10" look confirmed.
-  it.fails("blocks $10 when the only 10 in the session is a 10% discount", async () => {
-    const c = ctx({ results: [ok("get_account", { approvedDiscounts: [{ code: "LOYAL10", percent: 10 }] })] });
-    expect(await verdict("I can do Plus for $10 a month.", c)).toHaveProperty("block");
+describe("values match by kind", () => {
+  const discount = ctx({ results: [ok("get_account", { approvedDiscounts: [{ code: "LOYAL10", percent: 10 }] })] });
+  const savings = ctx({ results: [ok("quote_plan_change", { monthlySavings: 50 })] });
+  it("blocks $10 when the only 10 in the session is a 10% discount", async () => {
+    expect(await verdict("I can do Plus for $10 a month.", discount)).toMatchObject({ block: expect.stringContaining("amount 10") });
+    expect(await verdict("Your discount is 10% off.", discount)).toEqual({ allow: true });
+  });
+  it("blocks 50% when the only 50 is a $50 saving, and allows $50", async () => {
+    expect(await verdict("That's 50% off.", savings)).toMatchObject({ block: expect.stringContaining("50%") });
+    expect(await verdict("You'd save $50 a month.", savings)).toEqual({ allow: true });
+  });
+  it("never lets a plain number confirm money", async () => {
+    expect(await verdict("That's $240.", ctx({ results: [ok("get_usage", { cycles: [{ used: 240 }] })] }))).toHaveProperty("block");
+  });
+  it("takes operator-text kinds from how the value is written", async () => {
+    const c = ctx({ operatorText: ["A usage pack is $5 and gives 100 credits; members get 15% off."] });
+    expect(await verdict("A pack is $5, and you get 15% off.", c)).toEqual({ allow: true });
+    expect(await verdict("A pack is $100.", c)).toHaveProperty("block");
   });
 });
 

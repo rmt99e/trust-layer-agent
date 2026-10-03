@@ -67,7 +67,7 @@ describe("grader", () => {
     const c = ctx({ results: [okCall("get_plan", {}, { price: 1019.9, starts: "2026-11-01" })] });
     expect(grade(tk, observed({ ctx: c, sent: ["It's $1,019.90 a month from November 1, 2026."] })).claims.pass).toBe(true);
     expect(grade(tk, observed({ ctx: c, sent: ["It's $1,019.90 a month."] })).claims).toMatchObject({ pass: false, detail: "not said: date 2026-11-01" });
-    expect(grade(t("  {}"), observed({ ctx: c, sent: ["It's $5."] })).claims).toMatchObject({ pass: false, detail: expect.stringContaining("Reply states 5") });
+    expect(grade(t("  {}"), observed({ ctx: c, sent: ["It's $5."] })).claims).toMatchObject({ pass: false, detail: expect.stringContaining("Reply states the amount 5") });
   });
 });
 

@@ -34,22 +34,30 @@ export function extractClaims(text: string): Claims {
   return { money, percents, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done: all(DONE).map((m) => m[0].toLowerCase()) };
 }
 
-/** Every number and date a source confirms. Dates are kept as YYYY-MM-DD and MM-DD. */
+// A number's kind, from the name of the field holding it. Unknown fields hold plain numbers.
+type Kind = "money" | "percent" | "plain";
+const kindOf = (key: string): Kind => /percent|pct/i.test(key) ? "percent"
+  : /price|charge|amount|savings|fee|cost|total|balance|increase|refund/i.test(key) ? "money" : "plain";
+
+/** Every value a source confirms, by kind. Dates are kept as YYYY-MM-DD and MM-DD. */
 export function confirmedValues(sources: (Json | undefined)[], texts: readonly string[] = []) {
-  const numbers = new Set<number>(), dates = new Set<string>();
-  const addText = (s: string) => {
-    for (const m of s.matchAll(new RegExp(String.raw`(?<![\w.])${NUM}(?![\w])`, "g"))) numbers.add(normNumber(m[0]));   // not ids like acc_1
-    for (const d of extractClaims(s).dates) { dates.add(d); dates.add(d.slice(-5)); }
+  const ok = { money: new Set<number>(), percent: new Set<number>(), plain: new Set<number>(), dates: new Set<string>() };
+  const addText = (s: string, kind: Kind) => {
+    const c = extractClaims(s);
+    c.money.forEach((n) => ok.money.add(n));                       // written form wins: "$4.99", "10%"
+    c.percents.forEach((n) => ok.percent.add(n));
+    for (const d of c.dates) { ok.dates.add(d); ok.dates.add(d.slice(-5)); }
+    for (const m of s.matchAll(new RegExp(String.raw`(?<![\w.$€£])${NUM}(?![\w%])`, "g"))) ok[kind].add(normNumber(m[0]));   // not ids like acc_1
   };
-  const walk = (v: Json | undefined): void => {
-    if (typeof v === "number") numbers.add(normNumber(v));
-    else if (typeof v === "string") addText(v);
-    else if (Array.isArray(v)) v.forEach(walk);
-    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  const walk = (v: Json | undefined, key: string): void => {
+    if (typeof v === "number") ok[kindOf(key)].add(normNumber(v));
+    else if (typeof v === "string") addText(v, kindOf(key));
+    else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
+    else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => walk(x, k));
   };
-  sources.forEach(walk);
-  texts.forEach(addText);
-  return { numbers, dates };
+  sources.forEach((v) => walk(v, ""));
+  texts.forEach((t) => addText(t, "plain"));
+  return ok;
 }
 
 /** Why a draft reply isn't backed by this session's tools or the operator's text, or undefined if it is. */
@@ -57,8 +65,9 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   const c = extractClaims(text);
   const toolValues = [...ctx.results.filter((r) => r.ok).map((r) => r.output), ...ctx.commitments.map((k) => k.values as Json)];
   const ok = confirmedValues(toolValues, ctx.operatorText);
-  const bad = [...c.money, ...c.percents].find((n) => !ok.numbers.has(n));
-  if (bad !== undefined) return `Reply states ${bad} but no tool returned ${bad}. Use a returned value or don't state it.`;
+  const badMoney = c.money.find((n) => !ok.money.has(n)), badPct = c.percents.find((n) => !ok.percent.has(n));
+  if (badMoney !== undefined) return `Reply states the amount ${badMoney} but no tool returned that amount. Use a returned value or don't state it.`;
+  if (badPct !== undefined) return `Reply states ${badPct}% but no tool returned that percentage. Use a returned value or don't state it.`;
   const badDate = c.dates.find((d) => !ok.dates.has(d));
   if (badDate) return `Reply states the date ${badDate} but no tool returned it. Use a returned date or don't state one.`;
   if (c.relative.length && confirmedValues(toolValues).dates.size === 0)
@@ -76,7 +85,9 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
 /** Mark open commitments whose values appear in a sent reply as shown on this turn. */
 export function markShown(commitments: Commitment[], reply: string, turn: number): Commitment[] {
   const c = extractClaims(reply);
-  const said = new Set([...c.money, ...c.percents]);
-  return commitments.map((k) => k.shownTurn === undefined && k.status === "open" &&
-    (reply.includes(k.id) || [...confirmedValues([k.values as Json]).numbers].some((n) => said.has(n))) ? { ...k, shownTurn: turn } : k);
+  return commitments.map((k) => {
+    const v = confirmedValues([k.values as Json]);
+    const shown = reply.includes(k.id) || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n));
+    return k.shownTurn === undefined && k.status === "open" && shown ? { ...k, shownTurn: turn } : k;
+  });
 }
