@@ -7,9 +7,9 @@ import type { Model, ModelMessage } from "./models/types.js";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { listFiles, loadJourneys, type LoadedJourneys } from "./journeys.js";
-import { createSession, currentTurn, type Json, type Session } from "./session.js";
+import { createSession, currentTurn, forget, type ForgottenSession, type Json, type Session } from "./session.js";
 import { runTool, toolSpec, type Tool } from "./tools.js";
-import { jsonl, type TraceSink } from "./trace.js";
+import { jsonl, maskTrace, type TraceSink } from "./trace.js";
 
 export interface AgentOptions {
   model: string | Model;
@@ -76,6 +76,17 @@ export class Agent {
 
   respond(session: Session | null, message: string): Promise<Reply> { return this.turn(session, message); }
 
+  /** Forget a session: returns the tombstone to store, and deletes its trace when the sink supports it. */
+  forget(session: Session): ForgottenSession {
+    if (this.trace?.forget) this.trace.forget(session.id);
+    else if (this.trace && !Agent.warnedForget) {
+      Agent.warnedForget = true;
+      console.warn("⚠️  This trace sink has no forget(sessionId); delete this session's trace lines yourself.");
+    }
+    return forget(session);
+  }
+  private static warnedForget = false;
+
   chat(opts: { session?: Session } = {}): Promise<void> {
     return chatLoop((s, m, observe) => this.turn(s, m, observe), opts);
   }
@@ -103,7 +114,7 @@ export class Agent {
     const turn = currentTurn(s);
     const emit = (type: string, data: Record<string, unknown>) => {
       const line = { type, sessionId: s.id, turn, ...data };
-      this.trace?.write(line);
+      this.trace?.write(this.trace.mask === false ? line : (maskTrace(line) as Record<string, unknown>));   // every sink
       observe?.(line);
     };
     const msgs = this.history(s);

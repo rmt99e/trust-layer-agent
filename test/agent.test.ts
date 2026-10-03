@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -175,6 +175,34 @@ describe("Agent", () => {
     expect(model.requests[0].system).toContain("## Knowledge: policy.md\nUsage packs add 100 credits for $5");
     expect(r.reply).toBe("A usage pack is $5 for 100 credits.");
     expect(model.requests).toHaveLength(1);
+  });
+
+  it("masks trace lines for custom sinks too, and leaves them raw only when the sink opts out", async () => {
+    const masked: any[] = [], raw: any[] = [];
+    for (const [sink, out] of [[{ write: (l: any) => masked.push(l) }, masked], [{ mask: false, write: (l: any) => raw.push(l) }, raw]] as const) {
+      const agent = new Agent({ model: scripted(["Got it."]), instructions: "x", tools: [tools.account], trace: sink });
+      await agent.respond(loggedIn(), "I'm dana@example.com, call +1 415 555 0100");
+      expect(out.at(-1).customer).toBe(sink.mask === false ? "I'm dana@example.com, call +1 415 555 0100" : "I'm [email], call [phone]");
+    }
+  });
+
+  it("agent.forget deletes the session's trace file and returns the tombstone", async () => {
+    const { agent } = agentWith(["Hello."]);
+    const r = await agent.respond(loggedIn(), "hi");
+    const file = join(dir, `${r.session.id}.jsonl`);
+    expect(existsSync(file)).toBe(true);
+    expect(agent.forget(r.session)).toEqual({ v: 1, id: r.session.id, forgotten: true });
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("warns once when a custom sink can't forget", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = new Agent({ model: scripted(["a", "b"]), instructions: "x", tools: [tools.account], trace: { write: () => {} } });
+    const a = await agent.respond(loggedIn(), "hi"), b = await agent.respond(loggedIn(), "hi");
+    warn.mockClear();
+    (Agent as any).warnedForget = false;
+    agent.forget(a.session); agent.forget(b.session);
+    expect(warn.mock.calls.flat().filter((m) => /no forget/.test(String(m)))).toHaveLength(1);
   });
 
   it("rejects duplicate tool names and warns when nothing can verify", () => {
