@@ -1,0 +1,42 @@
+# trust-layer-agent
+
+> trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.
+
+The model chooses the words; code decides what's allowed. You write three things: tools (functions wrapped with `read()` or `write()`, each declaring which fields the model may see), checks (one function type returning allow, block, rewrite or handoff, guarding both tool calls and replies), and optional journey YAML files. You call one thing: `await agent.respond(session, message)`, where the session is plain JSON your app stores anywhere. Two commands: `test` runs simulated customers k times per task and reports pass^k; `snapshot` pins a passing version.
+
+- Install: `npm install trust-layer-agent`. Node 20+.
+- About 10 lines for a working agent: define a `read` tool and a `write` tool with zod inputs, then `new Agent({ model: "anthropic:<model>", instructions, tools })` and `await agent.chat()` to try it.
+- Built-in checks are on by default: verify before account data, a clear yes after a quote before a write, no prices, dates or "done" that no tool returned, customer and tool text treated as data, handoff after repeated failures.
+- Published as ESM JavaScript with TypeScript types: plain-JS apps import it with no build step.
+- Runtime dependencies: zod and yaml only. Model adapters (`anthropic`, `openai-compatible`) use plain fetch, no provider SDKs. Any object implementing the Model interface also works.
+- Extension points: tools, checks, journeys, model adapters.
+
+## Docs
+
+- [README.md](README.md): the failure it prevents, the quickstart, the design and the example.
+- [SPEC.md](SPEC.md): language-neutral spec: journey JSON Schema, check result shape, session JSON, simulation task format.
+- [docs/design.md](docs/design.md): the API design: tools, checks, session, Model interface, journeys, traces, commands.
+- [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents working on this repo.
+
+## Prompts
+
+- [Add to my app](docs/prompts/add-to-my-app.md): copy-paste prompt for adding an agent to a JS/TS app.
+- [Port to my language](docs/prompts/port-to-my-language.md): copy-paste prompt for porting the pattern to another language from SPEC.md.
+
+## Examples
+
+- [examples/refunds.js](examples/refunds.js): the 10-line quickstart with built-in checks.
+- [examples/subscriptions/](examples/subscriptions/): a fictional subscription app with verification, quotes, plan changes, refunds and handoff.
+- [examples/subscriptions/tools.js](examples/subscriptions/tools.js): read and write tools, field visibility, quote commitments.
+- [examples/subscriptions/agent.js](examples/subscriptions/agent.js): the agent configuration shared by chat and simulation.
+- [examples/subscriptions/journeys/plan-change.yaml](examples/subscriptions/journeys/plan-change.yaml): a journey file: goal, guidance, done_when, guardrails.
+- [examples/subscriptions/knowledge/policy.md](examples/subscriptions/knowledge/policy.md): the policy the agent follows.
+- [examples/subscriptions/sim/suite.js](examples/subscriptions/sim/suite.js): the simulation suite: seeded store, stand-in tools, graded state.
+- [examples/subscriptions/sim/tasks/](examples/subscriptions/sim/tasks/): simulation tasks (persona, goal, expected writes and claims).
+
+## Optional
+
+- [test/claims.test.ts](test/claims.test.ts): table of draft replies and whether no_unconfirmed_claims allows or blocks them.
+- [test/builtins.test.ts](test/builtins.test.ts): tests for the built-in checks, including what counts as a yes.
+- [snapshots/](snapshots/): pinned versions with per-task pass^k results.
+- [LICENSE](LICENSE): MIT.
