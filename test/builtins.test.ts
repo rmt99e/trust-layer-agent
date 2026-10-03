@@ -39,6 +39,18 @@ describe("yes_after_quote", () => {
   it.each(["Can you just switch me?", "go ahead and switch", "please switch me", "do it 👍"])("%s is a request to proceed", (t) => expect(isProceed(t)).toBe(true));
   it.each(["what would it cost?", "Before you change anything, what exactly would it cost me?", "don't switch me yet"])("%s is not", (t) => expect(isProceed(t)).toBe(false));
 
+  describe("more consent phrases (fix 3)", () => {
+    const shown = (said: string) => run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", `c: ${said}`]);
+    const notShown = (said: string) => run(["c: switch me to Plus", "a: Let me check.", `c: ${said}`], [quote({ shownTurn: undefined })]);
+    it.each(["sounds good", "sounds good to me, I'd like to go with that", "let's go with that", "I'll take it"])
+      ("after a shown quote, %s → yes", async (said) => expect((await shown(said)).result).toEqual(allow()));
+    // Attacks.
+    it.each(["doesn't sound good", "sounds good but what's the fee?", "I won't take it", "I don't think I'll take it", "let's not go with that"])
+      ("after a shown quote, %s → not a yes", async (said) => expect((await shown(said)).result).toHaveProperty("block"));
+    it.each(["sounds good", "sounds good to me, I'd like to go with that", "let's go with that", "I'll take it"])
+      ("before the quote was shown, %s → not a yes", async (said) => expect((await notShown(said)).result).toHaveProperty("block"));
+  });
+
   it("counts a proceed-request as consent only after the quote was shown in an earlier reply", async () => {
     expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: Can you just switch me?"])).result).toEqual(allow());
     expect((await run(["c: switch me to Plus", "a: Let me check.", "c: Can you just switch me?"], [quote({ shownTurn: undefined })])).result).toHaveProperty("block");

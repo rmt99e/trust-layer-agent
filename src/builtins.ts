@@ -13,7 +13,7 @@ export interface BuiltinOptions {
 
 const YES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "confirm", "confirmed",
   "sounds good", "let's do it", "lets do it", "that works", "proceed", "absolutely", "correct", "agreed"];
-const NOT_YES = /\b(no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but)\b|\?/i;
+const NOT_YES = /\b(no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but)\b|n't\b|\?/i;
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A clear yes: an affirmative phrase, and no negation, hedge or question. */
@@ -23,8 +23,8 @@ export function isAffirmative(text: string, phrases = YES): boolean {
 }
 
 // After a quote was shown in an earlier reply, a request to go ahead is consent too. Questions aren't.
-const PROCEED = /\b(?:(?:just |please )?switch me|switch it|go ahead|do it|make the (?:switch|change)|proceed|let's do (?:it|that))\b/i;
-const NOT_PROCEED = /\b(?:no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|cost|price|how much|fee|charge|details?|before you|what would|what will)\b/i;
+const PROCEED = /\b(?:(?:just |please )?switch me|switch it|go ahead|do it|make the (?:switch|change)|proceed|let's do (?:it|that)|(?:let's |i'll |i will )?go with (?:that|it|this)|i'll take (?:it|that)|i will take (?:it|that))\b/i;
+const NOT_PROCEED = /\b(?:no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but|cost|price|how much|fee|charge|details?|before you|what would|what will)\b|n't\b/i;
 export const isProceed = (text: string) => PROCEED.test(text) && !NOT_PROCEED.test(text);
 
 /** The warning the Agent constructor prints when verified_first can't do anything. */
