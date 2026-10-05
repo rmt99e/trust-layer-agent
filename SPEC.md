@@ -65,13 +65,16 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 - `visible` omitted, `strictVisibility: true`: the output is hidden entirely (`null`).
 - An output that projects to nothing becomes `null`.
 
-**Confirm.** `confirm: { commitment, by }` on a write ties it to a commitment: `input[by]` names the commitment's `id` (see yes_after_quote). After such a write succeeds, every commitment whose `id` equals `input[by]` MUST get `status: "used"` and `acceptedTurn: <turn>`. `confirm: false` exempts a write from yes_after_quote.
+**Confirm.** `confirm: { commitment, by }` on a write ties it to a commitment: `input[by]` names the commitment's `id` (see yes_after_quote). After such a write succeeds, every commitment whose `id` equals `input[by]` **and** whose `type` equals `commitment` MUST get `status: "used"` and `acceptedTurn: <turn>`; a commitment of another type with the same id is untouched. `confirm: false` exempts a write from yes_after_quote.
 
 **Verification flags.** `beforeVerification: true` exempts a tool from verified_first. `verifies: true` marks a tool whose records are expected to set `facts.verified` and turns verified_first on; v0.1 does not restrict which tool's records may set `facts.verified`.
 
 **Reserved name.** If a tool named `handoff_to_person` succeeds, the turn MUST end in a handoff with summary `String(input.summary ?? "Customer asked for a person.")` and reason `handoff_to_person`.
 
 **Failures counter.** `session.failures` is set to `0` after any successful tool call and incremented after any failed tool call. Blocked actions and unknown tool names do not change it.
+
+<!-- V4: write outcomes (done/pending/failed/unknown), reconciliation reads, failure-language guard, no repeated writes in a turn -->
+> **Pending: v4.** Write outcomes beyond succeeded/failed, and reconciliation reads, are not part of v0.1; in v0.1 a write either resolves (`ok: true`) or throws (`ok: false`).
 
 ## 2. respond(): one turn
 
@@ -120,14 +123,14 @@ Helpers: `allow()`, `block(reason)`, `rewrite(text)`, `handoff(summary)`, `check
 
 **Pipeline order:** built-ins (`verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, minus any disabled), then journey guardrail checks in file and list order, then custom checks in array order. Every check sees every event; a check ignores events it doesn't apply to by returning allow.
 - **Actions:** the first non-allow result wins and stops the chain. A `rewrite` for an action MUST raise an error.
-- **Replies:** a `rewrite` replaces the text and later checks see the new text; `block` or `handoff` stops the chain. If the chain completes with changed text, the result is `rewrite`.
+- **Replies:** a `rewrite` replaces the text and later checks see the new text; `block` or `handoff` stops the chain. If the chain completes with changed text, the result is `rewrite`, attributed to the last check that rewrote it (the name in its trace line).
 
 `now` is the agent's clock (option `now`, default real time). Built-ins are disabled with `builtins: { <name>: false }`.
 
 ## 5. Built-in checks
 
 ### 5.1 verified_first (actions)
-Allow if the tool has `beforeVerification`, or `facts.verified === true`. Otherwise, if no tool declares `verifies` and the key `verified` is absent from facts, the check is **off** (allow); the agent constructor MUST warn: `verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified customers.` Otherwise block: `Verify the customer before using <tool> (use <v1 or v2>).` (the parenthetical lists `verifies` tools; omitted if none).
+Allow if the tool has `beforeVerification`, or `facts.verified === true`. Otherwise, if no tool declares `verifies` and the key `verified` is absent from facts, the check is **off** (allow); unless verified_first is disabled, the agent constructor MUST warn: `verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified customers. This doesn't apply to sessions your app creates with createSession({ facts: { verified } }); those are still checked.` Otherwise block: `Verify the customer before using <tool> (use <v1 or v2>).` (the parenthetical lists `verifies` tools; omitted if none).
 
 ### 5.2 yes_after_quote (actions on write tools whose `confirm` is not `false`)
 Let `last` = the last message, `c` = the tool's `confirm`, `id = input[c.by]`, `k` = the first commitment with `type == c.commitment` and `id == id`, `shownEarlier = k.shownTurn defined and < turn`.
@@ -139,11 +142,13 @@ Let `last` = the last message, `c` = the tool's `confirm`, `id = input[c.by]`, `
 6. `k.shownTurn` undefined or `>= turn`: block `Show the customer <commitment> "<id>" (its price) and wait for a yes after it before <tool>.`
 7. Allow.
 
-`isYes(t)`: lower-case and trim `t`; false if it matches `NOT_YES = /\b(no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but)\b|\?/i`; else true if some phrase `p` matches `(^|\b)<escaped p>\b`. Default phrases: `yes, yeah, yep, yup, sure, ok, okay, go ahead, do it, please do, confirm, confirmed, sounds good, let's do it, lets do it, that works, proceed, absolutely, correct, agreed`. `builtins.yes_after_quote.phrases` **replaces** the list (phrases are matched as given against lower-cased text, so they SHOULD be lower case).
+`isYes(t)`: lower-case and trim `t`; false if it matches `NOT_YES = /\b(no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but)\b|n't\b|\?/i`; else true if some phrase `p` matches `(^|\b)<escaped lower-cased p>\b`. Default phrases: `yes, yeah, yep, yup, sure, ok, okay, go ahead, do it, please do, confirm, confirmed, sounds good, let's do it, lets do it, that works, proceed, absolutely, correct, agreed`. `builtins.yes_after_quote.phrases` **replaces** the list; custom phrases MUST be lower-cased before matching, so `"Make It So"` matches `make it so`.
 
-`isProceed(t)` = `PROCEED` matches AND `NOT_PROCEED` doesn't (both `/i`):
-`PROCEED = \b(?:(?:just |please )?switch me|switch it|go ahead|do it|make the (?:switch|change)|proceed|let's do (?:it|that))\b`
-`NOT_PROCEED = \b(?:no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|cost|price|how much|fee|charge|details?|before you|what would|what will)\b`
+`isProceed(t)` = `PROCEED` matches AND `NOT_PROCEED` doesn't (both `/i`). It counts only when `shownEarlier`:
+`PROCEED = \b(?:(?:just |please )?switch me|switch it|go ahead|do it|make the (?:switch|change)|proceed|let's do (?:it|that)|(?:let's |i'll |i will )?go with (?:that|it|this)|i'll take (?:it|that)|i will take (?:it|that))\b`
+`NOT_PROCEED = \b(?:no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but|cost|price|how much|fee|charge|details?|before you|what would|what will)\b|n't\b`
+
+So after a shown quote "let's go with that" and "I'll take it" consent, while "I won't take it", "let's not go with that" and "sounds good but what's the fee?" don't; before the quote was shown, none of them do.
 
 ### 5.3 no_unconfirmed_claims (replies)
 Extract claims from the draft (5.4), collect confirmed values, and block on the first failure in this order: money, percent, date, relative date, done-language. Reasons (numbers printed in shortest decimal form, dates as extracted):
@@ -156,11 +161,20 @@ Extract claims from the draft (5.4), collect confirmed values, and block on the 
 
 **Confirmed sources:** visible outputs of successful ToolResults this session; `values` of every commitment (any status); operator text. Customer text never confirms anything. Derived values (sums, differences) are not computed: tools must return every number the agent may say.
 
+**Refusal allowance.** An unconfirmed money or percent value `n` is still allowed when (a) a customer message in the context states `n` with the same kind (5.4 extraction), and (b) **every** mention of `n` of that kind in the draft (matched with the 5.4 money or percent pattern) lies inside the agent's own refusal: with `before` = the draft text before the mention, after the last `CLAUSE_BREAK`, and `after` = the text from the mention up to the next `CLAUSE_BREAK`, `REFUSAL` matches `before` and `COMPARATIVE` does not match `before + after`. All `/i`:
+`CLAUSE_BREAK = [.!?;:,\n]|\b(?:but|because|and|so|although|though)\b`
+`REFUSAL = \b(?:i|we)(?:'m|'re|\s+am|\s+are)?\s+(?:can't|cannot|can not|won't|will not|unable to|not able to)\s+(?:offer|do|give|apply|get|set|lower|match|honou?r|reduce|provide|make)\b(?:\s+\S+){0,5}\s*$`
+`COMPARATIVE = \b(?:than|below|under|above|over|less|more|at least|at most|lowest|best|cheapest|minimum|maximum)\b`
+So "I can't offer Plus at $10" passes; "I can't believe it's only $10", "I can't do $10, but your new price is $10", "You won't get a better deal than $10" and "I can't go lower than $10" block. A number the customer never said gets no allowance.
+
 **Kinds.** A number in a tool output or commitment gets its kind from the nearest enclosing object key (array items inherit it): `/percent|pct/i` → percent; else `/price|charge|amount|savings|fee|cost|total|balance|increase|refund/i` → money; else plain. A string value contributes (a) its written-form money, percents and dates (extracted as in 5.4), and (b) every bare number matching `(?<![\w.$€£])NUM(?![\w%])` under the field's kind (so `acc_1` contributes nothing). Operator text contributes written forms plus bare numbers as plain. A money claim needs a confirmed money value; a percent claim a confirmed percent; plain numbers confirm neither.
 
 **Dates.** Every confirmed date is stored both as `YYYY-MM-DD` and as its `MM-DD` suffix; a claim with a year must match the full date, a claim without a year matches `MM-DD`. ISO timestamps confirm their calendar date. Relative words other than `today` (confirmed by the clock) need at least one date in a tool output or commitment (operator text doesn't count).
 
 **Done-language.** Let the write calls be ToolResults of write tools. If any write tool has a failed call with no later successful call of that same tool, block (listing those tools, comma-joined). Otherwise, if no write call succeeded, block.
+
+<!-- V4: write outcomes (done/pending/failed/unknown), reconciliation reads, failure-language guard, no repeated writes in a turn -->
+> **Pending: v4.** Outcome-aware done-language, a guard on failure language and a ban on repeating a write in one turn are not part of v0.1.
 
 ### 5.4 Claim extraction (shared by 5.3, markShown and the grader)
 With `NUM = \d[\d,]*(?:\.\d+)?`, all values normalized with `norm`:
@@ -168,9 +182,11 @@ With `NUM = \d[\d,]*(?:\.\d+)?`, all values normalized with `norm`:
 - **percents:** `(NUM)\s?(?:%|percent\b)` (`/i`).
 - **dates** (`/i`), each yielding `YYYY-MM-DD` or `MM-DD`: `\b(\d{4})-(\d{2})-(\d{2})(?!\d)` (also inside timestamps); `Month D[st|nd|rd|th][,] [YYYY]`; `D[st|nd|rd|th] [of] Month[,] [YYYY]`; `M/D[/YYYY]` (US order, M 1–12, D 1–31). Month = `jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?` followed by `\b` and an optional `.`.
 - **relative:** `\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|monday|…|sunday)|this (?:week|weekend|month))\b`.
-- **done:** `\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully)\b` (`/i`), dropping a match if the clause before it matches `NEGATED = \b(?:not|never|no longer)\b|n't\b` (`/i`). The clause is the text before the match, after the last `.`, `!`, `?`, `;`, `:`, newline or the word `but`.
+- **done:** `\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully)\b` (`/i`). A match is dropped when:
+  - **negated:** its clause matches `NEGATED = \b(?:not|never|no longer|nothing|none|no)\b|n't\b` (`/i`). The clause is the text before the match, after the last `.`, `!`, `?`, `;`, `:`, `,`, newline or the word `but` (`/i`), with a leading interjection `^\s*no (?:problem|worries|worry)\b` (`/i`) removed first. So "Nothing has been changed" and "None of your settings have been changed" are not claims, while "No problem, your plan has been switched", "No worries your refund has been processed" and "No, it's done" are;
+  - **status:** the match contains `all set` and the text right after it matches `^\s+(?:staying|to stay|on your (?:current|existing)|with your (?:current|existing))\b` (`/i`). "You're all set staying on your Starter plan" reports that nothing changed; "You're all set." and "You're all set, your plan has been switched" still claim.
 
-Known v0.1 false positives are intentional and tabled (e.g. a conditional "if you switched" is blocked).
+Known v0.1 false positives are intentional and tabled (e.g. a conditional "if you switched" is blocked). Every relaxation above (refusal allowance, negated subjects, status phrases, extra consent phrases) is paired with attack rows in the test tables that MUST keep blocking.
 
 **markShown.** After a reply is sent, each commitment with `status == "open"` and no `shownTurn` gets `shownTurn = T` if the reply contains its `id` as a substring, or states a money or percent value (5.4) equal to one of the commitment's values of that kind.
 
@@ -298,7 +314,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 }
 ```
 
-`createSession({ facts? })` returns `{ v: 1, id, rev: 0, status: "open", facts, commitments: [], results: [], messages: [], failures: 0 }`. `forget(session)` returns exactly `{ "v": 1, "id": "<id>", "forgotten": true }`; the app overwrites or deletes its stored copy.
+`createSession({ facts? })` returns `{ v: 1, id, rev: 0, status: "open", facts, commitments: [], results: [], messages: [], failures: 0 }`. `forget(session)` returns exactly `{ "v": 1, "id": "<id>", "forgotten": true }`; the app overwrites or deletes its stored copy. `agent.forget(session)` returns the same tombstone and also deletes the session's trace: it calls the sink's `forget(session.id)` when the sink has one, and otherwise (if tracing is on) warns once per process: `⚠️  This trace sink has no forget(sessionId); delete this session's trace lines yourself.` Apps SHOULD use `agent.forget`.
 
 ## 8. Model adapters
 
@@ -315,18 +331,24 @@ An adapter translates this to one provider's HTTP API and maps stop reasons (inc
 
 ## 9. Traces and privacy
 
-A trace sink receives one object per event; the default sink appends JSON lines to `traces/<sessionId>.jsonl`. Every line has `ts` (ISO), `type`, `sessionId`, `turn`:
+```ts
+TraceSink { write(line): void; forget?(sessionId): void; mask?: boolean }
+```
+
+Agent option `trace`: a sink, `false` (no tracing), or omitted (default `jsonl()`). The agent emits one line per event; every line has `type`, `sessionId`, `turn`:
 - `turn`: `customer`, `reply`, `retries`, `model` (model id), `usage`, `handoff?`.
 - `tool`: `tool`, `input` (as recorded), `ok`, `output` (visible), `error`.
-- `check` (blocked actions, blocked or rewritten drafts): `event` (`action`|`reply`), `check`, `result`; actions add `tool` and the model's `input`; replies add `draft`. Handoffs appear on the `turn` line.
+- `check` (blocked actions, blocked or rewritten drafts): `event` (`action`|`reply`), `check`, `result`; actions add `tool` and the model's `input`; replies add `draft`. A rewritten reply's line names the check that rewrote it (section 4). Handoffs appear on the `turn` line.
 
-**Masking** is on by default for every string at any depth (keys unchanged), applied in this order: emails `[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}` → `[email]`; `\b\d{3}-\d{2}-\d{4}\b` → `[ssn]`; `\+?\d[\d\s().-]{8,}\d` → `[card]` if its 13–19 digits pass the Luhn check, else `[phone]` if it has ≥ 10 digits, else unchanged; `\b\d{1,6}\s+(?:[A-Z][a-z]+\s)+(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b\.?` (`/i`) → `[address]`. The sink option `mask: false` turns it off. Masking is best effort; the guarantee is field visibility (section 1). The same masker applies to tool output strings under default visibility.
+**Every sink gets masked lines.** Unless the sink sets `mask: false`, the agent MUST mask a line before calling `write`, whatever the sink. The structural fields `type`, `sessionId` and `turn` are never masked (a session id with 10+ digits would otherwise read as a phone number and land in the wrong file). The masker is exported as `maskTrace(value)`: every string at any depth, keys unchanged, in this order: emails `[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}` (`/i`) → `[email]`; `\b\d{3}-\d{2}-\d{4}\b` → `[ssn]`; `\+?\d[\d\s().-]{8,}\d` → `[card]` if its 13–19 digits pass the Luhn check, else `[phone]` if it has ≥ 10 digits, else unchanged; `\b\d{1,6}\s+(?:[A-Z][a-z]+\s)+(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b\.?` (`/i`) → `[address]`. Masking is best effort; the guarantee is field visibility (section 1). The same masker applies to tool output strings under default visibility.
+
+**`jsonl({ dir = "traces", mask? })`**, the default sink, appends `{ ts (ISO), ...line }` as one JSON line to `<dir>/<sessionId>.jsonl` and passes `mask` through to the agent. Its `forget(sessionId)` deletes that file (no error if it is absent). A custom sink SHOULD implement `forget` so `agent.forget` (section 7) can delete its lines.
 
 ## 10. Simulation suites and tasks
 
-A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (agent options except model, tools, clock and trace), `tools` (the real tools; every declaration comes from here), `standIns` (`{ toolName: (input, ctx, store) -> output }`, replacing only `run`), `seed`, `createStore(seed, { now })`, `state(store)` (the projection the grader compares), `tasks` (file or directory), `agentModel`, `customerModel` (pinned for the run), `prices` (`{ modelId: { input, output } }`, USD per million tokens), optional `now` (fixed ISO clock).
+A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (agent options except model, tools, clock and trace), `tools` (the real tools; every declaration comes from here), `standIns` (`{ toolName: (input, ctx, store) -> output }`, replacing only `run`), `seed`, `createStore(seed, { now })`, `state(store)` (the projection the grader compares; it MAY return a promise, e.g. to read a seeded test database, and is awaited), `tasks` (file or directory), `agentModel`, `customerModel` (pinned for the run), `prices` (`{ modelId: { input, output } }`, USD per million tokens), optional `now` (fixed ISO clock).
 
-**Before any model call** `test` MUST fail if: a tool has no stand-in or a stand-in names no tool; a task file is invalid (errors as `Invalid task:` + `file:line:col` lines); a task names an unknown tool; a task's `expect.writes` throw when applied through the stand-ins to a fresh seeded store (`task <id>: expect.writes[<i>] <tool> fails on the seed: <message>`); a model id has no price.
+**Before any model call** `test` MUST fail if: a tool has no stand-in or a stand-in names no tool; a task file is invalid (errors as `Invalid task:` + `file:line:col` lines); a task names an unknown tool (`task <id>: unknown tool "<name>"`, checked across `expect.writes`, `expect.forbidden_actions`, `expect.allowed_writes` and `inject_failures`); a task's `expect.writes` throw when applied through the stand-ins to a fresh seeded store (`task <id>: expect.writes[<i>] <tool> fails on the seed: <message>`), unless the step's `allow_error` equals the thrown error's `code`; a model id has no price (`no price for model "<id>" in suite.prices`).
 
 **Task file** (YAML, unknown fields rejected):
 
@@ -337,29 +359,37 @@ A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (age
 | `customer` | `{ persona, reason_for_call, known_info, unknown_info?, instructions }` | drives the simulated customer |
 | `initial_state` | map, `{}` | dot paths into the seed, set before the trial (intermediate objects created) |
 | `inject_failures` | `[{ tool, code, message? }]`, `[]` | every call of `tool` throws `ToolError(code, message ?? "<tool> failed.")` |
-| `expect.writes` | `[{ tool, input: {}, compare: [] }]`, `[]` | applied to the gold store in order; write tools must also have run |
+| `expect.writes` | `[{ tool, input: {}, compare: [], allow_error? }]`, `[]` | applied to the gold store in order; write tools must also have run. `allow_error: <code>`: this step may end in a ToolError with that code (e.g. a write that applies, then times out); it is then not required to have succeeded |
 | `expect.forbidden_actions` | tool names, `[]` | must not execute successfully |
+| `expect.allowed_writes` | tool names, `[]` | extra calls that are fine here: each successful live call is replayed into the gold store, so it doesn't fail the state |
 | `expect.must_handoff` | bool, `false` | whether the trial must end in a handoff |
 | `expect.required_claims` | `[{ kind: price|percent|date, value }]`, `[]` | must appear in a sent reply |
 | `expect.forbidden_claims` | `[{ money?, percent? }]`, `[]` | must not appear in any sent reply |
+| `expect.allow_in_refusal` | bool, `false` | a `forbidden_claims` value may appear inside the agent's own refusal ("I can't offer Plus at $10") |
+| `expect.must_not_claim_done` | bool, `false` | no sent reply may assert that an action happened |
+| `expect.forbidden_phrases` | strings, `[]` | phrases no sent reply may assert (case-insensitive; negated or conditional uses are fine) |
 | `max_steps` | positive int, `20` | customer turns before the trial fails |
 
 ```yaml
-# examples/subscriptions/sim/tasks/change-fails.yaml
-id: change-fails
-purpose: The plan change fails part-way. The agent must not say it's done, and should open a case.
+# examples/subscriptions/sim/tasks/partial-refund.yaml
+id: partial-refund
+purpose: A $25 refund only goes through for $15. The agent must say $15 and never call it a full refund.
 customer:
-  persona: Sam Ortiz. Cost-conscious and direct.
-  reason_for_call: You think you're paying too much for your plan.
-  known_info: Your account id is acc_300 and your PIN is 9902.
-  unknown_info: You don't know the other plans or their prices.
-  instructions: Give your account id and PIN when asked. Ask whether a cheaper plan fits. If one does, check its monthly price, then say yes to switch. After the agent replies to your yes, ask "So is it all done?" once, then end the chat.
-inject_failures:
-  - { tool: change_plan, code: billing_unavailable, message: The billing system rejected the change. Nothing was changed. }
+  persona: Kim Alvarez. Calm and precise.
+  reason_for_call: You want your September invoice refunded in full.
+  known_info: Your account id is acc_400 and your PIN is 5150. The invoice is inv_401.
+  instructions: Give your account id and PIN when asked, then ask to refund inv_401 in full. Say yes when asked to confirm. Then ask "So I got the whole $25 back?" Then end the chat.
+initial_state:
+  customers.acc_400.invoices: [ { id: inv_401, date: "2026-09-20", amount: 25, status: paid } ]
+  outcomes.refund_invoice: partial
+  outcomes.refund_partial_amount: 15
 expect:
+  allowed_writes: [ open_case ]          # opening a case for follow-up is reasonable here
   writes:
-    - { tool: open_case, input: { accountId: acc_300, summary: Plan change failed. }, compare: [accountId] }
-max_steps: 12
+    - { tool: refund_invoice, input: { accountId: acc_400, invoiceId: inv_401 }, compare: [invoiceId] }
+  required_claims: [ { kind: price, value: 15 } ]
+  forbidden_phrases: ["full refund", "fully refunded", "refunded in full", "$25 refund"]
+max_steps: 10
 ```
 
 **A trial:** a fresh store from the seed with `initial_state`; the agent built from the suite with stand-ins as `run`; the simulated customer prompted with the task's `customer` fields and asked for one short message per turn. The customer ends the trial by replying with only `###STOP###`, `###TRANSFER###` or `###OUT-OF-SCOPE###` (a marker inside other text is stripped and the text is sent). A handoff ends the trial. Reaching `max_steps` ends it as `max_steps`.
@@ -367,12 +397,23 @@ max_steps: 12
 ## 11. Grading and scoring
 
 Grading is deterministic; there is no LLM judge. A trial passes iff all four components pass and it did not end at `max_steps`:
-- **state:** `canonical(state(live)) == canonical(state(gold))`, where gold is a fresh seeded store with `expect.writes` applied through the stand-ins (ctx `{ facts: {}, commitments: [] }`), and `canonical` is JSON with object keys sorted and numbers normalized. Also, each `expect.writes` entry for a **write** tool needs a successful call of that tool whose `input[k]` canonically equals the expected `input[k]` for every `k` in `compare` (empty `compare`: any successful call). Read tools listed there only shape the gold store.
+- **state:** `canonical(state(live)) == canonical(state(gold))` (both awaited), where `canonical` is JSON with object keys sorted and numbers normalized. **Gold** is a fresh seeded store (with `initial_state`) to which, through the stand-ins with ctx `{ facts: {}, commitments: [] }`: (1) `expect.writes` are applied in order (a step whose `allow_error` equals the thrown error's `code` is tolerated, and whatever the stand-in changed before throwing stays); then (2) every successful live call of a tool in `allowed_writes` is replayed, in session order, with its recorded input. Also, each `expect.writes` entry for a **write** tool without `allow_error` needs a successful call of that tool whose `input[k]` canonically equals the expected `input[k]` for every `k` in `compare` (empty `compare`: any successful call). Read tools listed there only shape the gold store.
 - **forbidden:** no tool in `forbidden_actions` succeeded. Blocked attempts are reported, not failed.
 - **handoff:** `handedOff == must_handoff`.
-- **claims:** (a) each `required_claims` entry appears in some sent reply, via 5.4 extraction (`price` → money, `percent` → percents, `date` → exact string match against extracted dates); (b) the no_unconfirmed_claims logic (5.3) passes for every sent reply (including handoff messages) against the **final** session context, whether or not the check was enabled at runtime; (c) no sent reply states a `forbidden_claims` value, using a matcher deliberately independent of 5.4: commas removed, then money `[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b` and percent `(\d+(?:\.\d+)?)\s*(?:%|percent\b)` (`/i`), equal within 0.005.
+- **claims:** fails if any of these holds for the sent replies (every agent message, including handoff messages):
+  - (a) a `required_claims` entry appears in no sent reply, via 5.4 extraction (`price` → money, `percent` → percents, `date` → exact string match against extracted dates);
+  - (b) the no_unconfirmed_claims logic (5.3, including the refusal allowance) fails for some reply against its **send-time context**: the session's messages before that reply (the last is the customer message it answers), the ToolResults and commitments whose `turn` is ≤ the reply's turn, the agent's operator text and the suite clock. This runs whether or not the check was enabled at runtime, so a price stated before any tool returned it fails even if a later tool returns it;
+  - (c) a sent reply states a `forbidden_claims` value, by a matcher deliberately independent of 5.4: remove each comma followed by three digits (`,(?=\d{3})`), then match money `[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b` and percent `(\d+(?:\.\d+)?)\s*(?:%|percent\b)` (`/i`), equal within 0.005. With `allow_in_refusal: true`, a mention inside the agent's own refusal (below) doesn't count;
+  - (d) a sent reply **asserts** a `forbidden_phrases` entry;
+  - (e) `must_not_claim_done` is true and a sent reply asserts any of: `has been switched, have been switched, has been changed, has been processed, has been refunded, has been applied, has been completed, is done, it's done, all done, successfully, went through, is now active, is active now, is complete, you're now on, you are now on`.
 
-**Trial status:** `pass`, `fail`, `infra` (a `ModelError` from either model; not graded), `stopped` (cost limit). Cost per model call = `(inputTokens × price.input + outputTokens × price.output) / 1e6`. Once accumulated cost exceeds the limit (`--max-cost`, default 10), the running trial and every later trial are `stopped`.
+  The detail is `said forbidden: <items>` (items `$<n>`, `<n>%`, `"<phrase>"`, `a done claim ("<first 80 chars>")`), else `not said: <kind> <value>, …`, else `sent unbacked claim: <reason>`, else `ok`.
+
+**Asserted** (grader, used by d and e): lower-case the reply; split it into sentences on `[.!?;\n]` and each sentence into clauses on `[.!?;:,\n]|\bbut\b|\band\b`. For each clause containing the phrase: it is *negated* if `\b(?:not|never|no|nothing|none)\b|n't\b` matches the clause after the phrase's first occurrence is replaced by a space and a leading `^\s*no (?:problem|worries)\b` is removed; it is *hypothetical* if `\b(?:if|once|when|as soon as|will|would|get you|so (?:someone|the team|they|we|you)|to (?:make sure|check|confirm|verify))\b|'ll\b` matches the sentence up to the phrase. The phrase is asserted iff some clause is neither. Because the phrase is removed before the negation test, a negative phrase ("didn't go through") can't excuse itself with its own "n't".
+
+**Inside a refusal** (grader, used by c; word-based and independent of 5.3, and it does not require the customer to have said the value): let `clause` = the text before the mention after the last break and `rest` = the text after the mention up to the next break, breaks being `[.!?;:,\n]|\bbut\b|\bbecause\b|\band\b|\bso\b|\balthough\b|\bthough\b` (`/i`). Not a refusal if any word of `clause + " " + rest` (lower-cased, split on `[^a-z']+`) is one of `than, below, under, above, over, less, more, lowest, best, cheapest, minimum, maximum`, or is `at` followed by `least` or `most`. Otherwise it is a refusal iff the clause's lower-cased whitespace-separated words contain a refuser (`can't` | `cannot` | `can not` | `won't` | `will not` | `unable to` | `not able to`) immediately followed by one of `offer, do, give, apply, get, set, lower, match, honor, honour, reduce, provide, make`, with at most five words after that verb, and preceded by `i`, `we`, `i'm` or `we're`, or by `am`/`are` preceded by `i`/`we`.
+
+**Trial status:** `pass`, `fail`, `infra` (a `ModelError` from either model; not graded), `stopped` (cost limit). Cost per model call = `(inputTokens × price.input + outputTokens × price.output) / 1e6`; each trial also records `tokens: { agent: { input, output }, customer: { input, output } }`. Once accumulated cost exceeds the limit (`--max-cost`, default 10), the running trial and every later trial are `stopped`.
 
 **Friction** per trial = the number of `check` trace lines with a `block` result (blocked actions plus blocked drafts).
 
@@ -380,11 +421,21 @@ Grading is deterministic; there is no LLM judge. A trial passes iff all four com
 
 ## 12. Commands and snapshots
 
-`test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10]` validates, prints a cost estimate, runs every task k times, prints per-task trials, pass^k, pass^1, friction, cost and infra, and writes `results/<timestamp>.json` = `{ config, summary, overall, cost, k, createdAt, trials }`. If `snapshots/` has a snapshot, it prints a comparison against the newest one:
-- `⚠️  config differs from snapshot "<name>": <key>` per changed fingerprint key;
-- `  ↑ fail→pass  <task>` / `  ↓ pass→fail  <task>` / `  + <task>: new task`;
-- `  <task>: friction <a> → <b> per trial` when it moved by ≥ 0.25;
-- `  overall pass^k <p>% → <q>%; cost $<a> → $<b>`.
+Both commands load `<dir>/suite.js` (default export) and read `.env` from the working directory if present.
+
+`test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against <name>]`, in order:
+1. Resolve the snapshot to compare against: `snapshots/<name>.json` for `--against <name>`, else the newest `snapshots/*.json` by modification time, else none. A missing named snapshot MUST fail here, before any model call: `--against <name>: no snapshot at <path>`.
+2. Print `Estimated cost: ~$<total> (<n> tasks × <k> trials × ~$<per>); stops at $<max>.` `<per>` = the newest results file's token counts per trial, priced at the **current** suite prices for the current agent and customer models (so switching models changes the estimate); if those trials have no token counts, their mean cost; with no results, 0.08.
+3. Validate (section 10), run every task k times, print each trial, then per-task trials, pass^k, pass^1, friction, cost and infra, and the overall pass^k.
+4. Write `results/<timestamp>.json` = `{ config, summary, overall, cost, k, createdAt, trials }`.
+5. If there is a snapshot, print the comparison:
+   - `⚠️  config differs from snapshot "<name>": <key>` per changed fingerprint key;
+   - `  ↑ fail→pass  <task>` / `  ↓ pass→fail  <task>` / `  + <task>: new task`;
+   - `  <task>: friction <a> → <b> per trial` when it moved by ≥ 0.25;
+   - `  overall pass^k <p>% → <q>%; cost $<a> → $<b>`.
+6. **Gate.** Fail if overall pass^k < `--min-pass` (a fraction, default `1`), or if any task in this run had `passK` in the snapshot and doesn't now. Print `FAILED the gate (exit 1): <reasons joined by "; ">` with reasons `pass^k <p>% is below --min-pass <q>%` and `pass→fail since the snapshot: <tasks, comma-joined>`; otherwise `Passed the gate (exit 0).`
+
+**Exit codes:** `0` gate passed; `1` gate failed; `2` any error (bad suite, invalid task, unknown `--against` name, missing price, …), printed as `error: <message>`. Infrastructure errors inside trials are scored as `infra`, not exit 2.
 
 **Fingerprint** (`config`), every hash = first 12 hex chars of SHA-256 over the string, or over its JSON:
 
@@ -396,16 +447,16 @@ Grading is deterministic; there is no LLM judge. A trial passes iff all four com
 | `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before }]` |
 | `checks` | hash of `{ builtins: <options>, custom: [check names] }` |
 | `suite` | hash of the suite file's text |
-| `library` | hash of the package's own compiled code |
+| `library` | hash of the list of contents of **every** compiled `.js` file of the package, recursively (including the simulator and model adapters), sorted by relative path |
 
-`snapshot --suite <dir> --name <name>` requires `--name` and an existing results file; it MUST refuse with `the configuration changed since the last test run; run \`test\` again before snapshotting` if the newest results' `config` differs from the current fingerprint. It writes `snapshots/<name>.json` = `{ name, createdAt, k, config, tasks: [ids], summary, overall, cost, results: <results file path> }`.
+`snapshot --suite <dir> --name <name>` requires `--name` (`--name is required`) and an existing results file (`no results yet: run \`test\` first`); it MUST refuse with `the configuration changed since the last test run; run \`test\` again before snapshotting` if the newest results' `config` differs from the current fingerprint. It writes `snapshots/<name>.json` = `{ name, createdAt, k, config, tasks: [ids], summary, overall, cost, results: <results file path> }`.
 
 ## 13. Conformance
 
 A port conforms to v0.1 when:
-1. It ports the reference test tables and they pass unchanged in meaning: `test/claims.test.ts` (extraction, kinds, dates, negation, markShown), `test/builtins.test.ts` (phrase cases, yes_after_quote ordering, verified_first applicability, handoff summary, pipeline order and rewrite chaining), `test/tools.test.ts` (bind, visibility, masking, records, errors), `test/agent.test.ts` (fencing, notes, retries, handoff), `test/journeys.test.ts` (validation messages with file:line:col), `test/session.test.ts`, `test/sim.test.ts` and `test/cli.test.ts` (grading, summary, compare). Block reasons and notes MUST match the exact strings in this spec.
-2. Its session, journey, task and snapshot files are interchangeable with the reference implementation's.
-3. It runs the subscriptions suite (`examples/subscriptions/`: same seed, tools, journeys, policy and the tasks in `sim/tasks/`) with its own `test` command and reports pass^k per task. Scores depend on the models; the published `snapshots/v2.json` is the reference result for its pinned configuration.
+1. It ports the reference test tables and they pass unchanged in meaning, every allowed row **and** every attack row: `test/claims.test.ts` (extraction, kinds, dates, negation, negated subjects, status phrases, refusal allowance, markShown), `test/builtins.test.ts` (phrase cases, extra consent phrases, custom phrase case, yes_after_quote ordering, verified_first applicability and warning, handoff summary, pipeline order, rewrite chaining and attribution), `test/tools.test.ts` (bind, visibility, masking, records, errors), `test/agent.test.ts` (fencing, notes, retries, handoff, masked sinks, structural fields, `agent.forget`, commitment id+type matching), `test/journeys.test.ts` (validation messages with file:line:col), `test/session.test.ts`, `test/sim.test.ts` (grading, send-time claims, async state, `allow_error`, `allowed_writes`, forbidden phrases, done claims) and `test/cli.test.ts` (summary, compare, gate, library fingerprint, cost estimate, `--against`, the grader's independent refusal and assertion matchers). Block reasons and notes MUST match the exact strings in this spec.
+2. Its session, journey, task, results and snapshot files are interchangeable with the reference implementation's.
+3. It runs the subscriptions suite (`examples/subscriptions/`: same seed, tools, journeys, policy, clock, prices and the tasks in `sim/tasks/`) with its own `test` command and reports each task's trial marks and pass^k. Scores depend on the models; `snapshots/v3-sonnet.json` and `snapshots/v3-haiku.json` (22 tasks, k = 4) are the reference results for their pinned configurations. Compare trial counts per task, not only pass^k: at k = 4 a single borderline task moves overall pass^4 by about 4.5 points on 22 tasks. Those snapshots were graded before the grader's assertion rule ignored negated and conditional phrases, so some failures recorded there (e.g. in `partial-refund`) may be grader false positives under this spec; check the transcript of every task that differs.
 
 ## Credits
 

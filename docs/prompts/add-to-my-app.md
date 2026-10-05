@@ -12,8 +12,9 @@ things (tools, checks, journeys), call one function (agent.respond) and run two 
 Extend only through tools, checks, journeys and model adapters; never patch the package. It ships as plain ESM
 JavaScript with types: no build step in plain-JS apps, types for free in TS. Use only names the installed
 package exports (node_modules/trust-layer-agent/dist/index.d.ts): Agent, read, write, z, ToolError, check,
-allow, block, rewrite, handoff, createSession, forget, jsonl, anthropic, openaiCompatible, ModelError. If this
-prompt disagrees with those type files, the type files win; tell me. At every STOP, show me your work and wait.
+allow, block, rewrite, handoff, createSession, forget, jsonl, maskTrace, anthropic, openaiCompatible, ModelError.
+If this prompt disagrees with those type files, the type files win; tell me. At every STOP, show me your work
+and wait.
 
 STEP 1: Inspect the data layer, routes, auth and database. Show one row per candidate tool:
 | tool (snake_case) | read/write | function it wraps (file:line) | bind | visible | confirm | records |
@@ -72,16 +73,18 @@ handoff_after_failures (builtins: { handoff_after_failures: { after: 3 } } tunes
 (structural, always on). A custom check is one function:
   check("big_refunds_to_person", (e) => e.kind === "action" && e.tool.name === "refund_invoice" &&
     e.input.amount > 100 ? handoff("Refund over $100 requested.") : allow())
-Traces go to ./traces/<sessionId>.jsonl with personal data masked (trace: false turns them off; a custom
-{ write(line) } sink gets lines unmasked). Show me the startup warnings ("verified_first is OFF" is expected if
-every session starts verified by your login). STOP.
+Traces go to ./traces/<sessionId>.jsonl (trace: false turns them off). Every sink receives lines with emails,
+phones, cards, SSNs and addresses already masked; only a sink that sets mask: false gets them raw. A custom sink
+(e.g. a Postgres table) is { write(line), forget(sessionId) }: implement forget so deleting a conversation
+deletes its trace lines too. Show me the startup warnings ("verified_first is OFF" is expected if every session
+starts verified by your login; sessions you create with facts: { verified } are still checked). STOP.
 
 STEP 5: One table and one Express route:
 
   create table agent_sessions (id text primary key, account_id text not null, rev integer not null,
     data jsonb not null, updated_at timestamptz not null default now());
 
-  import { createSession, forget, ModelError } from "trust-layer-agent";
+  import { createSession, ModelError } from "trust-layer-agent";
   router.post("/support/messages", async (req, res) => {
     const { sessionId, message } = req.body, accountId = req.user.accountId;    // from auth, never the body
     let session;
@@ -106,8 +109,9 @@ STEP 5: One table and one Express route:
 respond() never mutates the session you pass and bumps rev each turn, so the update is a compare-and-set. Tools
 may have run before a save loses, so also handle one message at a time per conversation. Anonymous visitors get
 createSession({ facts: { verified: false } }) and the verify tool. A handed-off session only returns the handoff
-message; start a new one to talk to the agent again. To delete, overwrite the row with forget(session) (or
-delete it) and remove traces/<sessionId>.jsonl. STOP.
+message; start a new one to talk to the agent again. To delete a conversation, call agent.forget(session): it
+deletes the trace through the sink's forget (warning once if your sink has none) and returns the
+{ v, id, forgotten } tombstone; overwrite the row with it, or delete the row. STOP.
 
 STEP 6: One journey in agent/journeys/<id>.yaml; add it to agentConfig.journeys (an absolute path built from
 import.meta.url; relative paths resolve from the working directory). Fields: id (lowercase-with-dashes), goal,
@@ -142,17 +146,23 @@ unknown_info, initial_state, inject_failures, max_steps, each key inside expect)
   inject_failures: [ { tool: change_plan, code: billing_unavailable, message: Nothing was changed. } ]
   expect:
     writes: [ { tool: change_plan, input: { accountId: acc_1, quoteId: q_001 }, compare: [accountId] } ]
+    allowed_writes: [ open_case ]                  # extra writes that are fine; replayed into the expected state
     forbidden_actions: [ refund_invoice ]          # must never execute; blocked attempts are fine
     must_handoff: false
     required_claims: [ { kind: price, value: 29 } ]   # price | percent | date
     forbidden_claims: [ { money: 0 } ]               # or { percent: 50 }
+    allow_in_refusal: false                          # true: "I can't offer Plus at $10" doesn't count as saying $10
+    must_not_claim_done: false                       # true: no reply may say it happened (pending or failed writes)
+    forbidden_phrases: [ "full refund" ]             # asserted uses fail; "the full refund didn't go through" is fine
   max_steps: 12                                      # customer turns (default 20); reaching it fails
 
 expect.writes replay in order on a fresh seed through the stand-ins to build the expected state (list a read
-too if a later write needs what it creates, like quote q_001). A trial passes only if the final state matches,
-expected writes ran with matching compare fields, no forbidden action ran, the handoff matches, required claims
-were said, forbidden ones weren't, and no reply stated an unbacked price, date or "done". suite.js (plain JS
-even in TS apps: import your build output, or run the CLI under a TypeScript loader):
+too if a later write needs what it creates, like quote q_001; add allow_error: <code> to a step that may end
+in that ToolError, like a write that applies and then times out). A trial passes only if the final state
+matches, expected writes ran with matching compare fields, no forbidden action ran, the handoff matches,
+required claims were said, nothing forbidden was asserted, and no reply stated a price, date or "done" that no
+tool had returned by the time that reply was sent. suite.js (plain JS even in TS apps: import your build output,
+or run the CLI under a TypeScript loader):
 
   import { fileURLToPath } from "node:url";
   import { agentConfig } from "../agent.js";
@@ -161,24 +171,36 @@ even in TS apps: import your build output, or run the CLI under a TypeScript loa
   export default {
     agent: agentConfig, tools: makeTools(createStore(SEED)),   // declarations only; standIns replace run
     standIns: { quote_plan_change: ({ accountId, planId }, _ctx, store) => store.quotePlanChange(accountId, planId) },  // one per tool
-    seed: SEED, createStore, state: (store) => ({ /* synchronous; what the grader compares; no generated ids */ }),
+    seed: SEED, createStore,
+    state: (store) => ({ /* what the grader compares; no generated ids */ }),   // may be async
     tasks: fileURLToPath(new URL("./tasks", import.meta.url)),
     agentModel: "anthropic:<model-name>", customerModel: "anthropic:<model-name>",    // pinned per run
     prices: { "anthropic:<model-name>": { input: 0, output: 0 } },    // USD per million tokens: fill in
     now: "2026-01-15T12:00:00Z",                                       // optional fixed clock
   };
-STOP.
+
+Prefer the in-memory store. If your data functions only work against Postgres, state() may be async and query a
+seeded copy of your tables: createStore isn't awaited, so it returns a handle at once and its async methods
+seed a throwaway schema on first use; the live and expected stores need separate schemas. Never production. STOP.
 
 STEP 8: Run from the app root (it reads .env and writes results/ and snapshots/ there). This costs real money:
-the agent and the simulated customer both call the model. It prints an estimate and stops once spend passes
---max-cost (default 10).
+the agent and the simulated customer both call the model. It prints an estimate first (from the last run's
+tokens at the current prices) and stops once spend passes --max-cost (default 10).
   npx trust-layer-agent test --suite agent/sim --k 1 --tasks happy-path --max-cost 1
   npx trust-layer-agent test --suite agent/sim --k 4 --max-cost 5
-Report per task: trial marks (P pass, F fail, I infrastructure, - stopped), pass^4, pass^1, friction (blocked
-actions and drafts per trial). For each failure, read trials[].grade and the transcript in results/*.json and
-propose a fix to tools, checks, journeys or instructions. The exit code doesn't fail when pass^k drops; read the
-output. STOP. Once I approve: `npx trust-layer-agent snapshot --suite agent/sim --name v1` (it refuses if
-anything changed since the last test), then commit snapshots/v1.json. Later runs print a diff against it.
+Report per task: trial marks (P pass, F fail, I infrastructure, - stopped), pass^4 with the trial count behind
+it (e.g. "3/4 trials passed, so pass^4 fails"), pass^1 and friction (blocked actions and drafts per trial).
+Then the overall pass^4 with how many tasks passed out of how many. With 5 tasks, one flaky task moves it by 20
+points, so always quote the counts. For each failure, read trials[].grade and the transcript in results/*.json
+and propose a fix to tools, checks, journeys or instructions.
+Exit codes: 0 the gate passed; 1 it failed ("FAILED the gate": pass^k below --min-pass, default 1 meaning every
+task, or a task that passed in the snapshot now fails); 2 an error before or outside the trials (bad suite,
+invalid task, missing price, unknown --against name). --min-pass 0.8 lowers the bar while you iterate; don't
+lower it to call a release done. STOP.
+Once I approve: `npx trust-layer-agent snapshot --suite agent/sim --name v1` (it refuses if anything changed
+since the last test), then commit snapshots/v1.json. Later runs diff against the newest snapshot; pin the
+baseline with `npx trust-layer-agent test --suite agent/sim --k 4 --against v1`, which fails before any model
+call if v1 doesn't exist and exits 1 if any task flipped pass→fail. Use that exit code in CI.
 
 NEVER
 - Hardcode prices, plan details or dates in instructions, journeys or knowledge; they come from tools. (Operator
