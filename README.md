@@ -5,7 +5,7 @@
 The model chooses the words; code decides what's allowed.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/OWNER/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/trust-layer-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
 [The failure](#the-failure) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [The subscriptions example](#the-subscriptions-example) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
 
@@ -40,7 +40,7 @@ The opposite failure turned up later: it said it failed; it hadn't. In the simul
 ## Quickstart
 
 ```sh
-npm install github:OWNER/trust-layer-agent
+npm install github:rmt99e/trust-layer-agent
 ```
 
 Not on npm yet; publishing comes later. The package's `prepare` script builds it on install.

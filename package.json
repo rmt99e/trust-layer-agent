@@ -13,11 +13,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/trust-layer-agent.git"
+    "url": "git+https://github.com/rmt99e/trust-layer-agent.git"
   },
-  "homepage": "https://github.com/OWNER/trust-layer-agent#readme",
+  "homepage": "https://github.com/rmt99e/trust-layer-agent#readme",
   "bugs": {
-    "url": "https://github.com/OWNER/trust-layer-agent/issues"
+    "url": "https://github.com/rmt99e/trust-layer-agent/issues"
   },
   "type": "module",
   "main": "./dist/index.js",

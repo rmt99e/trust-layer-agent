@@ -4,7 +4,7 @@
 
 The model chooses the words; code decides what's allowed. You write three things: tools (functions wrapped with `read()` or `write()`, each declaring which fields the model may see), checks (one function type returning allow, block, rewrite or handoff, guarding both tool calls and replies), and optional journey YAML files. You call one thing: `await agent.respond(session, message)`, where the session is plain JSON your app stores anywhere. Two commands: `test` runs simulated customers k times per task and reports pass^k; `snapshot` pins a passing version.
 
-- Install: `npm install github:OWNER/trust-layer-agent` (not on npm yet; `dist/` builds on install). Node 20+.
+- Install: `npm install github:rmt99e/trust-layer-agent` (not on npm yet; `dist/` builds on install). Node 20+.
 - About 10 lines for a working agent: define a `read` tool and a `write` tool with zod inputs, then `new Agent({ model: "anthropic:<model>", instructions, tools })` and `await agent.chat()` to try it.
 - Built-in checks are on by default: verify before account data, a clear yes after a quote before a write, no prices, dates or "done" that no tool returned, no claim that a write worked or failed until its outcome is known, no repeating a write that already succeeded this turn, customer and tool text treated as data, handoff after repeated failures.
 - Published as ESM JavaScript with TypeScript types: plain-JS apps import it with no build step.

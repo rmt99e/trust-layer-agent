@@ -29,7 +29,7 @@ STEP 1: Inspect the data layer, routes, auth and database. Show one row per cand
 Also say how customers are identified (logged in, or anonymous and verified in chat), which decisions already
 live in code (eligibility, prices, refund windows), and how a person takes over. STOP.
 
-STEP 2: `npm install github:OWNER/trust-layer-agent` (Node 20+). It's not on npm yet; its prepare script builds
+STEP 2: `npm install github:rmt99e/trust-layer-agent` (Node 20+). It's not on npm yet; its prepare script builds
 it on install. Put the key in a gitignored .env: ANTHROPIC_API_KEY for model "anthropic:<model-name>", or
 OPENAI_API_KEY and OPENAI_BASE_URL for "openai-compatible:<model-name>".
 

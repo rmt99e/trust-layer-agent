@@ -136,8 +136,8 @@ Internal milestone: the runtime, both model adapters and the subscriptions examp
 - Model adapters for `anthropic` and `openai-compatible`, using plain `fetch`.
 - The subscriptions example: the 10-line refunds quickstart and the full plan-change agent (verification, usage, eligible plans, quotes, plan change, refunds, usage packs, cases and handoff) over a seeded in-memory store.
 
-[Unreleased]: https://github.com/OWNER/trust-layer-agent/compare/v4...HEAD
-[v4]: https://github.com/OWNER/trust-layer-agent/compare/v3...v4
-[v3]: https://github.com/OWNER/trust-layer-agent/compare/v2...v3
-[v2]: https://github.com/OWNER/trust-layer-agent/compare/v1...v2
-[v1]: https://github.com/OWNER/trust-layer-agent/releases/tag/v1
+[Unreleased]: https://github.com/rmt99e/trust-layer-agent/compare/v4...HEAD
+[v4]: https://github.com/rmt99e/trust-layer-agent/compare/v3...v4
+[v3]: https://github.com/rmt99e/trust-layer-agent/compare/v2...v3
+[v2]: https://github.com/rmt99e/trust-layer-agent/compare/v1...v2
+[v1]: https://github.com/rmt99e/trust-layer-agent/releases/tag/v1
