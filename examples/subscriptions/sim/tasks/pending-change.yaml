@@ -9,5 +9,6 @@ customer:
 initial_state:
   outcomes.change_plan: pending
 expect:
+  allowed_writes: [ open_case ]          # opening a case for follow-up is reasonable here
   must_not_claim_done: true
 max_steps: 12

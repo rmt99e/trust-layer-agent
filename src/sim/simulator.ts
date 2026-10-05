@@ -44,7 +44,7 @@ export async function prepare(suite: Suite, only?: string[]) {
     ...unknown.map((n) => `stand-in "${n}" names no tool`), ...uncovered.map((n) => `tool "${n}" has no stand-in`)].join("; ")}`);
   const tasks = loadTasks(suite.tasks).filter((t) => !only || only.includes(t.id));
   for (const t of tasks) {
-    const named = [...t.expect.writes.map((w) => w.tool), ...t.expect.forbidden_actions, ...t.inject_failures.map((f) => f.tool)];
+    const named = [...t.expect.writes.map((w) => w.tool), ...t.expect.forbidden_actions, ...t.expect.allowed_writes, ...t.inject_failures.map((f) => f.tool)];
     const bad = named.find((n) => !names.has(n));
     if (bad) throw new Error(`task ${t.id}: unknown tool "${bad}"`);
     await applyExpected(t, suite.createStore(seedFor(t, suite.seed), { now: () => new Date() }), suite.standIns);
@@ -119,6 +119,8 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
   r.ended ??= "max_steps";
   const gold = suite.createStore(seedFor(task, suite.seed), { now });
   await applyExpected(task, gold, suite.standIns);
+  for (const r of (session?.results ?? []).filter((x) => x.ok && task.expect.allowed_writes.includes(x.tool)))
+    await suite.standIns[r.tool](r.input, { facts: {}, commitments: [] }, gold);     // allowed extras don't count against the state
   const s = session ?? { messages: [], results: [], commitments: [], facts: {}, failures: 0 } as unknown as Session;
   r.grade = grade(task, {
     live: await suite.state(store), gold: await suite.state(gold), results: s.results, handedOff,

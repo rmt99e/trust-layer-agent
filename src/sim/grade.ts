@@ -72,10 +72,27 @@ export const says = (text: string, re: RegExp, v: number, allowInRefusal = false
 const DONE_WORDS = ["has been switched", "have been switched", "has been changed", "has been processed", "has been refunded", "has been applied",
   "has been completed", "is done", "it's done", "all done", "successfully", "went through", "is now active", "is active now", "is complete",
   "you're now on", "you are now on"];
-export const claimsDone = (text: string) => text.toLowerCase().split(/[.!?;:,\n]|\bbut\b/).some((c) => {
-  const at = Math.min(...DONE_WORDS.map((p) => c.indexOf(p)).filter((i) => i >= 0));
-  return at < Infinity && !/\b(?:not|never|no|nothing|none)\b|n't\b/.test(c.slice(0, at).replace(/^\s*no (?:problem|worries)\b/, ""));
-});
+// A phrase only counts when it's asserted: not inside a negated clause ("the full refund didn't go through") and not
+// inside a conditional, future or purpose clause ("once it's done", "so someone confirms it went through").
+const CLAUSES = /[.!?;:,\n]|\bbut\b|\band\b/;
+const NEGATION = /\b(?:not|never|no|nothing|none)\b|n't\b/;
+const HYPOTHETICAL = /\b(?:if|once|when|as soon as|will|would|get you|so (?:someone|the team|they|we|you)|to (?:make sure|check|confirm|verify))\b|'ll\b/;
+export function asserted(text: string, phrase: string): boolean {
+  const p = phrase.toLowerCase();
+  return text.toLowerCase().split(/[.!?;\n]/).some((sentence) => {
+    let from = 0;
+    for (const c of sentence.split(CLAUSES)) {                             // negation is per clause…
+      const start = sentence.indexOf(c, from), at = c.indexOf(p);
+      from = start + c.length;
+      if (at < 0) continue;
+      const negated = NEGATION.test(c.replace(/^\s*no (?:problem|worries)\b/, ""));   // interjections aren't negations
+      const hypothetical = HYPOTHETICAL.test(sentence.slice(0, start + at));            // …conditions and futures span the sentence
+      if (!negated && !hypothetical) return true;
+    }
+    return false;
+  });
+}
+export const claimsDone = (text: string) => DONE_WORDS.some((p) => asserted(text, p));
 
 export function grade(task: Task, o: Observed): Grade {
   const ok = (r: ToolResult) => r.ok;
@@ -100,7 +117,7 @@ export function grade(task: Task, o: Observed): Grade {
   const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!, r)) ? [`$${f.money}`] : []),
     ...(f.percent !== undefined && o.sent.some((t) => says(t, PERCENT, f.percent!, r)) ? [`${f.percent}%`] : [])]);
   const doneSaid = task.expect.must_not_claim_done ? o.sent.find(claimsDone) : undefined;
-  const phrase = task.expect.forbidden_phrases.find((p) => o.sent.some((t) => t.toLowerCase().includes(p.toLowerCase())));
+  const phrase = task.expect.forbidden_phrases.find((p) => o.sent.some((t) => asserted(t, p)));
   if (phrase) banned.push(`"${phrase}"`);
   if (doneSaid) banned.push(`a done claim ("${doneSaid.slice(0, 80)}")`);
   const claims = { pass: !absent.length && !unbacked.length && !banned.length, detail: banned.length ? `said forbidden: ${banned.join(", ")}`

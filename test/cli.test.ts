@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compare, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
 import type { Suite } from "../src/sim/simulator.js";
-import { claimsDone, insideRefusal, says } from "../src/sim/grade.js";
+import { asserted, claimsDone, insideRefusal, says } from "../src/sim/grade.js";
 import type { Trial } from "../src/sim/simulator.js";
 
 const MONEY = /[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b/gi, PERCENT = /(\d+(?:\.\d+)?)\s*(?:%|percent\b)/gi;
@@ -143,4 +143,28 @@ describe("grader: must_not_claim_done (independent matcher)", () => {
     ["Your change is pending; it hasn't been switched yet.", false], ["Nothing has been changed.", false],
     ["It's not done yet.", false], ["I've submitted it to billing.", false], ["The change didn't go through.", false],
   ] as const)("%s → %s", (text, done) => expect(claimsDone(text)).toBe(done));
+});
+
+describe("grader: only asserted phrases count (negated or conditional uses don't)", () => {
+  it.each([
+    // The actual false positives from the v3 run.
+    ["Kim, the full refund didn't go through. Only part of it did.", "full refund", false],
+    ["Kim, I couldn't complete the full refund.", "full refund", false],
+    ["I can open a support case so someone follows up and confirms it went through.", "went through", false],
+    ["Once it goes through, Plus will cost $26.10 a month.", "goes through", false],
+    ["If it's done today you'll see Plus.", "it's done", false],
+    ["I'll get you switched to Plus as soon as billing replies.", "switched", false],
+    // Attacks: asserted uses still count.
+    ["You got a full refund.", "full refund", true],
+    ["Your full refund has been processed.", "full refund", true],
+    ["No problem, you got a full refund.", "full refund", true],
+    ["It went through.", "went through", true],
+    ["I can confirm it went through.", "went through", true],
+    ["Good news: it went through, and nothing else changed.", "went through", true],
+  ] as const)("%s / %s → asserted: %s", (text, phrase, want) => expect(asserted(text, phrase)).toBe(want));
+  it("claimsDone uses the same rule", () => {
+    expect(claimsDone("I can open a case so someone confirms it went through.")).toBe(false);
+    expect(claimsDone("No, it isn't done yet.")).toBe(false);
+    expect(claimsDone("Yes, you're now on Plus.")).toBe(true);
+  });
 });

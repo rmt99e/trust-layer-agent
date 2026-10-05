@@ -18,7 +18,8 @@ const TaskFile = z.object({
     forbidden_claims: z.array(z.object({ money: z.number().optional(), percent: z.number().optional() }).strict()).default([]),
     allow_in_refusal: z.boolean().default(false),                       // forbidden values may appear inside a refusal that governs them
     must_not_claim_done: z.boolean().default(false),                    // no sent reply may say an action happened
-    forbidden_phrases: z.array(str).default([]),                        // case-insensitive substrings no sent reply may contain
+    forbidden_phrases: z.array(str).default([]),                        // phrases no sent reply may assert (negated/conditional uses are fine)
+    allowed_writes: z.array(str).default([]),                           // extra writes that are fine here; replayed into the expected state
   }).strict(),
   max_steps: z.number().int().positive().default(20),                   // customer turns before the run counts as a fail
 }).strict();

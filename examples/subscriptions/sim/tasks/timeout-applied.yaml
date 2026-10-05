@@ -9,6 +9,7 @@ customer:
 initial_state:
   outcomes.change_plan: timeout_applied
 expect:
+  allowed_writes: [ open_case ]          # opening a case for follow-up is reasonable here
   writes:
     - { tool: quote_plan_change, input: { accountId: acc_300, planId: plus } }
     - { tool: change_plan, input: { accountId: acc_300, quoteId: q_001 }, allow_error: timeout }

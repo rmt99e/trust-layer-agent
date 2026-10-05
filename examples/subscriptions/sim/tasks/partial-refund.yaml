@@ -10,6 +10,7 @@ initial_state:
   outcomes.refund_invoice: partial
   outcomes.refund_partial_amount: 15
 expect:
+  allowed_writes: [ open_case ]          # opening a case for follow-up is reasonable here
   writes:
     - { tool: refund_invoice, input: { accountId: acc_400, invoiceId: inv_401 }, compare: [invoiceId] }
   required_claims: [ { kind: price, value: 15 } ]

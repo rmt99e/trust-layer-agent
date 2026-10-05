@@ -110,6 +110,17 @@ describe("grader: forbidden phrases, done claims and allow_error", () => {
   });
 });
 
+describe("allowed_writes", () => {
+  it("replays allowed extra writes into the expected state", async () => {
+    task("extra", "expect:\n  allowed_writes: [ set_plan ]");
+    const s = suite([{ call: "set_plan", input: { id: "a1", plan: "plus" } }, "Done, you're on plus."], ["Move me to plus, yes.", "###STOP###"]);
+    expect((await runSuite(s, { tasks: ["extra"] })).trials[0].grade!.state).toMatchObject({ pass: true });
+    task("noextra", "expect: {}");
+    const s2 = suite([{ call: "set_plan", input: { id: "a1", plan: "plus" } }, "Done, you're on plus."], ["Move me to plus, yes.", "###STOP###"]);
+    expect((await runSuite(s2, { tasks: ["noextra"] })).trials[0].grade!.state.pass).toBe(false);
+  });
+});
+
 describe("runSuite", () => {
   it("runs a trial end to end and passes it", async () => {
     task("switch", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, compare: [plan] }\n  required_claims: [ { kind: price, value: 9 } ]");
