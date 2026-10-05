@@ -105,7 +105,7 @@ describe("pipeline", () => {
   it("runs built-ins, then guardrails, then custom checks", async () => {
     seen.length = 0;
     const chain = checkPipeline({}, [spy("guardrail")], [spy("custom")]);
-    expect(chain.map((c) => c.name)).toEqual(["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "guardrail", "custom"]);
+    expect(chain.map((c) => c.name)).toEqual(["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "guardrail", "custom"]);
     await runChecks(action("get_account"), ctx(), chain);
     expect(seen).toEqual(["guardrail", "custom"]);
   });
@@ -126,5 +126,30 @@ describe("pipeline", () => {
     const r = await runChecks({ kind: "reply", text: "one" }, ctx(), [see("a", rewrite("two"))]);
     expect(r.result).toEqual({ rewrite: "two" });
     expect(r.by).toBe("a");                                         // the rewriting check is named
+  });
+});
+
+describe("no_repeated_writes (v4 b)", () => {
+  const W = (name: string, extra = {}) => ({ name, kind: "write" as const, confirm: false as const, ...extra });
+  const done = (tool: string, turn: number) => ({ id: "c", tool, turn, ok: true, input: {}, output: { caseId: "case_002" } });
+  const go = (tool: any, results: any[], say = ["c: help", "a: ok", "c: please"]) =>
+    runChecks({ kind: "action", tool, input: {} }, ctx({ say, results, tools: [tool] }), only("no_repeated_writes"));
+  it.each([
+    // Attacks (4)
+    ["same write, same turn", W("open_case"), [done("open_case", 2)], "block"],
+    ["same write twice before, same turn", W("open_case"), [done("open_case", 2), done("open_case", 2)], "block"],
+    ["a write that changes state", W("change_plan"), [done("change_plan", 2)], "block"],
+    ["refund twice in a turn", W("refund_invoice"), [done("refund_invoice", 2)], "block"],
+    // Allowed (3)
+    ["same write, earlier turn", W("open_case"), [done("open_case", 1)], "allow"],
+    ["declared repeatable", W("open_case", { repeatable: true }), [done("open_case", 2)], "allow"],
+    ["the earlier call failed", W("change_plan"), [{ ...done("change_plan", 2), ok: false }], "allow"],
+  ] as const)("%s → %s", async (_n, tool, results, want) => {
+    const { result } = await go(tool, results as any);
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+  it("puts the prior result in the block reason", async () => {
+    expect((await go(W("open_case"), [done("open_case", 2)])).result).toEqual({
+      block: `open_case already succeeded this turn (result: {"caseId":"case_002"}). Don't call it again; use that result.` });
   });
 });

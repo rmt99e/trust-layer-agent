@@ -236,6 +236,20 @@ describe("Agent", () => {
     expect(lines.find((l) => l.type === "check")).toMatchObject({ event: "reply", check: "polite", result: { rewrite: "Sorry, I can't do that." } });
   });
 
+  it("doesn't let open_case run twice while the model redrafts a blocked reply", async () => {
+    const cases: number[] = [];
+    const openCase = write({ name: "open_case", description: "Open a case.", input: z.object({ summary: z.string() }), confirm: false,
+      run: () => { cases.push(1); return { caseId: `case_00${cases.length}` }; } });
+    const { agent, model } = agentWith([
+      { call: "open_case", input: { summary: "follow up" } }, "Case opened; the follow-up fee is $18.99.",   // blocked: unbacked price
+      { call: "open_case", input: { summary: "follow up again" } }, "I've opened case case_001 so the team can follow up.",
+    ], [openCase]);
+    const r = await agent.respond(loggedIn(), "Please have someone follow up.");
+    expect(cases).toHaveLength(1);
+    expect(model.requests[3].messages.at(-1)!.content).toContain("open_case already succeeded this turn");
+    expect(r.reply).toBe("I've opened case case_001 so the team can follow up.");
+  });
+
   it("rejects duplicate tool names and warns when nothing can verify", () => {
     expect(() => new Agent({ model: scripted([]), instructions: "x", tools: [tools.account, tools.account], trace: false })).toThrow(/unique/);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

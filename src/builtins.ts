@@ -9,6 +9,7 @@ export interface BuiltinOptions {
   yes_after_quote?: false | { phrases?: string[] };
   no_unconfirmed_claims?: false;
   handoff_after_failures?: false | { after?: number };
+  no_repeated_writes?: false;
 }
 
 const YES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "confirm", "confirmed",
@@ -64,6 +65,13 @@ const noUnconfirmedClaims = check("no_unconfirmed_claims", (e, ctx) => {
   return why ? block(why) : allow();
 });
 
+// A write that already succeeded this turn isn't repeated (e.g. opening another case while redrafting a reply).
+const noRepeatedWrites = check("no_repeated_writes", (e, ctx) => {
+  if (e.kind !== "action" || e.tool.kind !== "write" || e.tool.repeatable) return allow();
+  const prior = ctx.results.findLast((r) => r.ok && r.tool === e.tool.name && r.turn === ctx.turn);
+  return prior ? block(`${e.tool.name} already succeeded this turn (result: ${JSON.stringify(prior.output)}). Don't call it again; use that result.`) : allow();
+});
+
 const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e, ctx) => {
   if (ctx.failures < after) return allow();
   const errors = ctx.results.filter((r) => !r.ok).slice(-after).map((r) => `${r.tool}: ${r.error?.code}`);
@@ -71,7 +79,7 @@ const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e,
 });
 
 /** Built-in names a journey may list. untrusted_text_is_data is structural and always on. */
-export const BUILTIN_NAMES = ["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "untrusted_text_is_data"] as const;
+export const BUILTIN_NAMES = ["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "untrusted_text_is_data"] as const;
 
 export function builtinChecks(opts: BuiltinOptions = {}): Check[] {
   return [
@@ -79,6 +87,7 @@ export function builtinChecks(opts: BuiltinOptions = {}): Check[] {
     opts.yes_after_quote !== false && yesAfterQuote(opts.yes_after_quote?.phrases),
     opts.no_unconfirmed_claims !== false && noUnconfirmedClaims,
     opts.handoff_after_failures !== false && handoffAfterFailures(opts.handoff_after_failures?.after),
+    opts.no_repeated_writes !== false && noRepeatedWrites,
   ].filter((c): c is Check => Boolean(c));
 }
 
