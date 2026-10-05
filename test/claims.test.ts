@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { builtinChecks } from "../src/builtins.js";
 import { extractClaims, markShown } from "../src/claims.js";
 import { runChecks } from "../src/checks.js";
-import { ctx, failed, ok, quote } from "./fixtures.js";
+import { ctx, failed, ok, quote, tools } from "./fixtures.js";
 
 const claimsCheck = builtinChecks({ verified_first: false, yes_after_quote: false, handoff_after_failures: false });
 const verdict = async (reply: string, c: ReturnType<typeof ctx>) => (await runChecks({ kind: "reply", text: reply }, c, claimsCheck)).result;
@@ -116,6 +116,8 @@ describe("negated subjects (fix 1)", () => {
     ["No, it's done: you've been switched.", "block"],
     ["No problem! Your plan has been switched.", "block"],
     ["Nope, all good, it's done.", "block"],
+    ["It went through.", "block"],                                   // missing from the done list until v4
+    ["Your change has gone through.", "block"],
   ])("%s → %s after a failed change_plan", async (reply, want) => {
     const result = await verdict(reply, afterFailure());
     expect("allow" in result ? "allow" : "block").toBe(want);
@@ -176,6 +178,40 @@ describe("customer numbers inside refusals (fix 4)", () => {
   ])("%s → %s", async (reply, want) => {
     const result = await verdict(reply, session());
     expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
+describe("write outcomes: done / pending / failed / unknown (v4 a)", () => {
+  const W = [...tools.filter((t) => t.name !== "change_plan"), { ...tools.find((t) => t.name === "change_plan")!, reconcileWith: "get_account" }];
+  const r = (tool: string, extra: object) => ({ id: `x${Math.random()}`, tool, turn: 1, input: {}, ...extra }) as any;
+  const unknown = r("change_plan", { ok: false, outcome: "unknown", error: { code: "timeout", message: "outcome unknown" } });
+  const S = {
+    unknown: [unknown],
+    "unknown, read before": [r("get_account", { ok: true, output: { plan: "plus" } }), unknown],
+    "unknown, wrong read": [unknown, r("get_usage", { ok: true, output: {} })],
+    "unknown + reconciled": [unknown, r("get_account", { ok: true, output: { plan: "plus" } })],
+    done: [r("change_plan", { ok: true, outcome: "done", output: { status: "active" } })],
+    pending: [r("change_plan", { ok: true, outcome: "pending", output: { status: "pending" } })],
+    failed: [r("change_plan", { ok: false, error: { code: "billing_unavailable", message: "x" } })],
+    "failed + case": [r("change_plan", { ok: false, error: { code: "billing_unavailable", message: "x" } }), r("open_case", { ok: true, outcome: "done", output: {} })],
+  };
+  it.each([
+    // Attacks (15)
+    ["unknown", "It went through.", "block"], ["unknown", "It didn't go through.", "block"], ["unknown", "Your plan has been switched.", "block"],
+    ["unknown", "Unfortunately the change failed.", "block"], ["unknown", "No changes were made.", "block"], ["unknown", "Nothing has changed.", "block"],
+    ["done", "Nothing has changed.", "block"], ["done", "No problem, it didn't go through.", "block"], ["done", "The change failed.", "block"],
+    ["done", "It wasn't applied.", "block"], ["pending", "Your plan has been switched.", "block"], ["pending", "It's done.", "block"],
+    ["pending", "Successfully switched!", "block"], ["unknown, read before", "It went through.", "block"], ["unknown, wrong read", "It went through.", "block"],
+    // Allowed (5)
+    ["unknown + reconciled", "It went through.", "allow"], ["unknown + reconciled", "It didn't go through.", "allow"],
+    ["pending", "Your change is processing.", "allow"], ["failed", "It didn't go through.", "allow"], ["failed + case", "It didn't go through.", "allow"],
+  ] as const)("%s: %s → %s", async (state, reply, want) => {
+    const result = await verdict(reply, ctx({ tools: W as any, results: S[state] }));
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+  it("tells the model which read to call first", async () => {
+    expect(await verdict("It went through.", ctx({ tools: W as any, results: S.unknown })))
+      .toMatchObject({ block: expect.stringContaining("Call get_account first") });
   });
 });
 

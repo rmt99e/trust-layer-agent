@@ -138,3 +138,17 @@ describe("definition checks", () => {
       .toThrow(/write tools only/);
   });
 });
+
+describe("write outcomes on tool results", () => {
+  it("records done by default, pending from outcome(), and unknown from ToolError({ outcome })", async () => {
+    const mk = (run: () => unknown, outcome?: (o: any) => "done" | "pending") =>
+      write({ name: "change_plan", description: "x", input: z.object({}), confirm: false, outcome, reconcileWith: "get_account", run });
+    expect((await runTool(mk(() => ({ status: "active" })), {}, createSession())).result.outcome).toBe("done");
+    expect((await runTool(mk(() => ({ status: "pending" }), (o) => (o.status === "pending" ? "pending" : "done")), {}, createSession())).result.outcome).toBe("pending");
+    const t = await runTool(mk(() => { throw new ToolError("timeout", "No response.", { outcome: "unknown" }); }), {}, createSession());
+    expect(t.result).toMatchObject({ ok: false, outcome: "unknown", error: { code: "timeout" } });
+    expect(t.session.results[0].outcome).toBe("unknown");
+    const f = await runTool(mk(() => { throw new ToolError("declined", "No."); }), {}, createSession());
+    expect(f.result.outcome).toBeUndefined();                            // a known failure
+  });
+});

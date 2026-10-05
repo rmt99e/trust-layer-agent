@@ -14,8 +14,10 @@ const RELATIVE = /\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|mo
 const NEGATED = /\b(?:not|never|no longer|nothing|none|no)\b|n't\b/i;
 const INTERJECTION = /^\s*no (?:problem|worries|worry)\b/i;
 // "You're all set staying on Starter" reports that nothing changed: status, not a claim that something was done.
+// Failure wording is only honest after a known failure; after a success it's a false "it failed".
+const FAILED_WORDS = /\b(?:didn't go through|did not go through|failed|wasn't applied|was not applied|nothing has changed|nothing has been changed|nothing was changed|no changes were made)\b/i;
 const STATUS_AFTER = /^\s+(?:staying|to stay|on your (?:current|existing)|with your (?:current|existing))\b/i;
-const DONE = /\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully)\b/gi;
+const DONE = /\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully|went through|(?:has|have) gone through)\b/gi;
 
 /** Normalize a number token: strip commas and currency, compare to the cent. */
 export const normNumber = (s: string | number) => Math.round(parseFloat(String(s).replace(/[^\d.-]/g, "")) * 100) / 100;
@@ -102,13 +104,23 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   const relative = c.relative.filter((r) => r !== "today");       // "today" is confirmed by the agent's clock (ctx.now)
   if (relative.length && confirmedValues(toolValues).dates.size === 0)
     return `Reply says "${relative[0]}" but no tool returned a date this session. Don't promise timing no tool confirmed.`;
+  // Write outcomes: each write's latest call is done, pending, failed, or unknown until a later reconcile read.
+  const latest = ctx.tools.filter((t) => t.kind === "write").map((t) => ({ t, i: ctx.results.findLastIndex((r) => r.tool === t.name) }))
+    .filter(({ i }) => i >= 0).map(({ t, i }) => {
+      const r = ctx.results[i], settled = t.reconcileWith && ctx.results.slice(i + 1).some((x) => x.ok && x.tool === t.reconcileWith);
+      return { name: t.name, reconcileWith: t.reconcileWith, state: r.ok ? r.outcome ?? "done" : r.outcome === "unknown" ? (settled ? "reconciled" : "unknown") : "failed" };
+    });
+  const has = (s: string) => latest.find((w) => w.state === s);
+  const failedSaid = text.match(FAILED_WORDS)?.[0], unknown = has("unknown");
+  if (unknown && (c.done.length || failedSaid))                      // unknown: neither "it worked" nor "it failed" yet
+    return `${unknown.name} ended with an unknown outcome. ${unknown.reconcileWith ? `Call ${unknown.reconcileWith} first to check what actually happened` : "Say the outcome is being checked"}; don't say whether it worked until then.`;
+  if (failedSaid && !has("failed") && has("done"))
+    return `Reply says "${failedSaid}", but nothing failed: the latest write succeeded. Say what actually happened.`;
   if (c.done.length) {
-    const writes = new Set(ctx.tools.filter((t) => t.kind === "write").map((t) => t.name));
-    const calls = ctx.results.filter((r) => writes.has(r.tool));
-    const unresolved = [...new Set(calls.filter((r, i) => !r.ok && !calls.slice(i + 1).some((l) => l.tool === r.tool && l.ok)).map((r) => r.tool))];
-    if (unresolved.length)
-      return `Reply says "${c.done[0]}", but ${unresolved.join(", ")} failed and hasn't succeeded since. Say what actually happened.`;
-    if (!calls.some((r) => r.ok)) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
+    const failed = latest.filter((w) => w.state === "failed").map((w) => w.name), pending = has("pending");
+    if (failed.length) return `Reply says "${c.done[0]}", but ${failed.join(", ")} failed and hasn't succeeded since. Say what actually happened.`;
+    if (pending) return `Reply says "${c.done[0]}", but ${pending.name} is still pending. Say it's processing, not done.`;
+    if (!has("done") && !has("reconciled")) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
   }
 }
 

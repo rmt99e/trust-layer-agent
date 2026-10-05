@@ -3,8 +3,10 @@ import { isPersonalName, maskText } from "./privacy.js";
 import { currentTurn, type Commitment, type Json, type Session, type ToolResult } from "./session.js";
 
 /** Throw from a tool to send the model a structured error it can act on. */
+/** Throw from a tool to send the model a structured error. outcome "unknown": the write may have happened (e.g. a timeout). */
 export class ToolError extends Error {
-  constructor(public code: string, message: string) { super(message); this.name = "ToolError"; }
+  outcome?: "unknown";
+  constructor(public code: string, message: string, opts: { outcome?: "unknown" } = {}) { super(message); this.name = "ToolError"; this.outcome = opts.outcome; }
 }
 
 export interface ToolContext { facts: Readonly<Record<string, Json>>; commitments: readonly Commitment[] }
@@ -24,6 +26,9 @@ export interface ToolDef<I extends Record<string, any> = any, O = any> {
   verifies?: boolean;
   output?: z.ZodType<O>;
   records?: (output: O, input: I) => Records;
+  outcome?: (output: O) => "done" | "pending";          // writes: how to read a successful result (default "done")
+  reconcileWith?: string;                               // writes: the read tool that settles an unknown outcome
+  repeatable?: boolean;                                 // writes: may succeed more than once in a turn
   run(input: I, ctx: ToolContext): Promise<O> | O;
 }
 export interface Tool<I extends Record<string, any> = any, O = any> extends ToolDef<I, O> { kind: "read" | "write" }
@@ -91,7 +96,7 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
   const raw = (modelInput && typeof modelInput === "object" ? { ...modelInput } : {}) as Record<string, any>;
   const done = (r: Omit<ToolResult, "id" | "tool" | "turn">, next: Session = session) =>
     ({ result: { id, tool: tool.name, turn, ...r } as ToolResult, session: { ...next, results: [...next.results, { id, tool: tool.name, turn, ...r }] } });
-  const failed = (code: string, message: string) => done({ ok: false, input: raw, error: { code, message } });
+  const failed = (code: string, message: string, outcome?: "unknown") => done({ ok: false, input: raw, error: { code, message }, ...(outcome && { outcome }) });
 
   for (const [field, path] of Object.entries(tool.bind ?? {})) {
     const value = session.facts[path.slice("facts.".length)];
@@ -105,7 +110,7 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
   try {
     output = await (opts.run ?? tool.run)(parsed.data, { facts: Object.freeze({ ...session.facts }), commitments: Object.freeze([...session.commitments]) });
   } catch (e) {
-    return e instanceof ToolError ? failed(e.code, e.message) : failed("internal_error", "The tool failed unexpectedly.");
+    return e instanceof ToolError ? failed(e.code, e.message, e.outcome) : failed("internal_error", "The tool failed unexpectedly.");
   }
 
   const rec = tool.records?.(output, parsed.data) ?? {};
@@ -115,5 +120,6 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
     commitments: [...session.commitments, ...(rec.commitments ?? []).map((c) => ({ ...c, by: tool.name, turn, status: "open" as const }))],
   };
   const { value, hidden } = visibleOutput(output, tool.visible, opts.strictVisibility);
-  return { ...done({ ok: true, input: parsed.data as Record<string, Json>, output: value }, next), hidden };
+  const outcome = tool.kind === "write" ? tool.outcome?.(output as never) ?? "done" : undefined;
+  return { ...done({ ok: true, input: parsed.data as Record<string, Json>, output: value, ...(outcome && { outcome }) }, next), hidden };
 }

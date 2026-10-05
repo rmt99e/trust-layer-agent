@@ -1,7 +1,7 @@
 import type { Commitment, Json, Message, Session, ToolResult } from "./session.js";
 import type { Tool } from "./tools.js";
 
-export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies">;
+export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies" | "reconcileWith" | "repeatable">;
 export type CheckEvent = { kind: "action"; tool: ToolInfo; input: Record<string, Json> } | { kind: "reply"; text: string };
 export type CheckResult = { allow: true } | { block: string } | { rewrite: string } | { handoff: string };
 
