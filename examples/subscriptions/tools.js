@@ -42,11 +42,12 @@ export function makeTools(store) {
     write({
       name: "change_plan", description: "Apply an accepted quote.",
       input: z.object({ ...account, quoteId: z.string() }), bind, confirm: { commitment: "quote", by: "quoteId" },
+      outcome: (o) => (o.status === "pending" ? "pending" : "done"), reconcileWith: "get_account",   // a timeout is settled by reading the account
       run: ({ accountId, quoteId }) => store.changePlan(accountId, quoteId),
     }),
     write({
       name: "refund_invoice", description: "Refund an invoice, in full or in part, within the refund window.",
-      input: z.object({ ...account, invoiceId: z.string(), amount: z.number().positive().optional() }), bind,
+      input: z.object({ ...account, invoiceId: z.string(), amount: z.number().positive().optional() }), bind, reconcileWith: "get_invoices",
       run: ({ accountId, invoiceId, amount }) => store.refund(accountId, invoiceId, amount),
     }),
     write({

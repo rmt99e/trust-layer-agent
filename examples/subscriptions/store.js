@@ -100,7 +100,7 @@ export function createStore(seed = SEED, { now = () => new Date() } = {}) {
       if (db.outcomes?.change_plan === "pending")
         return { status: "pending", planName: q.planName, monthlyPrice: q.monthlyPrice, note: "Submitted to billing; not applied yet." };
       account(accountId).plan = { ...PLANS[q.planId], monthlyPrice: q.monthlyPrice, pricing: "standard" };
-      if (db.outcomes?.change_plan === "timeout_applied") throw new ToolError("timeout", "No response from billing; outcome unknown.");
+      if (db.outcomes?.change_plan === "timeout_applied") throw new ToolError("timeout", "No response from billing; outcome unknown.", { outcome: "unknown" });
       return { status: "active", planName: q.planName, monthlyPrice: q.monthlyPrice, effectiveDate: q.effectiveDate };
     },
     refund(accountId, invoiceId, amount) {
