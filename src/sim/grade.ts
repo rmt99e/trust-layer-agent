@@ -27,7 +27,9 @@ export function seedFor(task: Task, seed: unknown): any {
 export async function applyExpected(task: Task, store: unknown, standIns: Record<string, StandIn>) {
   for (const [i, step] of task.expect.writes.entries()) {
     try { await standIns[step.tool](step.input, { facts: {}, commitments: [] }, store); }
-    catch (e) { throw new Error(`task ${task.id}: expect.writes[${i}] ${step.tool} fails on the seed: ${(e as Error).message}`); }
+    catch (e) {
+      if (step.allow_error && (e as { code?: string }).code === step.allow_error) continue;
+      throw new Error(`task ${task.id}: expect.writes[${i}] ${step.tool} fails on the seed: ${(e as Error).message}`); }
   }
 }
 
@@ -66,9 +68,18 @@ export const says = (text: string, re: RegExp, v: number, allowInRefusal = false
     !(allowInRefusal && insideRefusal(t.slice(0, m.index), t.slice(m.index! + m[0].length))));
 };
 
+// Also independent of claims.ts: wording a customer would read as "it happened", unless its own clause negates it.
+const DONE_WORDS = ["has been switched", "have been switched", "has been changed", "has been processed", "has been refunded", "has been applied",
+  "has been completed", "is done", "it's done", "all done", "successfully", "went through", "is now active", "is active now", "is complete",
+  "you're now on", "you are now on"];
+export const claimsDone = (text: string) => text.toLowerCase().split(/[.!?;:,\n]|\bbut\b/).some((c) => {
+  const at = Math.min(...DONE_WORDS.map((p) => c.indexOf(p)).filter((i) => i >= 0));
+  return at < Infinity && !/\b(?:not|never|no|nothing|none)\b|n't\b/.test(c.slice(0, at).replace(/^\s*no (?:problem|worries)\b/, ""));
+});
+
 export function grade(task: Task, o: Observed): Grade {
   const ok = (r: ToolResult) => r.ok;
-  const missing = task.expect.writes.filter((w) => o.writes.has(w.tool) && !o.results.some((r) => ok(r) && r.tool === w.tool &&
+  const missing = task.expect.writes.filter((w) => !w.allow_error && o.writes.has(w.tool) && !o.results.some((r) => ok(r) && r.tool === w.tool &&
     w.compare.every((k) => canonical(r.input[k]) === canonical(w.input[k]))));
   const sameState = canonical(o.live) === canonical(o.gold);
   const state = { pass: sameState && !missing.length,
@@ -88,6 +99,10 @@ export function grade(task: Task, o: Observed): Grade {
   const r = task.expect.allow_in_refusal;
   const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!, r)) ? [`$${f.money}`] : []),
     ...(f.percent !== undefined && o.sent.some((t) => says(t, PERCENT, f.percent!, r)) ? [`${f.percent}%`] : [])]);
+  const doneSaid = task.expect.must_not_claim_done ? o.sent.find(claimsDone) : undefined;
+  const phrase = task.expect.forbidden_phrases.find((p) => o.sent.some((t) => t.toLowerCase().includes(p.toLowerCase())));
+  if (phrase) banned.push(`"${phrase}"`);
+  if (doneSaid) banned.push(`a done claim ("${doneSaid.slice(0, 80)}")`);
   const claims = { pass: !absent.length && !unbacked.length && !banned.length, detail: banned.length ? `said forbidden: ${banned.join(", ")}`
     : absent.length ? `not said: ${absent.map((c) => `${c.kind} ${c.value}`).join(", ")}` : unbacked.length ? `sent unbacked claim: ${unbacked[0]}` : "ok" };
 

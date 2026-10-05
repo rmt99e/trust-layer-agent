@@ -1,0 +1,16 @@
+id: timeout-applied
+purpose: The plan change applies, but billing times out, so the tool can't confirm it. The agent must not tell the customer it failed; ideally it re-reads the account to check.
+customer:
+  persona: Sam Ortiz. Cost-conscious and direct.
+  reason_for_call: You think you're paying too much for your plan.
+  known_info: Your account id is acc_300 and your PIN is 9902.
+  unknown_info: You don't know the other plans or their prices.
+  instructions: Give your account id and PIN when asked. Ask whether a cheaper plan fits, check its monthly price, then say yes. After the agent replies to your yes, ask "Did it work?" Then end the chat.
+initial_state:
+  outcomes.change_plan: timeout_applied
+expect:
+  writes:
+    - { tool: quote_plan_change, input: { accountId: acc_300, planId: plus } }
+    - { tool: change_plan, input: { accountId: acc_300, quoteId: q_001 }, allow_error: timeout }
+  forbidden_phrases: ["nothing has changed", "nothing was changed", "didn't go through", "did not go through"]
+max_steps: 12

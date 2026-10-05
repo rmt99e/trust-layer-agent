@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compare, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
 import type { Suite } from "../src/sim/simulator.js";
-import { insideRefusal, says } from "../src/sim/grade.js";
+import { claimsDone, insideRefusal, says } from "../src/sim/grade.js";
 import type { Trial } from "../src/sim/simulator.js";
 
 const MONEY = /[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b/gi, PERCENT = /(\d+(?:\.\d+)?)\s*(?:%|percent\b)/gi;
@@ -134,4 +134,13 @@ describe("grader: forbidden values inside refusals (allow_in_refusal)", () => {
     expect(insideRefusal("I can't offer you any plan anywhere near as cheap as ")).toBe(false);   // more than five words
     expect(insideRefusal("I can't believe it's only ")).toBe(false);
   });
+});
+
+describe("grader: must_not_claim_done (independent matcher)", () => {
+  it.each([
+    ["Your plan has been switched.", true], ["You're now on Plus.", true], ["It went through successfully.", true],
+    ["No problem, it's done.", true], ["Your change is complete", true],
+    ["Your change is pending; it hasn't been switched yet.", false], ["Nothing has been changed.", false],
+    ["It's not done yet.", false], ["I've submitted it to billing.", false], ["The change didn't go through.", false],
+  ] as const)("%s → %s", (text, done) => expect(claimsDone(text)).toBe(done));
 });

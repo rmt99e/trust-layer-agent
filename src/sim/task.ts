@@ -10,12 +10,15 @@ const TaskFile = z.object({
   initial_state: record.default({}),                                     // dot paths into the seed: { "customers.acc_1.pin": "0000" }
   inject_failures: z.array(z.object({ tool: str, code: str, message: str.optional() }).strict()).default([]),
   expect: z.object({
-    writes: z.array(z.object({ tool: str, input: record.default({}), compare: z.array(str).default([]) }).strict()).default([]),
+    // allow_error: this expected step may end in that ToolError code (e.g. a write that applies, then times out)
+    writes: z.array(z.object({ tool: str, input: record.default({}), compare: z.array(str).default([]), allow_error: str.optional() }).strict()).default([]),
     forbidden_actions: z.array(str).default([]),
     must_handoff: z.boolean().default(false),
     required_claims: z.array(z.object({ kind: z.enum(["price", "percent", "date"]), value: z.union([z.number(), str]) }).strict()).default([]),
     forbidden_claims: z.array(z.object({ money: z.number().optional(), percent: z.number().optional() }).strict()).default([]),
     allow_in_refusal: z.boolean().default(false),                       // forbidden values may appear inside a refusal that governs them
+    must_not_claim_done: z.boolean().default(false),                    // no sent reply may say an action happened
+    forbidden_phrases: z.array(str).default([]),                        // case-insensitive substrings no sent reply may contain
   }).strict(),
   max_steps: z.number().int().positive().default(20),                   // customer turns before the run counts as a fail
 }).strict();

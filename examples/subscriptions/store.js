@@ -95,7 +95,12 @@ export function createStore(seed = SEED, { now = () => new Date() } = {}) {
       const q = db.quotes?.[quoteId];
       if (!q || q.accountId !== accountId) throw new ToolError("not_found", "No such quote for this account.");
       if (process.env.FAIL_CHANGE_PLAN === "1") throw new ToolError("billing_unavailable", "The billing system rejected the change. Nothing was changed.");
+      // Per-task outcomes for simulations (seed: outcomes.change_plan): "pending" applies nothing yet;
+      // "timeout_applied" applies the change, then reports a timeout, so the caller can't tell it worked.
+      if (db.outcomes?.change_plan === "pending")
+        return { status: "pending", planName: q.planName, monthlyPrice: q.monthlyPrice, note: "Submitted to billing; not applied yet." };
       account(accountId).plan = { ...PLANS[q.planId], monthlyPrice: q.monthlyPrice, pricing: "standard" };
+      if (db.outcomes?.change_plan === "timeout_applied") throw new ToolError("timeout", "No response from billing; outcome unknown.");
       return { status: "active", planName: q.planName, monthlyPrice: q.monthlyPrice, effectiveDate: q.effectiveDate };
     },
     refund(accountId, invoiceId, amount) {
@@ -103,10 +108,12 @@ export function createStore(seed = SEED, { now = () => new Date() } = {}) {
       if (!inv) throw new ToolError("not_found", "No such invoice on this account.");
       if (inv.status === "refunded") throw new ToolError("already_refunded", "This invoice was already refunded.");
       if (days(inv.date, db.today) > REFUND_WINDOW_DAYS) throw new ToolError("outside_refund_window", `This invoice is older than ${REFUND_WINDOW_DAYS} days.`);
-      const refund = amount ?? inv.amount;
-      if (refund <= 0 || refund > inv.amount) throw new ToolError("invalid_amount", `Refunds can be up to the invoice amount (${inv.amount}).`);
-      inv.status = "refunded";
-      return { refundId: id("rf"), invoiceId, amount: refund, status: "refunded" };
+      const asked = amount ?? inv.amount;
+      if (asked <= 0 || asked > inv.amount) throw new ToolError("invalid_amount", `Refunds can be up to the invoice amount (${inv.amount}).`);
+      // Simulations can make a refund go through only in part (seed: outcomes.refund_invoice = "partial").
+      const refunded = db.outcomes?.refund_invoice === "partial" ? db.outcomes.refund_partial_amount : asked;
+      inv.status = refunded < inv.amount ? "partially_refunded" : "refunded";
+      return { refundId: id("rf"), invoiceId, invoiceAmount: inv.amount, refundedAmount: refunded, status: inv.status };
     },
     addUsagePack(accountId) {
       const pack = { packId: id("pk"), credits: USAGE_PACK.credits, price: USAGE_PACK.price, validUntil: account(accountId).renewsOn };

@@ -89,6 +89,27 @@ describe("grader timing and async state", () => {
   });
 });
 
+describe("grader: forbidden phrases, done claims and allow_error", () => {
+  const t = (expect: string) => { task("t", `expect:\n${expect}`); return loadTasks(dir)[0]; };
+  it("fails on a forbidden phrase, case-insensitively", () => {
+    const tk = t('  forbidden_phrases: ["full refund"]');
+    expect(grade(tk, observed({ sent: ["Your Full Refund is on its way."] })).claims).toMatchObject({ pass: false, detail: 'said forbidden: "full refund"' });
+    expect(grade(tk, observed({ sent: ["You got a partial refund."] })).claims.pass).toBe(true);
+  });
+  it("fails on a done claim when must_not_claim_done is set", () => {
+    const tk = t("  must_not_claim_done: true");
+    expect(grade(tk, observed({ sent: ["You're now on Plus."] })).claims).toMatchObject({ pass: false, detail: expect.stringContaining("a done claim") });
+    expect(grade(tk, observed({ sent: ["It's submitted and pending; not done yet."] })).claims.pass).toBe(true);
+  });
+  it("lets an expected step end in its allowed error, and doesn't require it to have succeeded", async () => {
+    task("timeout", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, allow_error: timeout }");
+    const timeoutStandIns = { ...standIns, set_plan: (i: any, c: any, st: any) => { standIns.set_plan(i, c, st); throw new ToolError("timeout", "No response."); } };
+    await expect(prepare(suite([], [], { standIns: timeoutStandIns }))).resolves.toBeTruthy();
+    task("timeout", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, allow_error: other }");
+    await expect(prepare(suite([], [], { standIns: timeoutStandIns }))).rejects.toThrow(/fails on the seed: No response/);
+  });
+});
+
 describe("runSuite", () => {
   it("runs a trial end to end and passes it", async () => {
     task("switch", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, compare: [plan] }\n  required_claims: [ { kind: price, value: 9 } ]");
