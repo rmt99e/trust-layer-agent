@@ -25,6 +25,7 @@ This is a small project maintained on a best-effort basis. We aim to acknowledge
 Bypasses of what the library claims to enforce in code, for example:
 
 - a reply that states a price, date or "done" no tool returned and still passes `no_unconfirmed_claims`;
+- a reply that says a write worked or failed while its outcome is still unknown, or a successful write that runs again in the same turn (`no_repeated_writes`);
 - a write tool that runs without the required quote and yes (`yes_after_quote`), or account data returned before verification (`verified_first`);
 - a model or customer overriding a bound tool input (bind injection);
 - personal data reaching the model past field-level visibility, or reaching traces past masking;
@@ -32,4 +33,4 @@ Bypasses of what the library claims to enforce in code, for example:
 
 ## Out of scope
 
-Model behavior that no check claims to cover: tone, wrong advice within allowed actions, or a model ignoring prompt-only guidance. Issues in your own tools or data functions, and in model providers' APIs, belong with those projects.
+Model behavior that no check claims to cover: tone, wrong advice within allowed actions (including judgments such as "this plan fits your usage", which no check verifies yet), or a model ignoring prompt-only guidance. Issues in your own tools or data functions, and in model providers' APIs, belong with those projects.

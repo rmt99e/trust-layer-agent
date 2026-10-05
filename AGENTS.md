@@ -13,7 +13,7 @@ Core idea: the model chooses the words; code decides what's allowed. Three nouns
 - `src/chat.ts`: `agent.chat()` for trying an agent in the terminal.
 - `src/tools.ts`: `read()` / `write()`, input validation, field-level visibility, bound inputs.
 - `src/checks.ts`: the check type and result shape (allow, block, rewrite, handoff), check context, check runner.
-- `src/builtins.ts`: built-in checks (verified_first, yes_after_quote, no_unconfirmed_claims, handoff_after_failures).
+- `src/builtins.ts`: built-in checks (verified_first, yes_after_quote, no_unconfirmed_claims, handoff_after_failures, no_repeated_writes; untrusted_text_is_data is structural, in the agent loop).
 - `src/claims.ts`: deterministic claim extraction and matching, shared by no_unconfirmed_claims and the grader.
 - `src/session.ts`: the session JSON, `createSession()`, `forget()`.
 - `src/journeys.ts`: journey YAML loading, validation with file and line, guardrails compiled to checks.
@@ -24,7 +24,7 @@ Core idea: the model chooses the words; code decides what's allowed. Three nouns
 - `src/cli.ts`: the `test` and `snapshot` commands.
 - `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts.
 - `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the full example (store, tools, journeys, policy, `sim/` suite and tasks).
-- `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`. `results/` and `traces/` are written at run time and gitignored.
+- `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`. `results/` and `traces/` are written at run time and gitignored.
 - `docs/design.md`: the approved API design.
 
 ## Commands
@@ -43,7 +43,7 @@ Simulations cost real money. They need `ANTHROPIC_API_KEY` in `.env` (copy `.env
 ```sh
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --tasks usage-pack,change-fails
-npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v3-sonnet --min-pass 1
+npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v4-sonnet --min-pass 1
 npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ```
 
@@ -57,7 +57,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,300 (non-blank, non-comment; about 1,250 today). Count with:
+- Logic lines in `src/` stay under 1,300 (non-blank, non-comment; about 1,280 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 

@@ -34,6 +34,9 @@ ToolDef {
   verifies?: boolean;
   output?: <schema>;            // accepted, unused in v0.1
   records?: (output, input) => { facts?: {..}, commitments?: [{ type, id, values, expiresAt? }] };
+  outcome?: (output) => "done" | "pending";   // write tools: how to read a successful result (default "done")
+  reconcileWith?: string;       // write tools: name of the read tool that settles an unknown outcome
+  repeatable?: boolean;         // write tools: may succeed more than once in one turn (see no_repeated_writes)
   run(input, ctx: { facts, commitments }) => output | Promise<output>;   // ctx is a read-only copy
 }
 ```
@@ -52,7 +55,7 @@ Definition-time errors (MUST throw): name not snake_case; empty description; inp
 |---|---|---|
 | bound fact undefined | `missing_fact` | `This call needs facts.K, which isn't known yet.` |
 | input fails the schema | `invalid_input` | issues joined by `; `, each `<dot.path or "input">: <issue>` |
-| `run` throws `ToolError(code, message)` | the given code | the given message |
+| `run` throws `ToolError(code, message[, { outcome: "unknown" }])` | the given code | the given message |
 | `run` throws anything else | `internal_error` | `The tool failed unexpectedly.` (the original message MUST NOT reach the model) |
 
 A failed call records nothing (no facts, no commitments). Its ToolResult `input` is the model's input with bound fields injected (unvalidated).
@@ -73,8 +76,18 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 
 **Failures counter.** `session.failures` is set to `0` after any successful tool call and incremented after any failed tool call. Blocked actions and unknown tool names do not change it.
 
-<!-- V4: write outcomes (done/pending/failed/unknown), reconciliation reads, failure-language guard, no repeated writes in a turn -->
-> **Pending: v4.** Write outcomes beyond succeeded/failed, and reconciliation reads, are not part of v0.1; in v0.1 a write either resolves (`ok: true`) or throws (`ok: false`).
+**Write outcomes.** A ToolResult MAY carry `outcome`: `"done" | "pending" | "unknown"`.
+- A successful call of a **write** tool records `outcome = tool.outcome(output)` when `outcome` is given, else `"done"`. `outcome` receives the full output (not the visible one) and is called after `records`. A successful read records no `outcome`.
+- `ToolError(code, message, { outcome: "unknown" })` means the call may have taken effect (e.g. a timeout after the change was applied). The failed ToolResult records `outcome: "unknown"` next to `ok: false` and `error`. The reference records it whatever the tool's kind; only write results are read by the claim check. A failed call without `outcome` is a **known failure**. `internal_error`, `missing_fact` and `invalid_input` never carry an outcome.
+- An unknown-outcome call is still a failure everywhere else: it records nothing, increments `failures`, does not mark a `confirm` commitment used, and matches `handoff_when.tool_error` by code. The model's tool message and the `tool` trace line carry only `{ error }`; the outcome lives in the session.
+- `reconcileWith` names the read whose later success settles an unknown outcome. The reference validates neither `reconcileWith` (it need not name an existing or read tool) nor `outcome`/`repeatable` on read tools; they are accepted and ignored.
+
+**Per-write state** (used by no_unconfirmed_claims, 5.3). For each write tool, in the agent's tool order, take its **latest** ToolResult in `results` (tools never called have no state):
+- `ok: true` → its `outcome`, or `"done"` if absent (so `done` or `pending`);
+- `ok: false` with `outcome: "unknown"` → `reconciled` if the tool has `reconcileWith` and some **later** result (higher index) is a successful call of that tool, else `unknown`;
+- `ok: false` otherwise → `failed`.
+
+So a reconcile read made before the unknown call does not settle it, and a later call of the write replaces its state (a retry that succeeds is `done`; one that fails is `failed`).
 
 ## 2. respond(): one turn
 
@@ -113,7 +126,7 @@ untrusted_text_is_data has no runtime check: fencing plus bind injection are str
 ```ts
 Check { name: string; run(event, context) -> Result | Promise<Result> }
 event   = { kind: "action", tool: ToolInfo, input: { [k]: Json } } | { kind: "reply", text: string }
-ToolInfo = { name, kind: "read"|"write", bind?, confirm?, beforeVerification?, verifies? }
+ToolInfo = { name, kind: "read"|"write", bind?, confirm?, beforeVerification?, verifies?, reconcileWith?, repeatable? }
 context = { facts, commitments, results, messages /* last is the current customer message */,
             failures, turn, tools: ToolInfo[], operatorText: string[], now: Date }
 Result  = { allow: true } | { block: reason } | { rewrite: text } | { handoff: summary }
@@ -121,11 +134,11 @@ Result  = { allow: true } | { block: reason } | { rewrite: text } | { handoff: s
 
 Helpers: `allow()`, `block(reason)`, `rewrite(text)`, `handoff(summary)`, `check(name, fn)`. Checks MUST NOT mutate the context.
 
-**Pipeline order:** built-ins (`verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, minus any disabled), then journey guardrail checks in file and list order, then custom checks in array order. Every check sees every event; a check ignores events it doesn't apply to by returning allow.
+**Pipeline order:** built-ins (`verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, `no_repeated_writes`, minus any disabled), then journey guardrail checks in file and list order, then custom checks in array order. Every check sees every event; a check ignores events it doesn't apply to by returning allow.
 - **Actions:** the first non-allow result wins and stops the chain. A `rewrite` for an action MUST raise an error.
 - **Replies:** a `rewrite` replaces the text and later checks see the new text; `block` or `handoff` stops the chain. If the chain completes with changed text, the result is `rewrite`, attributed to the last check that rewrote it (the name in its trace line).
 
-`now` is the agent's clock (option `now`, default real time). Built-ins are disabled with `builtins: { <name>: false }`.
+`now` is the agent's clock (option `now`, default real time). Built-ins are disabled with `builtins: { <name>: false }`. The built-in names a journey may list are exactly `verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, `no_repeated_writes` and `untrusted_text_is_data` (structural, always on; section 3).
 
 ## 5. Built-in checks
 
@@ -151,12 +164,15 @@ Let `last` = the last message, `c` = the tool's `confirm`, `id = input[c.by]`, `
 So after a shown quote "let's go with that" and "I'll take it" consent, while "I won't take it", "let's not go with that" and "sounds good but what's the fee?" don't; before the quote was shown, none of them do.
 
 ### 5.3 no_unconfirmed_claims (replies)
-Extract claims from the draft (5.4), collect confirmed values, and block on the first failure in this order: money, percent, date, relative date, done-language. Reasons (numbers printed in shortest decimal form, dates as extracted):
+Extract claims from the draft (5.4), collect confirmed values, and block on the first failure in this order: money, percent, date, relative date, then write outcomes and done-language (below). Reasons (numbers printed in shortest decimal form, dates as extracted):
 - `Reply states the amount <n> but no tool returned that amount. Use a returned value or don't state it.`
 - `Reply states <n>% but no tool returned that percentage. Use a returned value or don't state it.`
 - `Reply states the date <d> but no tool returned it. Use a returned date or don't state one.`
 - `Reply says "<word>" but no tool returned a date this session. Don't promise timing no tool confirmed.`
+- `<tool> ended with an unknown outcome. Call <reconcileWith> first to check what actually happened; don't say whether it worked until then.` (if the tool has no `reconcileWith`: `<tool> ended with an unknown outcome. Say the outcome is being checked; don't say whether it worked until then.`)
+- `Reply says "<failed words>", but nothing failed: the latest write succeeded. Say what actually happened.`
 - `Reply says "<phrase>", but <tools> failed and hasn't succeeded since. Say what actually happened.`
+- `Reply says "<phrase>", but <tool> is still pending. Say it's processing, not done.`
 - `Reply says "<phrase>", but no write succeeded this session. Say what actually happened.`
 
 **Confirmed sources:** visible outputs of successful ToolResults this session; `values` of every commitment (any status); operator text. Customer text never confirms anything. Derived values (sums, differences) are not computed: tools must return every number the agent may say.
@@ -171,10 +187,17 @@ So "I can't offer Plus at $10" passes; "I can't believe it's only $10", "I can't
 
 **Dates.** Every confirmed date is stored both as `YYYY-MM-DD` and as its `MM-DD` suffix; a claim with a year must match the full date, a claim without a year matches `MM-DD`. ISO timestamps confirm their calendar date. Relative words other than `today` (confirmed by the clock) need at least one date in a tool output or commitment (operator text doesn't count).
 
-**Done-language.** Let the write calls be ToolResults of write tools. If any write tool has a failed call with no later successful call of that same tool, block (listing those tools, comma-joined). Otherwise, if no write call succeeded, block.
+**Write outcomes and done-language.** Compute each write's state (section 1, "Per-write state"). "The first write in state S" means the first in the agent's tool order. Let `done` = the draft's done claims after the 5.4 filters, each lower-cased, with `<phrase>` = the first one, and `failedSaid` = the first match of
+`FAILED_WORDS = \b(?:didn't go through|did not go through|failed|wasn't applied|was not applied|nothing has changed|nothing has been changed|nothing was changed|no changes were made)\b` (`/i`)
+in the raw draft (no negation or status filtering; `<failed words>` is the match as written). Then, in this order:
+1. Some write is `unknown` and (`done` is non-empty or `failedSaid` exists): block with the unknown-outcome reason for the first unknown write. Until a reconcile read succeeds, the agent may say neither "it worked" nor "it failed".
+2. `failedSaid` exists, no write is `failed`, and some write is `done`: block (failure wording after a success). `reconciled` and `pending` don't count as `done` here.
+3. If `done` is non-empty:
+   - any write is `failed`: block, listing every failed write, comma-joined;
+   - else some write is `pending`: block with the pending reason for the first one;
+   - else, unless the reply is a **bare "all set"** (every lower-cased done match contains `all set`), block with "no write succeeded" when no write is `done` or `reconciled`.
 
-<!-- V4: write outcomes (done/pending/failed/unknown), reconciliation reads, failure-language guard, no repeated writes in a turn -->
-> **Pending: v4.** Outcome-aware done-language, a guard on failure language and a ban on repeating a write in one turn are not part of v0.1.
+Done claims are not tied to a particular write: any `done` or `reconciled` write backs every done phrase, provided no write is `failed`, `pending` or `unknown`. A bare "You're all set!" is a pleasantry: it is allowed with no write at all, but still blocked when a write failed, is pending or is unknown; "You're all set, your plan has been switched" is not bare. A failure without an outcome makes failure wording honest even when another write succeeded ("It didn't go through" after a failed change_plan and a successful open_case).
 
 ### 5.4 Claim extraction (shared by 5.3, markShown and the grader)
 With `NUM = \d[\d,]*(?:\.\d+)?`, all values normalized with `norm`:
@@ -182,16 +205,19 @@ With `NUM = \d[\d,]*(?:\.\d+)?`, all values normalized with `norm`:
 - **percents:** `(NUM)\s?(?:%|percent\b)` (`/i`).
 - **dates** (`/i`), each yielding `YYYY-MM-DD` or `MM-DD`: `\b(\d{4})-(\d{2})-(\d{2})(?!\d)` (also inside timestamps); `Month D[st|nd|rd|th][,] [YYYY]`; `D[st|nd|rd|th] [of] Month[,] [YYYY]`; `M/D[/YYYY]` (US order, M 1–12, D 1–31). Month = `jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?` followed by `\b` and an optional `.`.
 - **relative:** `\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|monday|…|sunday)|this (?:week|weekend|month))\b`.
-- **done:** `\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully)\b` (`/i`). A match is dropped when:
+- **done:** `\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully|went through|(?:has|have) gone through)\b` (`/i`). A match is dropped when:
   - **negated:** its clause matches `NEGATED = \b(?:not|never|no longer|nothing|none|no)\b|n't\b` (`/i`). The clause is the text before the match, after the last `.`, `!`, `?`, `;`, `:`, `,`, newline or the word `but` (`/i`), with a leading interjection `^\s*no (?:problem|worries|worry)\b` (`/i`) removed first. So "Nothing has been changed" and "None of your settings have been changed" are not claims, while "No problem, your plan has been switched", "No worries your refund has been processed" and "No, it's done" are;
   - **status:** the match contains `all set` and the text right after it matches `^\s+(?:staying|to stay|on your (?:current|existing)|with your (?:current|existing))\b` (`/i`). "You're all set staying on your Starter plan" reports that nothing changed; "You're all set." and "You're all set, your plan has been switched" still claim.
 
-Known v0.1 false positives are intentional and tabled (e.g. a conditional "if you switched" is blocked). Every relaxation above (refusal allowance, negated subjects, status phrases, extra consent phrases) is paired with attack rows in the test tables that MUST keep blocking.
+Known v0.1 false positives are intentional and tabled (e.g. a conditional "if you switched" is blocked). Every relaxation above (refusal allowance, negated subjects, status phrases, extra consent phrases, bare "all set", reconcile reads, `repeatable`) is paired with attack rows in the test tables that MUST keep blocking.
 
 **markShown.** After a reply is sent, each commitment with `status == "open"` and no `shownTurn` gets `shownTurn = T` if the reply contains its `id` as a substring, or states a money or percent value (5.4) equal to one of the commitment's values of that kind.
 
 ### 5.5 handoff_after_failures (all events)
 Options `{ after = 2 }`. If `failures >= after`, hand off with summary `<failures> consecutive failures (<tool>: <code>; …).`, listing the last `after` failed ToolResults (parenthetical omitted if none). It runs on every event, so the next action or reply after the `after`-th consecutive failure hands off.
+
+### 5.6 no_repeated_writes (actions on write tools)
+Allow if the event is not an action, the tool is a read, or the tool has `repeatable: true`. Otherwise let `prior` = the last ToolResult with `ok: true`, `tool` equal to this tool and `turn` equal to the current turn; if there is one, block: `<tool> already succeeded this turn (result: <JSON(prior.output)>). Don't call it again; use that result.` (`JSON` = compact JSON of the visible output, e.g. `{"caseId":"case_002"}`; `null` if hidden). A `pending` success counts; a failed call (including an unknown outcome) and a success in an earlier turn don't. It stops a model that redrafts a blocked reply from opening a second case or refunding twice. Disable with `builtins: { no_repeated_writes: false }`.
 
 ## 6. Journeys
 
@@ -284,7 +310,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 | `status` | `open`, `handed_off` (set on handoff), `closed` (reserved; never set by v0.1) |
 | `facts` | `{ key: Json }`; from `createSession({ facts })` (trusted app input) and tool `records` |
 | `commitments[]` | `{ type, id, by, values, turn, shownTurn?, acceptedTurn?, status, expiresAt? }`; status `open`/`used` (also reserved: `accepted`, `expired`) |
-| `results[]` | ToolResults: `{ id: "c_<n>", tool, turn, ok, input, output? (visible only), error?: { code, message } }`; `n` = position, 1-based |
+| `results[]` | ToolResults: `{ id: "c_<n>", tool, turn, ok, input, output? (visible only), error?: { code, message }, outcome?: "done" \| "pending" \| "unknown" }`; `n` = position, 1-based; `outcome` per section 1 |
 | `messages[]` | `{ role: "customer" | "agent", text, turn }` |
 | `failures` | consecutive failures (section 1, section 2 step 4) |
 
@@ -302,7 +328,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
     { "id": "c_2", "tool": "quote_plan_change", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "planId": "plus" },
       "output": { "quoteId": "q_001", "planName": "Plus", "monthlyPrice": 29, "proratedCharge": 4.12, "effectiveDate": "2026-10-03" } },
     { "id": "c_3", "tool": "change_plan", "turn": 2, "ok": true, "input": { "accountId": "acc_100", "quoteId": "q_001" },
-      "output": { "status": "active" } }
+      "output": { "status": "active" }, "outcome": "done" }
   ],
   "messages": [
     { "role": "customer", "text": "I keep running out of credits. I'm acc_100, PIN 4417.", "turn": 1 },
@@ -346,7 +372,7 @@ Agent option `trace`: a sink, `false` (no tracing), or omitted (default `jsonl()
 
 ## 10. Simulation suites and tasks
 
-A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (agent options except model, tools, clock and trace), `tools` (the real tools; every declaration comes from here), `standIns` (`{ toolName: (input, ctx, store) -> output }`, replacing only `run`), `seed`, `createStore(seed, { now })`, `state(store)` (the projection the grader compares; it MAY return a promise, e.g. to read a seeded test database, and is awaited), `tasks` (file or directory), `agentModel`, `customerModel` (pinned for the run), `prices` (`{ modelId: { input, output } }`, USD per million tokens), optional `now` (fixed ISO clock).
+A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (agent options except model, tools, clock and trace), `tools` (the real tools; every declaration comes from here), `standIns` (`{ toolName: (input, ctx, store) -> output }`, replacing only `run`), `seed`, `createStore(seed, { now })` (a fresh store per trial; it MAY return a promise, e.g. to set up a database, and is awaited, including for the gold store and the pre-run `expect.writes` validation), `state(store)` (the projection the grader compares; it MAY return a promise, e.g. to read a seeded test database, and is awaited), `tasks` (file or directory), `agentModel`, `customerModel` (pinned for the run), `prices` (`{ modelId: { input, output } }`, USD per million tokens), optional `now` (fixed ISO clock).
 
 **Before any model call** `test` MUST fail if: a tool has no stand-in or a stand-in names no tool; a task file is invalid (errors as `Invalid task:` + `file:line:col` lines); a task names an unknown tool (`task <id>: unknown tool "<name>"`, checked across `expect.writes`, `expect.forbidden_actions`, `expect.allowed_writes` and `inject_failures`); a task's `expect.writes` throw when applied through the stand-ins to a fresh seeded store (`task <id>: expect.writes[<i>] <tool> fails on the seed: <message>`), unless the step's `allow_error` equals the thrown error's `code`; a model id has no price (`no price for model "<id>" in suite.prices`).
 
@@ -358,7 +384,7 @@ A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (age
 | `purpose` | text | what the task tests |
 | `customer` | `{ persona, reason_for_call, known_info, unknown_info?, instructions }` | drives the simulated customer |
 | `initial_state` | map, `{}` | dot paths into the seed, set before the trial (intermediate objects created) |
-| `inject_failures` | `[{ tool, code, message? }]`, `[]` | every call of `tool` throws `ToolError(code, message ?? "<tool> failed.")` |
+| `inject_failures` | `[{ tool, code, message? }]`, `[]` | every call of `tool` throws `ToolError(code, message ?? "<tool> failed.")`, a known failure (no outcome) |
 | `expect.writes` | `[{ tool, input: {}, compare: [], allow_error? }]`, `[]` | applied to the gold store in order; write tools must also have run. `allow_error: <code>`: this step may end in a ToolError with that code (e.g. a write that applies, then times out); it is then not required to have succeeded |
 | `expect.forbidden_actions` | tool names, `[]` | must not execute successfully |
 | `expect.allowed_writes` | tool names, `[]` | extra calls that are fine here: each successful live call is replayed into the gold store, so it doesn't fail the state |
@@ -413,7 +439,7 @@ Grading is deterministic; there is no LLM judge. A trial passes iff all four com
 
 **Inside a refusal** (grader, used by c; word-based and independent of 5.3, and it does not require the customer to have said the value): let `clause` = the text before the mention after the last break and `rest` = the text after the mention up to the next break, breaks being `[.!?;:,\n]|\bbut\b|\bbecause\b|\band\b|\bso\b|\balthough\b|\bthough\b` (`/i`). Not a refusal if any word of `clause + " " + rest` (lower-cased, split on `[^a-z']+`) is one of `than, below, under, above, over, less, more, lowest, best, cheapest, minimum, maximum`, or is `at` followed by `least` or `most`. Otherwise it is a refusal iff the clause's lower-cased whitespace-separated words contain a refuser (`can't` | `cannot` | `can not` | `won't` | `will not` | `unable to` | `not able to`) immediately followed by one of `offer, do, give, apply, get, set, lower, match, honor, honour, reduce, provide, make`, with at most five words after that verb, and preceded by `i`, `we`, `i'm` or `we're`, or by `am`/`are` preceded by `i`/`we`.
 
-**Trial status:** `pass`, `fail`, `infra` (a `ModelError` from either model; not graded), `stopped` (cost limit). Cost per model call = `(inputTokens × price.input + outputTokens × price.output) / 1e6`; each trial also records `tokens: { agent: { input, output }, customer: { input, output } }`. Once accumulated cost exceeds the limit (`--max-cost`, default 10), the running trial and every later trial are `stopped`.
+**Trial status:** `pass`, `fail`, `infra` (a `ModelError` from either model; not graded), `stopped` (cost limit). Cost per model call = `(inputTokens × price.input + outputTokens × price.output) / 1e6`; each trial also records `tokens: { agent: { input, output }, customer: { input, output } }`. Once accumulated cost exceeds the limit (`--max-cost`, default 10; the programmatic `runSuite(suite, { k, tasks, maxCost })` uses the same default of 10), the running trial and every later trial are `stopped`.
 
 **Friction** per trial = the number of `check` trace lines with a `block` result (blocked actions plus blocked drafts).
 
@@ -444,7 +470,7 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 | `agentModel`, `customerModel` | model ids, unhashed |
 | `instructions` | hash of the instructions text |
 | `journeys`, `knowledge` | hash of the list of file contents, in load order |
-| `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before }]` |
+| `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before }]` (`outcome`, `reconcileWith` and `repeatable` are not included) |
 | `checks` | hash of `{ builtins: <options>, custom: [check names] }` |
 | `suite` | hash of the suite file's text |
 | `library` | hash of the list of contents of **every** compiled `.js` file of the package, recursively (including the simulator and model adapters), sorted by relative path |
@@ -454,9 +480,9 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 ## 13. Conformance
 
 A port conforms to v0.1 when:
-1. It ports the reference test tables and they pass unchanged in meaning, every allowed row **and** every attack row: `test/claims.test.ts` (extraction, kinds, dates, negation, negated subjects, status phrases, refusal allowance, markShown), `test/builtins.test.ts` (phrase cases, extra consent phrases, custom phrase case, yes_after_quote ordering, verified_first applicability and warning, handoff summary, pipeline order, rewrite chaining and attribution), `test/tools.test.ts` (bind, visibility, masking, records, errors), `test/agent.test.ts` (fencing, notes, retries, handoff, masked sinks, structural fields, `agent.forget`, commitment id+type matching), `test/journeys.test.ts` (validation messages with file:line:col), `test/session.test.ts`, `test/sim.test.ts` (grading, send-time claims, async state, `allow_error`, `allowed_writes`, forbidden phrases, done claims) and `test/cli.test.ts` (summary, compare, gate, library fingerprint, cost estimate, `--against`, the grader's independent refusal and assertion matchers). Block reasons and notes MUST match the exact strings in this spec.
+1. It ports the reference test tables and they pass unchanged in meaning, every allowed row **and** every attack row: `test/claims.test.ts` (extraction, kinds, dates, negation, negated subjects, status phrases, refusal allowance, write outcomes done/pending/failed/unknown/reconciled, failure wording, bare "all set", markShown), `test/builtins.test.ts` (phrase cases, extra consent phrases, custom phrase case, yes_after_quote ordering, verified_first applicability and warning, handoff summary, no_repeated_writes and its block reason, pipeline order, rewrite chaining and attribution), `test/tools.test.ts` (bind, visibility, masking, records, errors, recorded outcomes), `test/agent.test.ts` (fencing, notes, retries, handoff, masked sinks, structural fields, `agent.forget`, commitment id+type matching, no second write while redrafting a blocked reply), `test/journeys.test.ts` (validation messages with file:line:col), `test/session.test.ts`, `test/sim.test.ts` (grading, send-time claims, async `createStore` and `state`, the $10 default cost cap, `allow_error`, `allowed_writes`, forbidden phrases, done claims) and `test/cli.test.ts` (summary, compare, gate, library fingerprint, cost estimate, `--against`, the grader's independent refusal and assertion matchers). Block reasons and notes MUST match the exact strings in this spec.
 2. Its session, journey, task, results and snapshot files are interchangeable with the reference implementation's.
-3. It runs the subscriptions suite (`examples/subscriptions/`: same seed, tools, journeys, policy, clock, prices and the tasks in `sim/tasks/`) with its own `test` command and reports each task's trial marks and pass^k. Scores depend on the models; `snapshots/v3-sonnet.json` and `snapshots/v3-haiku.json` (22 tasks, k = 4) are the reference results for their pinned configurations. Compare trial counts per task, not only pass^k: at k = 4 a single borderline task moves overall pass^4 by about 4.5 points on 22 tasks. Those snapshots were graded before the grader's assertion rule ignored negated and conditional phrases, so some failures recorded there (e.g. in `partial-refund`) may be grader false positives under this spec; check the transcript of every task that differs.
+3. It runs the subscriptions suite (`examples/subscriptions/`: same seed, tools, journeys, policy, clock, prices and the tasks in `sim/tasks/`) with its own `test` command and reports each task's trial marks and pass^k. Scores depend on the models; `snapshots/v4-sonnet.json` and `snapshots/v4-haiku.json` (22 tasks, k = 4, graded by the rules in this spec) are the reference results for their pinned configurations. Compare trial counts per task, not only pass^k: at k = 4 a single borderline task moves overall pass^4 by about 4.5 points on 22 tasks. Check the transcript of every task whose counts differ.
 
 ## Credits
 

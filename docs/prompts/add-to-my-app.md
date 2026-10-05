@@ -17,7 +17,7 @@ If this prompt disagrees with those type files, the type files win; tell me. At 
 and wait.
 
 STEP 1: Inspect the data layer, routes, auth and database. Show one row per candidate tool:
-| tool (snake_case) | read/write | function it wraps (file:line) | bind | visible | confirm | records |
+| tool (snake_case) | read/write | function it wraps (file:line) | bind | visible | confirm | records | outcome |
 - bind: input fields filled from session facts, never by the model: { accountId: "facts.accountId" }. Every
   identity or ownership field goes here.
 - visible: only the returned fields the model needs ("plan.name", "invoices[].amount"). Every number the agent
@@ -25,11 +25,13 @@ STEP 1: Inspect the data layer, routes, auth and database. Show one row per cand
 - confirm (writes): { commitment: "quote", by: "quoteId" } for anything priced (the write takes a quote id,
   never a price); false for writes that need no yes (open a case, hand off); omit otherwise.
 - records: facts or commitments a successful call adds to the session (e.g. a quote).
+- outcome (writes): "done", or can it be pending / time out after applying? Then name the read that shows the truth.
 Also say how customers are identified (logged in, or anonymous and verified in chat), which decisions already
 live in code (eligibility, prices, refund windows), and how a person takes over. STOP.
 
-STEP 2: `npm install trust-layer-agent` (Node 20+). Put the key in a gitignored .env: ANTHROPIC_API_KEY for
-model "anthropic:<model-name>", or OPENAI_API_KEY and OPENAI_BASE_URL for "openai-compatible:<model-name>".
+STEP 2: `npm install github:OWNER/trust-layer-agent` (Node 20+). It's not on npm yet; its prepare script builds
+it on install. Put the key in a gitignored .env: ANTHROPIC_API_KEY for model "anthropic:<model-name>", or
+OPENAI_API_KEY and OPENAI_BASE_URL for "openai-compatible:<model-name>".
 
 STEP 3: Tools in agent/tools.js (tools.ts in TS; zod infers input types). Export a factory over the data
 functions, so simulations can pass a seeded copy and importing tools never opens a database connection:
@@ -45,8 +47,12 @@ functions, so simulations can pass a seeded copy and importing tools never opens
       run: ({ accountId, planId }) => data.quotePlanChange(accountId, planId) }),
     write({ name: "change_plan", description: "Apply a quote the customer accepted.",
       input: z.object({ accountId: z.string(), quoteId: z.string() }), bind, confirm: { commitment: "quote", by: "quoteId" },
+      outcome: (o) => (o.status === "pending" ? "pending" : "done"), reconcileWith: "get_account",
       run: async ({ accountId, quoteId }) => {
-        const changed = await data.changePlan(accountId, quoteId);
+        let changed;
+        try { changed = await data.changePlan(accountId, quoteId); }
+        catch (e) { if (e.name !== "TimeoutError") throw e;      // however your client signals a timeout
+          throw new ToolError("timeout", "No response; it may have applied.", { outcome: "unknown" }); }
         if (!changed) throw new ToolError("change_failed", "The plan was not changed.");
         return changed;
       } }),
@@ -59,6 +65,15 @@ beforeVerification: true, confirm: false): a successful call ends the turn as a 
 add a read with beforeVerification: true, verifies: true and
 records: (o) => (o.verified ? { facts: { verified: true, accountId: o.accountId } } : {}).
 
+Declare write outcomes for writes that can time out or be pending (get_account above is a read, not shown):
+- outcome: (output) => "done" | "pending" (default "done"). The agent may not call a pending write done.
+- ToolError(code, message, { outcome: "unknown" }) for a write that may have happened (a timeout after the
+  request was sent). A plain ToolError means it didn't happen.
+- reconcileWith: "<read tool>" names the read that shows the true state. While an outcome is unknown, no reply
+  may say it worked or failed until that read runs; without reconcileWith the agent can only say it's checking.
+- repeatable: true only for a write that may legitimately succeed twice in one turn (two separate refunds,
+  say). Otherwise no_repeated_writes blocks a second call once the first succeeded.
+
 STEP 4: agent/agent.js. Export the config separately; the simulator reuses it unchanged:
 
   import { Agent } from "trust-layer-agent";
@@ -68,8 +83,9 @@ STEP 4: agent/agent.js. Export the config separately; the simulator reuses it un
   // later: journeys (file, directory or list), knowledge (.md/.txt policy text), checks: [custom checks]
   export const agent = new Agent({ ...agentConfig, model: "anthropic:<model-name>", tools: makeTools(data) });
 
-Built-in checks are on by default: verified_first, yes_after_quote, no_unconfirmed_claims,
-handoff_after_failures (builtins: { handoff_after_failures: { after: 3 } } tunes it) and untrusted_text_is_data
+Six built-in checks are on by default: verified_first, yes_after_quote, no_unconfirmed_claims (prices, dates,
+"done" wording, and "it failed" wording after a write that succeeded), handoff_after_failures
+(builtins: { handoff_after_failures: { after: 3 } } tunes it), no_repeated_writes and untrusted_text_is_data
 (structural, always on). A custom check is one function:
   check("big_refunds_to_person", (e) => e.kind === "action" && e.tool.name === "refund_invoice" &&
     e.input.amount > 100 ? handoff("Refund over $100 requested.") : allow())
@@ -169,9 +185,9 @@ or run the CLI under a TypeScript loader):
   import { makeTools } from "../tools.js";
   import { SEED, createStore } from "./seed.js";
   export default {
-    agent: agentConfig, tools: makeTools(createStore(SEED)),   // declarations only; standIns replace run
+    agent: agentConfig, tools: makeTools({}),    // declarations only: standIns replace every run, so no store here
     standIns: { quote_plan_change: ({ accountId, planId }, _ctx, store) => store.quotePlanChange(accountId, planId) },  // one per tool
-    seed: SEED, createStore,
+    seed: SEED, createStore,                                       // createStore may be async
     state: (store) => ({ /* what the grader compares; no generated ids */ }),   // may be async
     tasks: fileURLToPath(new URL("./tasks", import.meta.url)),
     agentModel: "anthropic:<model-name>", customerModel: "anthropic:<model-name>",    // pinned per run
@@ -179,9 +195,9 @@ or run the CLI under a TypeScript loader):
     now: "2026-01-15T12:00:00Z",                                       // optional fixed clock
   };
 
-Prefer the in-memory store. If your data functions only work against Postgres, state() may be async and query a
-seeded copy of your tables: createStore isn't awaited, so it returns a handle at once and its async methods
-seed a throwaway schema on first use; the live and expected stores need separate schemas. Never production. STOP.
+Prefer the in-memory store. If your data functions only work against Postgres, createStore and state() may both
+be async: createStore can create and seed a throwaway schema (one per call, since the live and expected stores
+need separate schemas) and return a handle to it, and state() queries it. Never production. STOP.
 
 STEP 8: Run from the app root (it reads .env and writes results/ and snapshots/ there). This costs real money:
 the agent and the simulated customer both call the model. It prints an estimate first (from the last run's
@@ -207,6 +223,8 @@ NEVER
   text counts as confirmed for claims, so a stale price there passes the checks.)
 - Let the model pass account ids or other identity fields. Use bind.
 - Write before the customer's yes. Keep yes_after_quote on; use confirm with a quote commitment for anything priced.
+- Let the model decide fit or eligibility in prose for a write ("Starter covers your usage"). No check reads that
+  kind of claim. Return it from a tool (e.g. the quote includes fitsUsage) and gate the write on it with a check.
 - Disable or loosen built-in checks to make a test pass.
 - Weaken, delete or reword a simulation task to make it pass.
 - Show the model fields it doesn't need.

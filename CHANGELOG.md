@@ -2,24 +2,53 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project will follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from its first release.
 
-`v1`, `v2` and `v3` are internal milestones (git tags), not npm releases. The first npm release will be **0.1.0**: package.json is already at 0.1.0 with a prepublish build, but nothing has been published yet.
+`v1` to `v4` are internal milestones (git tags), not npm releases. The first npm release will be **0.1.0**: package.json is already at 0.1.0, but nothing has been published to npm yet. Until then, install from GitHub; a `prepare` script builds the package on install.
 
 ## [Unreleased]
 
 ### Added
 
+- Install from GitHub: a `prepare` script runs the build, so `npm install` from the repository gets compiled JavaScript and types.
+- package.json: a `bugs` field, and CHANGELOG.md in the published package files.
+- Snapshots: v3-sonnet-regraded and v3-haiku-regraded, the v3 results re-graded offline with the fixed grader.
 - Docs: README, SPEC.md (language-neutral spec), AGENTS.md, llms.txt, copy-paste prompts for adding the trust layer to a JS/TS app and for porting it to another language, this changelog, a build log ([docs/how-it-was-built.md](docs/how-it-was-built.md)), CONTRIBUTING.md, SECURITY.md, a CI workflow and issue templates.
-- Simulation tasks: `allowed_writes` lists extra writes that are fine in a task (for example `open_case`); they are replayed into the expected state instead of failing it. Used by pending-change, timeout-applied and partial-refund.
-- v4 (in progress): write outcomes (done, pending, failed, unknown), a reconciliation read before any claim about an unknown outcome, a guard on failure language as well as done language, and no repeated successful write in the same turn. <!-- V4: final v4 entries (Added / Changed / Fixed) and a one-line results summary once v4 is measured and tagged --> Pending: v4 results.
 
 ### Changed
 
+- A suite's `createStore()` may be async (for example, a store backed by a database), like `state()`.
+- `runSuite()`'s default cost cap is 10, the same as the CLI's `--max-cost` default. It was 5.
 - docs/design.md now opens with a note that SPEC.md describes current behavior.
+
+## [v4] - 2026-10-05
+
+Internal milestone: write outcomes, reconciliation reads and no repeated writes, aimed at the harm v3 found. On the 22-task suite at k=4: Sonnet 5.5 pass^4 100% (22/22, 88/88 trials, $5.05); Haiku 4.5 77% (17/22, 79/88 trials, $2.59), and its false "it failed" replies on timeout-applied went 3 → 0. A new harm was found: Haiku claimed a cheaper plan "covers your usage easily" when it didn't, then switched the customer to it.
+
+### Added
+
+- Write outcomes. A write's `outcome(output)` reads a successful result as `"done"` or `"pending"` (default `"done"`). `ToolError` takes `{ outcome: "unknown" }` for a write that may have happened, such as a timeout. Tool results record the outcome; a failed call without one is a known failure.
+- `reconcileWith` on a write names the read tool that settles an unknown outcome.
+- New built-in check `no_repeated_writes`, on by default: a write that already succeeded this turn can't run again. `repeatable: true` on a write opts out; `no_repeated_writes: false` turns the check off.
+- Simulation tasks: `allowed_writes` lists extra writes that are fine in a task (for example `open_case`); they are replayed into the expected state instead of failing it. Used by pending-change, timeout-applied and partial-refund.
+- Subscriptions example: `change_plan` declares pending vs done and reconciles with `get_account`; `refund_invoice` reconciles with `get_invoices`; the timeout-applied store raises an unknown-outcome `ToolError`.
+- Snapshots: v4-sonnet and v4-haiku.
+
+### Changed
+
+- `no_unconfirmed_claims`: after an unknown outcome, a reply can't say the write worked or that it failed until the `reconcileWith` read has succeeded.
+- `no_unconfirmed_claims`: failure language ("didn't go through", "failed", "wasn't applied", "no changes were made") is blocked when the latest write succeeded and nothing failed.
+- `no_unconfirmed_claims`: done language is blocked while a write is pending, and "went through" / "has gone through" count as done language.
 - Grader: `forbidden_phrases` and `must_not_claim_done` count only asserted uses. Negated, conditional, future or purpose clauses ("the full refund didn't go through", "once it goes through", "so someone confirms it went through") no longer count. A negative forbidden phrase such as "didn't go through" can't excuse itself with its own negation. Re-grading the saved v3 results offline moved Sonnet from 86% (19/22) to 95% (21/22); Haiku stayed at 73% (16/22).
 
 ### Fixed
 
+- A bare "you're all set" with no action verb is no longer blocked just because no write succeeded. It is still blocked after a failed, pending or unknown write.
 - Structural trace fields are never masked. A session id with 10 or more consecutive digits was masked as a phone number, so its trace was written under a masked file name and `forget()` missed it.
+
+### Known issues
+
+- Fit and eligibility claims ("Starter covers your usage easily") aren't checked: they are judgments, not numbers, dates or done language.
+- Done language isn't tied to which write succeeded: after only `open_case` succeeded, "switched to Plus" is allowed.
+- Haiku's unneeded handoffs rose from 5 to 8 of 72 trials on the original 18 tasks. Checks can't stop a handoff the model chooses.
 
 ## [v3] - 2026-10-04
 
@@ -59,8 +88,8 @@ Internal milestone: behavior-neutral fixes, a re-baseline, wording fixes with at
 
 ### Known issues
 
-- A claim that an action failed is not guarded when the outcome is unknown (a timeout). Being addressed in v4.
-- A draft retried after a block can repeat a write that has no quote behind it (up to 4 `open_case` calls in one turn). Being addressed in v4.
+- A claim that an action failed is not guarded when the outcome is unknown (a timeout). Addressed in v4.
+- A draft retried after a block can repeat a write that has no quote behind it (up to 4 `open_case` calls in one turn). Addressed in v4.
 
 ## [v2] - 2026-10-02
 
@@ -99,7 +128,8 @@ Internal milestone: the runtime, both model adapters and the subscriptions examp
 - Model adapters for `anthropic` and `openai-compatible`, using plain `fetch`.
 - The subscriptions example: the 10-line refunds quickstart and the full plan-change agent (verification, usage, eligible plans, quotes, plan change, refunds, usage packs, cases and handoff) over a seeded in-memory store.
 
-[Unreleased]: https://github.com/OWNER/trust-layer-agent/compare/v3...HEAD
+[Unreleased]: https://github.com/OWNER/trust-layer-agent/compare/v4...HEAD
+[v4]: https://github.com/OWNER/trust-layer-agent/compare/v3...v4
 [v3]: https://github.com/OWNER/trust-layer-agent/compare/v2...v3
 [v2]: https://github.com/OWNER/trust-layer-agent/compare/v1...v2
 [v1]: https://github.com/OWNER/trust-layer-agent/releases/tag/v1
