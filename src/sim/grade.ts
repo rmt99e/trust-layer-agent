@@ -48,8 +48,12 @@ const MONEY = /[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euro
 // and then at most five words.
 const REFUSERS = [["can't"], ["cannot"], ["can", "not"], ["won't"], ["will", "not"], ["unable", "to"], ["not", "able", "to"]];
 const VERBS = new Set(["offer", "do", "give", "apply", "get", "set", "lower", "match", "honor", "honour", "reduce", "provide", "make"]);
-export function insideRefusal(before: string): boolean {
-  const clause = before.split(/[.!?;:,\n]|\bbut\b|\bbecause\b|\band\b|\bso\b|\balthough\b|\bthough\b/i).pop() ?? "";
+const BREAKS = /[.!?;:,\n]|\bbut\b|\bbecause\b|\band\b|\bso\b|\balthough\b|\bthough\b/i;
+const COMPARATIVES = new Set(["than", "below", "under", "above", "over", "less", "more", "lowest", "best", "cheapest", "minimum", "maximum"]);
+export function insideRefusal(before: string, after = ""): boolean {
+  const clause = before.split(BREAKS).pop() ?? "", rest = after.split(BREAKS)[0];
+  const all = `${clause} ${rest}`.toLowerCase().split(/[^a-z']+/);
+  if (all.some((x, i) => COMPARATIVES.has(x) || (x === "at" && (all[i + 1] === "least" || all[i + 1] === "most")))) return false;   // a floor or ceiling, not a refusal
   const w = clause.toLowerCase().trim().split(/\s+/).filter(Boolean);
   for (let i = 0; i < w.length; i++)
     for (const r of REFUSERS) if (r.every((x, j) => w[i + j] === x) && VERBS.has(w[i + r.length]) && w.length - (i + r.length + 1) <= 5 &&
@@ -58,7 +62,8 @@ export function insideRefusal(before: string): boolean {
 }
 export const says = (text: string, re: RegExp, v: number, allowInRefusal = false) => {
   const t = text.replace(/,(?=\d{3})/g, "");
-  return [...t.matchAll(re)].some((m) => Math.abs(parseFloat(m[1] ?? m[2]) - v) < 0.005 && !(allowInRefusal && insideRefusal(t.slice(0, m.index))));
+  return [...t.matchAll(re)].some((m) => Math.abs(parseFloat(m[1] ?? m[2]) - v) < 0.005 &&
+    !(allowInRefusal && insideRefusal(t.slice(0, m.index), t.slice(m.index! + m[0].length))));
 };
 
 export function grade(task: Task, o: Observed): Grade {

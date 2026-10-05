@@ -75,12 +75,16 @@ export function confirmedValues(sources: (Json | undefined)[], texts: readonly s
 // "I can't believe it's only $10" and a refusal followed by "…but your new price is $10".
 // The refusal must be the agent's own ("I"/"we" as subject): "you won't get a better deal than $10" asserts a price.
 const REFUSAL = /\b(?:i|we)(?:'m|'re|\s+am|\s+are)?\s+(?:can't|cannot|can not|won't|will not|unable to|not able to)\s+(?:offer|do|give|apply|get|set|lower|match|honou?r|reduce|provide|make)\b(?:\s+\S+){0,5}\s*$/i;
+const COMPARATIVE = /\b(?:than|below|under|above|over|less|more|at least|at most|lowest|best|cheapest|minimum|maximum)\b/i;
 const CLAUSE_BREAK = /[.!?;:,\n]|\b(?:but|because|and|so|although|though)\b/i;
 function onlyInRefusals(text: string, kind: "money" | "percent", v: number): boolean {
   const re = kind === "money" ? new RegExp(String.raw`[$€£]\s?(${NUM})|(${NUM})\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b`, "gi")
     : new RegExp(String.raw`(${NUM})\s?(?:%|percent\b)`, "gi");
   const hits = [...text.matchAll(re)].filter((m) => normNumber(m[1] ?? m[2]) === v);
-  return hits.length > 0 && hits.every((m) => REFUSAL.test(text.slice(0, m.index).split(CLAUSE_BREAK).pop() ?? ""));
+  return hits.length > 0 && hits.every((m) => {
+    const before = text.slice(0, m.index).split(CLAUSE_BREAK).pop() ?? "", after = text.slice(m.index).split(CLAUSE_BREAK)[0];
+    return REFUSAL.test(before) && !COMPARATIVE.test(before + after);   // "I can't go lower than $10" sets a floor: not a refusal
+  });
 }
 
 /** Why a draft reply isn't backed by this session's tools or the operator's text, or undefined if it is. */

@@ -167,6 +167,12 @@ describe("customer numbers inside refusals (fix 4)", () => {
     ["You can't get Plus for less than $10.", "block"],
     ["They won't give you more than 50% off.", "block"],
     ["I am unable to offer $10 a month.", "allow"],
+    // Comparatives set a floor or ceiling: not a refusal.
+    ["I can't go lower than $10.", "block"],
+    ["I can't offer anything better than $10.", "block"],
+    ["I won't give you a price above $10.", "block"],
+    ["We can't do less than 50% off.", "block"],
+    ["I'm not able to go below $10, sorry.", "block"],
   ])("%s → %s", async (reply, want) => {
     const result = await verdict(reply, session());
     expect("allow" in result ? "allow" : "block").toBe(want);

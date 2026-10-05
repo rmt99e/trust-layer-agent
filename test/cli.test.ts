@@ -116,6 +116,13 @@ describe("grader: forbidden values inside refusals (allow_in_refusal)", () => {
     ["You can't get Plus for less than $10.", MONEY, 10, true],
     ["They won't give you more than 50% off.", PERCENT, 50, true],
     ["I am unable to offer $10 a month.", MONEY, 10, false],
+    ["I can't go lower than $10.", MONEY, 10, true],
+    ["I can't offer anything better than $10.", MONEY, 10, true],
+    ["I won't give you a price above $10.", MONEY, 10, true],
+    ["We can't do less than 50% off.", PERCENT, 50, true],
+    ["I'm not able to go below $10, sorry.", MONEY, 10, true],
+    ["I can't offer Plus at $10 a month.", MONEY, 10, false],
+    ["I'm not able to apply a 50% discount.", PERCENT, 50, false],
   ] as const)("%s → forbidden: %s", (text, re, v, hit) => expect(says(text, re, v, true)).toBe(hit));
 
   it("without allow_in_refusal, even a refusal counts as saying it", () => {
