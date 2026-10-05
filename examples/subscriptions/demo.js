@@ -13,7 +13,7 @@ const SCRIPT = [
 ];
 
 const show = { write(l) {
-  if (l.type === "tool") console.log(`   · ${l.tool} → ${l.ok ? "ok" : `failed (${l.error?.code}: ${l.error?.message})`}`);
+  if (l.type === "tool") console.log(`   · ${l.tool}${l.reconcile ? " (auto re-check)" : ""} → ${l.ok ? "ok" : `failed (${l.error?.code}: ${l.error?.message})`}`);
   if (l.type === "check" && l.event === "action") console.log(`   ✗ blocked ${l.tool}  [${l.check}]  ${l.result.block}`);
   if (l.type === "check" && l.event === "reply" && l.result.block)
     console.log(`   ✗ draft not sent  [${l.check}]\n     draft:  ${JSON.stringify(l.draft)}\n     reason: ${l.result.block}`);

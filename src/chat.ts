@@ -6,7 +6,7 @@ export type Observer = (line: Record<string, any>) => void;
 
 // The teaching view: every tool call, blocked action and blocked draft is printed inline.
 const show: Observer = (l) => {
-  if (l.type === "tool") console.log(`   · ${l.tool} → ${l.ok ? "ok" : `failed (${l.error?.code})`}`);
+  if (l.type === "tool") console.log(`   · ${l.tool}${l.reconcile ? " (auto re-check)" : ""} → ${l.ok ? "ok" : `failed (${l.error?.code})`}`);
   if (l.type === "check" && l.event === "action") console.log(`   ✗ blocked ${l.tool}  [${l.check}]  ${l.result.block}`);
   if (l.type === "check" && l.event === "reply" && "block" in l.result)
     console.log(`   ✗ draft not sent  [${l.check}]\n     draft:  ${JSON.stringify(l.draft)}\n     reason: ${l.result.block}`);

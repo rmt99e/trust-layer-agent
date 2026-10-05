@@ -112,8 +112,8 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
     });
   const has = (s: string) => latest.find((w) => w.state === s);
   const failedSaid = text.match(FAILED_WORDS)?.[0], unknown = has("unknown");
-  if (unknown && (c.done.length || failedSaid))                      // unknown: neither "it worked" nor "it failed" yet
-    return `${unknown.name} ended with an unknown outcome. ${unknown.reconcileWith ? `Call ${unknown.reconcileWith} first to check what actually happened` : "Say the outcome is being checked"}; don't say whether it worked until then.`;
+  if (unknown)                                                       // unknown: no reply at all until a read settles it (a handoff isn't a reply)
+    return unknown.reconcileWith ? `Call ${unknown.reconcileWith} before replying; the outcome of ${unknown.name} is unknown.` : `The outcome of ${unknown.name} is unknown and nothing can check it; hand off to a person.`;
   if (failedSaid && !has("failed") && has("done"))
     return `Reply says "${failedSaid}", but nothing failed: the latest write succeeded. Say what actually happened.`;
   if (c.done.length) {

@@ -166,7 +166,15 @@ export class Agent {
             k.id === used && tool.confirm && k.type === tool.confirm.commitment ? { ...k, status: "used", acceptedTurn: turn } : k) };
           emit("tool", { tool: call.name, input: r.result.input, ok: r.result.ok, output: r.result.output, error: r.result.error,
             outcome: r.result.outcome, outcomeError: r.result.outcomeError });
-          answer(fenceTool(r.result.ok ? r.result.output : { error: r.result.error }), !r.result.ok);
+          // Unknown outcome: code runs the reconcile read itself when every input it needs is bound or in the failed call.
+          const read = r.result.outcome === "unknown" && tool.reconcileWith ? this.byName.get(tool.reconcileWith) : undefined, check = read &&
+            Object.fromEntries(Object.keys(read.input.shape).filter((k) => !read.bind?.[k] && k in r.result.input).map((k) => [k, r.result.input[k]]));
+          const auto = read && read.input.omit(Object.fromEntries(Object.keys(read.bind ?? {}).map((k) => [k, true as const]))).safeParse(check).success
+            ? await runTool(read, check, s, { strictVisibility: this.opts.strictVisibility }) : undefined;
+          if (auto) s = auto.session;
+          if (auto) emit("tool", { tool: read!.name, input: auto.result.input, ok: auto.result.ok, output: auto.result.output, error: auto.result.error, reconcile: true });
+          const reconcile = auto?.result.ok ? { reconcile: { tool: read!.name, output: auto.result.output } } : {};
+          answer(fenceTool(r.result.ok ? r.result.output : { error: r.result.error, ...reconcile }), !r.result.ok);
           if (r.result.ok && tool.name === "handoff_to_person")
             return handoffNow(String(r.result.input.summary ?? "Customer asked for a person."), "handoff_to_person");
         }

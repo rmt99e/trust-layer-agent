@@ -211,7 +211,7 @@ describe("write outcomes: done / pending / failed / unknown (v4 a)", () => {
   });
   it("tells the model which read to call first", async () => {
     expect(await verdict("It went through.", ctx({ tools: W as any, results: S.unknown })))
-      .toMatchObject({ block: expect.stringContaining("Call get_account first") });
+      .toEqual({ block: "Call get_account before replying; the outcome of change_plan is unknown." });
   });
 });
 

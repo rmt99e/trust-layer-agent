@@ -267,29 +267,66 @@ describe("Agent", () => {
 
   describe("a throwing outcome() is treated as unknown (v4.1 fix 3)", () => {
     const lines: any[] = [];
-    const change = (outcome: (o: any) => "done" | "pending") => write({ name: "change_plan", description: "Change plan.", input: z.object({}), confirm: false,
-      outcome, reconcileWith: "get_account", run: () => ({ status: "active" }) });
-    const broken = () => change(() => { throw new Error("outcome parser crashed"); });
-    const run = async (steps: Step[], tool = broken()) => {
+    // check_change needs a ticket id that code doesn't have, so it can't be auto-run: the model has to call it.
+    const checkChange = read({ name: "check_change", description: "Check a change by ticket.", input: z.object({ ticket: z.string() }), run: () => ({ plan: "plus" }) });
+    const broken = write({ name: "change_plan", description: "Change plan.", input: z.object({}), confirm: false,
+      outcome: () => { throw new Error("outcome parser crashed"); }, reconcileWith: "check_change", run: () => ({ status: "active" }) });
+    const run = async (steps: Step[]) => {
       lines.length = 0;
-      const agent = new Agent({ model: scripted(steps), instructions: "x", tools: [tools.account, tool], trace: { write: (l) => lines.push(l) } });
+      const agent = new Agent({ model: scripted(steps), instructions: "x", tools: [tools.account, checkChange, broken], trace: { write: (l) => lines.push(l) } });
       return agent.respond(loggedIn(), "Switch me, yes.");
     };
-    // Attacks (4): with an unknown outcome, neither "done" nor "failed" may be sent before the read.
     it.each([["Your plan has been switched."], ["It went through."], ["It didn't go through."], ["Nothing has changed."]])("%s → blocked", async (claim) => {
-      const r = await run([{ call: "change_plan" }, claim, "Let me check that for you."]);
-      expect(r.reply).toBe("Let me check that for you.");
-      expect(lines.find((l) => l.type === "check")?.result.block).toContain("unknown outcome");
+      const r = await run([{ call: "change_plan" }, claim, { call: "check_change", input: { ticket: "t1" } }, "Checked: you're on Plus."]);
+      expect(r.reply).toBe("Checked: you're on Plus.");
+      expect(lines.find((l) => l.type === "check")?.result.block).toBe("Call check_change before replying; the outcome of change_plan is unknown.");
     });
-    // Allowed (2)
     it("the turn doesn't crash, and the trace records the outcome error", async () => {
-      const r = await run([{ call: "change_plan" }, "Let me check that for you."]);
+      const r = await run([{ call: "change_plan" }, { call: "check_change", input: { ticket: "t1" } }, "Checked: you're on Plus."]);
       expect(r.session.results.find((x) => x.tool === "change_plan")).toMatchObject({ ok: true, outcome: "unknown", outcomeError: "outcome parser crashed" });
       expect(lines.find((l) => l.type === "tool" && l.tool === "change_plan")).toMatchObject({ outcome: "unknown", outcomeError: "outcome parser crashed" });
     });
-    it("after the reconcile read, the reply may say what happened", async () => {
-      const r = await run([{ call: "change_plan" }, { call: "get_account" }, "Your plan has been switched."]);
-      expect(r.reply).toBe("Your plan has been switched.");
+  });
+
+  describe("code reconciles unknown outcomes before any reply (v4.2)", () => {
+    const lines: any[] = [];
+    const timeout = (reconcileWith: string) => write({ name: "change_plan", description: "Change plan.", input: z.object({ accountId: z.string() }),
+      bind: { accountId: "facts.accountId" }, confirm: false, reconcileWith, run: () => { throw new ToolError("timeout", "No response.", { outcome: "unknown" }); } });
+    const checkChange = read({ name: "check_change", description: "Check by ticket.", input: z.object({ ticket: z.string() }), run: () => ({ plan: "plus" }) });
+    const go = async (steps: Step[], reconcileWith = "check_change", extra: any[] = []) => {
+      lines.length = 0;
+      const model = scripted(steps);
+      const agent = new Agent({ model, instructions: "x", tools: [tools.account, checkChange, timeout(reconcileWith), ...extra], trace: { write: (l) => lines.push(l) } });
+      return { r: await agent.respond(loggedIn(), "Switch me, yes."), model };
+    };
+    // Attacks (5): with no reconcile read yet, every draft is blocked, whatever it says.
+    it.each([["Our team will handle your switch."], ["You should hear back soon."], ["I've opened a case for this."], ["Thanks for your patience!"], ["Hi Sam."]])
+      ("unreconciled: %s → blocked", async (draft) => {
+        const { r } = await go([{ call: "change_plan" }, draft, { call: "check_change", input: { ticket: "t1" } }, "You're on Plus now."]);
+        expect(lines.find((l) => l.type === "check")).toMatchObject({ draft, result: { block: "Call check_change before replying; the outcome of change_plan is unknown." } });
+        expect(r.reply).toBe("You're on Plus now.");
+      });
+    // Allowed (4)
+    it("any reply after a successful reconcile read", async () => {
+      const { r } = await go([{ call: "change_plan" }, { call: "check_change", input: { ticket: "t1" } }, "Our team will follow up, and you're on Plus."]);
+      expect(r.reply).toBe("Our team will follow up, and you're on Plus.");
+    });
+    it("a handoff", async () => {
+      const handoffTool = write({ name: "handoff_to_person", description: "Hand off.", input: z.object({ summary: z.string() }), confirm: false, beforeVerification: true, run: () => ({}) });
+      const { r } = await go([{ call: "change_plan" }, { call: "handoff_to_person", input: { summary: "unknown outcome" } }], "check_change", [handoffTool]);
+      expect(r.handoff).toMatchObject({ reason: "handoff_to_person" });
+    });
+    it("auto-reconcile runs when the read only needs bound inputs, before the model replies", async () => {
+      const { r, model } = await go([{ call: "change_plan" }, "Your switch went through: you're on Plus."], "get_account");
+      expect(lines.find((l) => l.type === "tool" && l.tool === "get_account")).toMatchObject({ reconcile: true, ok: true });
+      expect(model.requests[1].messages.at(-1)!.content).toContain('"reconcile":{"tool":"get_account"');
+      expect(r.reply).toBe("Your switch went through: you're on Plus.");
+    });
+    it("an unrelated write's unknown outcome is settled by its own read", async () => {
+      const refundTimeout = write({ name: "refund_invoice", description: "Refund.", input: z.object({ accountId: z.string() }), bind: { accountId: "facts.accountId" },
+        confirm: false, reconcileWith: "get_account", run: () => { throw new ToolError("timeout", "No response.", { outcome: "unknown" }); } });
+      const { r } = await go([{ call: "refund_invoice" }, "I checked: the refund is in progress."], "check_change", [refundTimeout]);
+      expect(r.reply).toBe("I checked: the refund is in progress.");
     });
   });
 
