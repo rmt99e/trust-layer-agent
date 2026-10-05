@@ -195,6 +195,17 @@ describe("Agent", () => {
     expect(existsSync(file)).toBe(false);
   });
 
+  it("never masks the session id, even when it looks like a phone number", async () => {
+    const { agent } = agentWith(["Hello."]);
+    const session = { ...loggedIn(), id: "s_8301947562ab" };              // 10 digits in a row
+    await agent.respond(session, "hi, I'm dana@example.com");
+    const file = join(dir, "s_8301947562ab.jsonl");
+    expect(existsSync(file)).toBe(true);
+    expect(readFileSync(file, "utf8")).toContain("[email]");
+    agent.forget(session);
+    expect(existsSync(file)).toBe(false);
+  });
+
   it("warns once when a custom sink can't forget", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const agent = new Agent({ model: scripted(["a", "b"]), instructions: "x", tools: [tools.account], trace: { write: () => {} } });

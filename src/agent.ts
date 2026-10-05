@@ -114,7 +114,8 @@ export class Agent {
     const turn = currentTurn(s);
     const emit = (type: string, data: Record<string, unknown>) => {
       const line = { type, sessionId: s.id, turn, ...data };
-      this.trace?.write(this.trace.mask === false ? line : (maskTrace(line) as Record<string, unknown>));   // every sink
+      // Every sink gets masked data; structural fields stay intact (an id with 10+ digits would otherwise read as a phone number).
+      this.trace?.write(this.trace.mask === false ? line : { ...(maskTrace(data) as object), type, sessionId: s.id, turn });
       observe?.(line);
     };
     const msgs = this.history(s);
