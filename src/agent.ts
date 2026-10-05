@@ -164,7 +164,8 @@ export class Agent {
           const used = tool.confirm && r.result.ok ? r.result.input[tool.confirm.by] : undefined;   // a quote is spent once
           if (used !== undefined) s = { ...s, commitments: s.commitments.map((k) =>
             k.id === used && tool.confirm && k.type === tool.confirm.commitment ? { ...k, status: "used", acceptedTurn: turn } : k) };
-          emit("tool", { tool: call.name, input: r.result.input, ok: r.result.ok, output: r.result.output, error: r.result.error });
+          emit("tool", { tool: call.name, input: r.result.input, ok: r.result.ok, output: r.result.output, error: r.result.error,
+            outcome: r.result.outcome, outcomeError: r.result.outcomeError });
           answer(fenceTool(r.result.ok ? r.result.output : { error: r.result.error }), !r.result.ok);
           if (r.result.ok && tool.name === "handoff_to_person")
             return handoffNow(String(r.result.input.summary ?? "Customer asked for a person."), "handoff_to_person");

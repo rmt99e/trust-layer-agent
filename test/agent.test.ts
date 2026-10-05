@@ -265,6 +265,34 @@ describe("Agent", () => {
     it("an existing read tool → constructs", () => expect(make("get_account")).not.toThrow());
   });
 
+  describe("a throwing outcome() is treated as unknown (v4.1 fix 3)", () => {
+    const lines: any[] = [];
+    const change = (outcome: (o: any) => "done" | "pending") => write({ name: "change_plan", description: "Change plan.", input: z.object({}), confirm: false,
+      outcome, reconcileWith: "get_account", run: () => ({ status: "active" }) });
+    const broken = () => change(() => { throw new Error("outcome parser crashed"); });
+    const run = async (steps: Step[], tool = broken()) => {
+      lines.length = 0;
+      const agent = new Agent({ model: scripted(steps), instructions: "x", tools: [tools.account, tool], trace: { write: (l) => lines.push(l) } });
+      return agent.respond(loggedIn(), "Switch me, yes.");
+    };
+    // Attacks (4): with an unknown outcome, neither "done" nor "failed" may be sent before the read.
+    it.each([["Your plan has been switched."], ["It went through."], ["It didn't go through."], ["Nothing has changed."]])("%s → blocked", async (claim) => {
+      const r = await run([{ call: "change_plan" }, claim, "Let me check that for you."]);
+      expect(r.reply).toBe("Let me check that for you.");
+      expect(lines.find((l) => l.type === "check")?.result.block).toContain("unknown outcome");
+    });
+    // Allowed (2)
+    it("the turn doesn't crash, and the trace records the outcome error", async () => {
+      const r = await run([{ call: "change_plan" }, "Let me check that for you."]);
+      expect(r.session.results.find((x) => x.tool === "change_plan")).toMatchObject({ ok: true, outcome: "unknown", outcomeError: "outcome parser crashed" });
+      expect(lines.find((l) => l.type === "tool" && l.tool === "change_plan")).toMatchObject({ outcome: "unknown", outcomeError: "outcome parser crashed" });
+    });
+    it("after the reconcile read, the reply may say what happened", async () => {
+      const r = await run([{ call: "change_plan" }, { call: "get_account" }, "Your plan has been switched."]);
+      expect(r.reply).toBe("Your plan has been switched.");
+    });
+  });
+
   it("rejects duplicate tool names and warns when nothing can verify", () => {
     expect(() => new Agent({ model: scripted([]), instructions: "x", tools: [tools.account, tools.account], trace: false })).toThrow(/unique/);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

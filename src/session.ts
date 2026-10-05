@@ -23,6 +23,7 @@ export interface ToolResult {
   output?: Json;              // visible fields only
   error?: { code: string; message: string };
   outcome?: "done" | "pending" | "unknown";   // writes; a failed call without one is a known failure
+  outcomeError?: string;                      // the tool's outcome() threw; the outcome is treated as unknown
 }
 
 export interface Message { role: "customer" | "agent"; text: string; turn: number }

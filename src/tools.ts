@@ -120,6 +120,8 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
     commitments: [...session.commitments, ...(rec.commitments ?? []).map((c) => ({ ...c, by: tool.name, turn, status: "open" as const }))],
   };
   const { value, hidden } = visibleOutput(output, tool.visible, opts.strictVisibility);
-  const outcome = tool.kind === "write" ? tool.outcome?.(output as never) ?? "done" : undefined;
-  return { ...done({ ok: true, input: parsed.data as Record<string, Json>, output: value, ...(outcome && { outcome }) }, next), hidden };
+  let outcome: ToolResult["outcome"], outcomeError: string | undefined;
+  try { outcome = tool.kind === "write" ? tool.outcome?.(output as never) ?? "done" : undefined; }
+  catch (e) { outcome = "unknown"; outcomeError = (e as Error).message; }            // a broken outcome() can't be trusted either way
+  return { ...done({ ok: true, input: parsed.data as Record<string, Json>, output: value, ...(outcome && { outcome }), ...(outcomeError && { outcomeError }) }, next), hidden };
 }

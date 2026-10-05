@@ -108,7 +108,7 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   const latest = ctx.tools.filter((t) => t.kind === "write").map((t) => ({ t, i: ctx.results.findLastIndex((r) => r.tool === t.name) }))
     .filter(({ i }) => i >= 0).map(({ t, i }) => {
       const r = ctx.results[i], settled = t.reconcileWith && ctx.results.slice(i + 1).some((x) => x.ok && x.tool === t.reconcileWith);
-      return { name: t.name, reconcileWith: t.reconcileWith, state: r.ok ? r.outcome ?? "done" : r.outcome === "unknown" ? (settled ? "reconciled" : "unknown") : "failed" };
+      return { name: t.name, reconcileWith: t.reconcileWith, state: r.outcome === "unknown" ? (settled ? "reconciled" : "unknown") : r.ok ? r.outcome ?? "done" : "failed" };
     });
   const has = (s: string) => latest.find((w) => w.state === s);
   const failedSaid = text.match(FAILED_WORDS)?.[0], unknown = has("unknown");
