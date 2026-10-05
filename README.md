@@ -60,7 +60,9 @@ const agent = new Agent({ model: "anthropic:claude-sonnet-5-5", instructions: "Y
 await agent.chat();   // try it in the terminal
 ```
 
-Put `ANTHROPIC_API_KEY=...` in `.env` and run it with `node --env-file=.env examples/refunds.js` (from a clone, `npm install` builds it first). `chat()` prints every tool call, blocked action and blocked draft inline, so you can watch the checks work. The constructor also warns that `verified_first` is off, because no tool here can verify a customer.
+Put `ANTHROPIC_API_KEY=...` in `.env` and run it with `node --env-file=.env examples/refunds.js` (from a clone, `npm install` builds it first). `chat()` prints every tool call, blocked action and blocked draft inline, so you can watch the checks work.
+
+Two startup notices are expected: `verified_first is OFF` means no tool can verify a customer and no session was created as verified; clear it by giving one tool `verifies: true`, by starting sessions with `createSession({ facts: { verified: true } })`, or by setting `builtins: { verified_first: false }`. The ℹ️ notice lists tools without a `visible` list, whose personal-data fields are hidden by default.
 
 Any OpenAI-compatible server works too, hosted or local:
 
@@ -85,7 +87,7 @@ if (handoff) notifyATeammate(handoff.summary);
 await save(agent.forget(next));         // stores a tombstone; also deletes the trace when the sink supports it
 ```
 
-The package is TypeScript, compiled to plain ES-module JavaScript with types, so plain-JS apps need no build step. Node 20+. Runtime dependencies: `zod` and `yaml`. The model adapters (`anthropic` and `openai-compatible`) use plain `fetch`, with no provider SDKs. The logic in `src/`, including the simulator and CLI, is about 1,280 lines (non-blank, non-comment), under a 1,300-line cap.
+The package is TypeScript, compiled to plain ES-module JavaScript with types, so plain-JS apps need no build step. Node 20+. Runtime dependencies: `zod` and `yaml`. The model adapters (`anthropic` and `openai-compatible`) use plain `fetch`, with no provider SDKs. The logic in `src/`, including the simulator and CLI, is 1,297 lines (non-blank, non-comment), at its 1,300-line cap.
 
 ## How it works
 
@@ -174,7 +176,10 @@ These call a real model and need `ANTHROPIC_API_KEY` in `.env`:
 node --env-file=.env examples/subscriptions/chat.js                         # chat with it
 node --env-file=.env examples/subscriptions/demo.js                         # a scripted customer
 FAIL_CHANGE_PLAN=1 node --env-file=.env examples/subscriptions/demo.js      # the same, with the plan change failing
+CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subscriptions/chat.js   # a timeout, on the small model
 ```
+
+`chat.js` takes `CHANGE_PLAN_OUTCOME=fail|timeout|pending` and `AGENT_MODEL=sonnet|haiku`; see [examples/README.md](examples/README.md).
 
 The same data, tools and policy power the simulator, which ships with 22 simulation tasks: happy paths, a customer who says "switch me" before any price, an unapproved discount, someone else's account, a change that fails part-way, refunds inside and outside the window, a customer who wants a person, prompt injection, a haggler, a fake executive, and four tasks that tempt real harm (a pending change, a timeout after the change applied, a partial refund, an instruction injected into a tool's notes). `TRUST_LAYER_CHECKS=off` runs the same agent with every built-in check off and the journey guardrails stripped, keeping all prompt text, so you can compare rules in a prompt with checks in code.
 
@@ -308,6 +313,12 @@ Harmful cases (a false claim reaching the customer, or a write made on false inf
 
 The harm-tempting tasks arrived in v3, so the v2 column had fewer chances to go wrong. The v4 run cost $7.64: $5.05 for Sonnet and $2.59 for Haiku.
 
+### v4.2
+
+In rehearsal, after `change_plan` timed out (and had actually applied), Haiku told the customer "Our team will handle your switch to the Plus plan… You should hear back soon." No failure phrase, so no check fired, but it implied the change had failed. v4.2 makes code re-check first: when a write's outcome is unknown and its `reconcileWith` read only needs inputs code already has, the agent runs that read itself before the model writes anything, and hands the result to the model with the timeout. If code can't run it, every draft is blocked until the read succeeds.
+
+Re-running only `timeout-applied` (k=4 per model): all 8 trials told the customer the truth on the very turn the change timed out, with code's re-check running before every reply. Friction per trial fell from 0.5 to 0 for Sonnet and from 1.75 to 0.75 for Haiku (Haiku's remaining blocks were an unrelated unbacked "$50" savings before the quote). Cost about $0.54, including one live check.
+
 ## How it differs from guardrail tools
 
 Guardrails AI and NeMo Guardrails validate and steer the text going into and out of a model, with far larger libraries of validators and rails than this. Parlant models the conversation itself, with guidelines and journeys that shape how the agent behaves, and is a much fuller conversation framework.
@@ -322,6 +333,9 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - **Claims about fit or eligibility aren't checked.** "Starter covers your usage easily" is a judgment, not a number, date or done wording, so no check reads it. In v4 it led Haiku to downgrade a customer onto a plan that didn't fit (see [v4](#v4)). Until fit decisions come from tools, keep them out of the model's hands.
 - **Done wording isn't tied to which write succeeded.** After `open_case` succeeded, "switched to Plus" was allowed though no plan change happened (seen in a v4 unit test).
 - **The smaller model escalates more as checks tighten.** Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4. Checks can't prevent a handoff the model chooses; it needs a prompt or journey change, measured as its own experiment.
+- **Implicit claims are only guarded around unknown outcomes.** "Our team will handle your switch" implies a failure without saying so. While an outcome is unknown, every draft is blocked until the re-check; elsewhere, implications like this aren't checked.
+- **Failure wording ignores negation.** "Didn't go through", "failed" and "nothing has changed" are matched as written, so "Nothing failed" after a success is blocked.
+- **The logic is at its 1,300-line cap.** The next feature needs a trim first.
 - **No streaming.** Each reply is checked whole before it's sent.
 - **The openai-compatible adapter** is tested only against mocked HTTP so far; a real call is pending.
 - **A small suite**, written by the same authors as the fixes, run once per version.

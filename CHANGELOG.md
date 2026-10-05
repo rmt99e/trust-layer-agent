@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- v4.2: **code reconciles unknown outcomes before any reply.** When a write ends with an unknown outcome and declares `reconcileWith`, the agent runs that read itself before the model replies, if every input the read needs is bound or present in the failed call. Its visible result is added to the write's tool message as `reconcile: { tool, output }`, and the trace marks it `reconcile: true`. If the read can't be run (it needs inputs code doesn't have) or fails, every draft is blocked until a successful reconcile read; a handoff is still possible. In rehearsal, a reply implied failure ("our team will handle your switch… you should hear back soon") without any failure phrase; this closes that gap.
+- Demo toggles in examples/subscriptions/chat.js: `CHANGE_PLAN_OUTCOME=fail|timeout|pending` (`FAIL_CHANGE_PLAN=1` still means fail) and `AGENT_MODEL=sonnet|haiku`. The `chat()` view labels code's re-check `(auto re-check)`.
+
 - Install from GitHub: a `prepare` script runs the build, so `npm install` from the repository gets compiled JavaScript and types.
 - package.json: a `bugs` field, and CHANGELOG.md in the published package files.
 - Snapshots: v3-sonnet-regraded and v3-haiku-regraded, the v3 results re-graded offline with the fixed grader.
@@ -15,6 +18,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- v4.1: `no_repeated_writes` also blocks retrying a write whose latest call this turn has an unknown or pending outcome, even if the write is `repeatable`, because it may already have applied. The reason tells the model to call its `reconcileWith` read. Known failures stay retryable; an unknown outcome can be retried in a later turn.
+- v4.1: `reconcileWith` is validated at construction: it must name a read tool of the same agent, or `new Agent()` throws, naming both tools.
+- v4.1: if a write's `outcome(output)` throws, the call is treated as outcome `unknown` and the error is recorded as `outcomeError` in the session and trace; the turn doesn't crash.
+- v4.1: the snapshot fingerprint's `tools` hash covers each tool's `outcome` function source, `reconcileWith` and `repeatable`, so changing any of them is reported as a config change.
+- v4.2: while a write's outcome is unknown, `no_unconfirmed_claims` blocks every draft, not only "done" and failure wording: `Call <read> before replying; the outcome of <write> is unknown.`
 - A suite's `createStore()` may be async (for example, a store backed by a database), like `state()`.
 - `runSuite()`'s default cost cap is 10, the same as the CLI's `--max-cost` default. It was 5.
 - docs/design.md now opens with a note that SPEC.md describes current behavior.

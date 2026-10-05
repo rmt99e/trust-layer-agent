@@ -78,14 +78,15 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 
 **Write outcomes.** A ToolResult MAY carry `outcome`: `"done" | "pending" | "unknown"`.
 - A successful call of a **write** tool records `outcome = tool.outcome(output)` when `outcome` is given, else `"done"`. `outcome` receives the full output (not the visible one) and is called after `records`. A successful read records no `outcome`.
+- If `outcome(output)` **throws**, the call stays `ok: true` (its `records` already applied) but records `outcome: "unknown"` and `outcomeError: <the thrown message>`. The turn continues; the outcome is treated like any other unknown outcome.
 - `ToolError(code, message, { outcome: "unknown" })` means the call may have taken effect (e.g. a timeout after the change was applied). The failed ToolResult records `outcome: "unknown"` next to `ok: false` and `error`. The reference records it whatever the tool's kind; only write results are read by the claim check. A failed call without `outcome` is a **known failure**. `internal_error`, `missing_fact` and `invalid_input` never carry an outcome.
-- An unknown-outcome call is still a failure everywhere else: it records nothing, increments `failures`, does not mark a `confirm` commitment used, and matches `handoff_when.tool_error` by code. The model's tool message and the `tool` trace line carry only `{ error }`; the outcome lives in the session.
-- `reconcileWith` names the read whose later success settles an unknown outcome. The reference validates neither `reconcileWith` (it need not name an existing or read tool) nor `outcome`/`repeatable` on read tools; they are accepted and ignored.
+- An unknown-outcome call is still a failure everywhere else: it records nothing, increments `failures`, does not mark a `confirm` commitment used, and matches `handoff_when.tool_error` by code. The model's tool message carries `{ error }`, plus `reconcile: { tool, output }` when code ran the reconcile read itself (section 2); the `tool` trace line also carries `outcome` and `outcomeError`.
+- `reconcileWith` names the read whose later success settles an unknown outcome. It MUST name a read tool of the same agent: otherwise `new Agent()` throws `tool "<write>": reconcileWith "<name>" isn't one of this agent's tools`, or `tool "<write>": reconcileWith "<name>" is a write tool; it must name a read tool`. `outcome` and `repeatable` on read tools are accepted and ignored.
 
 **Per-write state** (used by no_unconfirmed_claims, 5.3). For each write tool, in the agent's tool order, take its **latest** ToolResult in `results` (tools never called have no state):
-- `ok: true` → its `outcome`, or `"done"` if absent (so `done` or `pending`);
-- `ok: false` with `outcome: "unknown"` → `reconciled` if the tool has `reconcileWith` and some **later** result (higher index) is a successful call of that tool, else `unknown`;
-- `ok: false` otherwise → `failed`.
+- `outcome: "unknown"` (with `ok: false`, or `ok: true` after a throwing `outcome()`) → `reconciled` if the tool has `reconcileWith` and some **later** result (higher index) is a successful call of that tool, else `unknown`;
+- otherwise `ok: true` → its `outcome`, or `"done"` if absent (so `done` or `pending`);
+- otherwise (`ok: false`) → `failed`.
 
 So a reconcile read made before the unknown call does not settle it, and a later call of the write replaces its state (a retry that succeeds is `done`; one that fails is `failed`).
 
@@ -98,7 +99,7 @@ So a reconcile read made before the unknown call does not settle it, and a later
 3. Evaluate every journey `handoff_when` condition (section 6). If one matches, hand off (reason `journey`) without calling the model.
 4. Loop: call the model with `{ system, messages, tools }` (section 3).
    - `stop == "refusal"`: hand off, summary `The model declined to respond.`, reason `refusal`.
-   - **Tool calls** (any present): the assistant text accompanying them is never sent or checked. For each call, in order: increment the per-turn call count; if it exceeds `maxToolCalls` (default 8), hand off (reason `max_tool_calls`). Unknown name: answer `<system_note>There is no tool named X.</system_note>` as an error and continue. Otherwise run the action checks (section 4) on `{ kind: "action", tool, input: model input + bound values }`. `handoff` → hand off (reason = check name). `block` → the tool MUST NOT run; answer `<system_note>Not run. Blocked: <reason> <NO_MECHANICS></system_note>` as an error tool result. Otherwise run the tool (section 1) and answer with the fenced result. Then loop.
+   - **Tool calls** (any present): the assistant text accompanying them is never sent or checked. For each call, in order: increment the per-turn call count; if it exceeds `maxToolCalls` (default 8), hand off (reason `max_tool_calls`). Unknown name: answer `<system_note>There is no tool named X.</system_note>` as an error and continue. Otherwise run the action checks (section 4) on `{ kind: "action", tool, input: model input + bound values }`. `handoff` → hand off (reason = check name). `block` → the tool MUST NOT run; answer `<system_note>Not run. Blocked: <reason> <NO_MECHANICS></system_note>` as an error tool result. Otherwise run the tool (section 1) and answer with the fenced result. **Auto-reconcile:** if the result has `outcome: "unknown"` and the tool declares `reconcileWith`, the agent MUST run that read itself, before the next model call, when its input can be built without the model: start from the failed call's input, keep only the read's own input fields, and the read's input schema minus its `bind` fields must accept that. The read runs like any tool call (bind injection, visibility, recorded in `results`, so it settles the outcome), emits a `tool` trace line with `reconcile: true`, and on success its visible output is added to the failed write's tool message as `reconcile: { tool, output }`. No action checks run on it (code runs it, not the model). If the read can't be built or fails, nothing is added; the claim check (5.3) then blocks every draft until a successful reconcile read. Then loop.
    - **Text only**: run the reply checks on `{ kind: "reply", text }`. `handoff` → hand off. `block` → increment retries; if retries > `maxRetries` (default 2), increment `failures` and hand off with summary `Reply still blocked after <maxRetries> retries: <reason>` (reason = check name). Otherwise append the draft as an assistant message and a user message `<system_note>That draft was not sent. <reason> Write a new reply. <NO_MECHANICS></system_note>`, then loop. `allow`/`rewrite` → send the (possibly rewritten) text.
 5. **Finish** (also on every handoff, where the text is `handoffMessage`, default `I'm passing you to a person who can help. They'll pick this up from here.`): `rev += 1`; `status = "handed_off"` if handing off; append `{ role: "agent", text, turn: T }`; mark commitments shown (section 5.4); emit a `turn` trace line.
 
@@ -169,7 +170,7 @@ Extract claims from the draft (5.4), collect confirmed values, and block on the 
 - `Reply states <n>% but no tool returned that percentage. Use a returned value or don't state it.`
 - `Reply states the date <d> but no tool returned it. Use a returned date or don't state one.`
 - `Reply says "<word>" but no tool returned a date this session. Don't promise timing no tool confirmed.`
-- `<tool> ended with an unknown outcome. Call <reconcileWith> first to check what actually happened; don't say whether it worked until then.` (if the tool has no `reconcileWith`: `<tool> ended with an unknown outcome. Say the outcome is being checked; don't say whether it worked until then.`)
+- `Call <reconcileWith> before replying; the outcome of <tool> is unknown.` (if the tool has no `reconcileWith`: `The outcome of <tool> is unknown and nothing can check it; hand off to a person.`)
 - `Reply says "<failed words>", but nothing failed: the latest write succeeded. Say what actually happened.`
 - `Reply says "<phrase>", but <tools> failed and hasn't succeeded since. Say what actually happened.`
 - `Reply says "<phrase>", but <tool> is still pending. Say it's processing, not done.`
@@ -190,7 +191,7 @@ So "I can't offer Plus at $10" passes; "I can't believe it's only $10", "I can't
 **Write outcomes and done-language.** Compute each write's state (section 1, "Per-write state"). "The first write in state S" means the first in the agent's tool order. Let `done` = the draft's done claims after the 5.4 filters, each lower-cased, with `<phrase>` = the first one, and `failedSaid` = the first match of
 `FAILED_WORDS = \b(?:didn't go through|did not go through|failed|wasn't applied|was not applied|nothing has changed|nothing has been changed|nothing was changed|no changes were made)\b` (`/i`)
 in the raw draft (no negation or status filtering; `<failed words>` is the match as written). Then, in this order:
-1. Some write is `unknown` and (`done` is non-empty or `failedSaid` exists): block with the unknown-outcome reason for the first unknown write. Until a reconcile read succeeds, the agent may say neither "it worked" nor "it failed".
+1. Some write is `unknown`: block **every** draft with the unknown-outcome reason for the first unknown write, whatever it says. Until a reconcile read succeeds, the agent may say nothing at all: not "it worked", not "it failed", and not an implied failure such as "our team will handle your switch". A handoff is not a draft, so it is still possible. With auto-reconcile (section 2) this rule only bites when code couldn't run the read.
 2. `failedSaid` exists, no write is `failed`, and some write is `done`: block (failure wording after a success). `reconciled` and `pending` don't count as `done` here.
 3. If `done` is non-empty:
    - any write is `failed`: block, listing every failed write, comma-joined;
@@ -217,7 +218,7 @@ Known v0.1 false positives are intentional and tabled (e.g. a conditional "if yo
 Options `{ after = 2 }`. If `failures >= after`, hand off with summary `<failures> consecutive failures (<tool>: <code>; …).`, listing the last `after` failed ToolResults (parenthetical omitted if none). It runs on every event, so the next action or reply after the `after`-th consecutive failure hands off.
 
 ### 5.6 no_repeated_writes (actions on write tools)
-Allow if the event is not an action, the tool is a read, or the tool has `repeatable: true`. Otherwise let `prior` = the last ToolResult with `ok: true`, `tool` equal to this tool and `turn` equal to the current turn; if there is one, block: `<tool> already succeeded this turn (result: <JSON(prior.output)>). Don't call it again; use that result.` (`JSON` = compact JSON of the visible output, e.g. `{"caseId":"case_002"}`; `null` if hidden). A `pending` success counts; a failed call (including an unknown outcome) and a success in an earlier turn don't. It stops a model that redrafts a blocked reply from opening a second case or refunding twice. Disable with `builtins: { no_repeated_writes: false }`.
+Allow if the event is not an action or the tool is a read. Otherwise let `prior` = the last ToolResult of this tool in the current turn with `ok: true` **or** `outcome: "unknown"`. No prior → allow. If `prior.outcome` is `unknown` or `pending`, block even when the tool is `repeatable` (it may already have applied): `<tool>'s last call this turn has an <unknown|pending> outcome and may already have applied. Don't retry it; call <reconcileWith> to check what happened.` (the `; call …` part only when the tool has `reconcileWith`). Otherwise allow if the tool is `repeatable`, else block: `<tool> already succeeded this turn (result: <JSON(prior.output)>). Don't call it again; use that result.` (`JSON` = compact JSON of the visible output, e.g. `{"caseId":"case_002"}`; `null` if hidden). A known failure (no outcome) and any call in an earlier turn don't count, so a known failure can be retried and an unknown one can be retried in a later turn. It stops a model that redrafts a blocked reply from opening a second case or refunding twice. Disable with `builtins: { no_repeated_writes: false }`.
 
 ## 6. Journeys
 
@@ -363,7 +364,7 @@ TraceSink { write(line): void; forget?(sessionId): void; mask?: boolean }
 
 Agent option `trace`: a sink, `false` (no tracing), or omitted (default `jsonl()`). The agent emits one line per event; every line has `type`, `sessionId`, `turn`:
 - `turn`: `customer`, `reply`, `retries`, `model` (model id), `usage`, `handoff?`.
-- `tool`: `tool`, `input` (as recorded), `ok`, `output` (visible), `error`.
+- `tool`: `tool`, `input` (as recorded), `ok`, `output` (visible), `error`, `outcome` and `outcomeError` (write outcomes, section 1); `reconcile: true` on a reconcile read the agent ran itself (section 2).
 - `check` (blocked actions, blocked or rewritten drafts): `event` (`action`|`reply`), `check`, `result`; actions add `tool` and the model's `input`; replies add `draft`. A rewritten reply's line names the check that rewrote it (section 4). Handoffs appear on the `turn` line.
 
 **Every sink gets masked lines.** Unless the sink sets `mask: false`, the agent MUST mask a line before calling `write`, whatever the sink. The structural fields `type`, `sessionId` and `turn` are never masked (a session id with 10+ digits would otherwise read as a phone number and land in the wrong file). The masker is exported as `maskTrace(value)`: every string at any depth, keys unchanged, in this order: emails `[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}` (`/i`) → `[email]`; `\b\d{3}-\d{2}-\d{4}\b` → `[ssn]`; `\+?\d[\d\s().-]{8,}\d` → `[card]` if its 13–19 digits pass the Luhn check, else `[phone]` if it has ≥ 10 digits, else unchanged; `\b\d{1,6}\s+(?:[A-Z][a-z]+\s)+(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b\.?` (`/i`) → `[address]`. Masking is best effort; the guarantee is field visibility (section 1). The same masker applies to tool output strings under default visibility.
@@ -470,7 +471,7 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 | `agentModel`, `customerModel` | model ids, unhashed |
 | `instructions` | hash of the instructions text |
 | `journeys`, `knowledge` | hash of the list of file contents, in load order |
-| `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before }]` (`outcome`, `reconcileWith` and `repeatable` are not included) |
+| `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before, outcome, reconcileWith, repeatable }]`, where `outcome` is the source text of the tool's `outcome` function |
 | `checks` | hash of `{ builtins: <options>, custom: [check names] }` |
 | `suite` | hash of the suite file's text |
 | `library` | hash of the list of contents of **every** compiled `.js` file of the package, recursively (including the simulator and model adapters), sorted by relative path |
