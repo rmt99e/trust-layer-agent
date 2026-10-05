@@ -85,7 +85,8 @@ export function asserted(text: string, phrase: string): boolean {
       const start = sentence.indexOf(c, from), at = c.indexOf(p);
       from = start + c.length;
       if (at < 0) continue;
-      const negated = NEGATION.test(c.replace(/^\s*no (?:problem|worries)\b/, ""));   // interjections aren't negations
+      // Negation outside the phrase itself: "didn't go through" can't excuse itself. Interjections aren't negations.
+      const negated = NEGATION.test(c.replace(p, " ").replace(/^\s*no (?:problem|worries)\b/, ""));
       const hypothetical = HYPOTHETICAL.test(sentence.slice(0, start + at));            // …conditions and futures span the sentence
       if (!negated && !hypothetical) return true;
     }
