@@ -43,7 +43,8 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
   return {
     agentModel: id(suite.agentModel), customerModel: id(suite.customerModel),
     instructions: hash(a.instructions), journeys: hash(read(a.journeys)), knowledge: hash(read(a.knowledge, /\.(md|txt)$/)),
-    tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies, before: t.beforeVerification }))),
+    tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
+      before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable }))),
     checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name) }),
     suite: hash(readFileSync(suiteFile, "utf8")),
     library: hash(libraryFiles()),                  // this package's own code: checks, agent loop, simulator, adapters

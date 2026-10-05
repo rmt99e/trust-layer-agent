@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compare, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
+import { compare, configOf, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
+import { read, write, z } from "../src/index.js";
 import type { Suite } from "../src/sim/simulator.js";
 import { asserted, claimsDone, insideRefusal, says } from "../src/sim/grade.js";
 import type { Trial } from "../src/sim/simulator.js";
@@ -172,4 +173,25 @@ describe("grader: only asserted phrases count (negated or conditional uses don't
     expect(claimsDone("No, it isn't done yet.")).toBe(false);
     expect(claimsDone("Yes, you're now on Plus.")).toBe(true);
   });
+});
+
+describe("fingerprint covers outcome, reconcileWith and repeatable (v4.1 fix 4)", () => {
+  const suiteFile = join(mkdtempSync(join(tmpdir(), "tla-fp-")), "suite.js");
+  writeFileSync(suiteFile, "export default {}");
+  const get = read({ name: "get_account", description: "x", input: z.object({}), run: () => ({}) });
+  const change = (o: Record<string, unknown> = {}) => write({ name: "change_plan", description: "x", input: z.object({}), confirm: false,
+    outcome: (r: any) => (r.status === "pending" ? "pending" : "done"), reconcileWith: "get_account", run: () => ({}), ...o });
+  const cfg = (t: ReturnType<typeof change>) => configOf({ agent: { instructions: "x" }, tools: [get, t], agentModel: "m", customerModel: "m" } as any, suiteFile);
+  const base = cfg(change());
+  const differs = (t: ReturnType<typeof change>) => compare({ config: base, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: cfg(t), summary: {}, overall: 1, cost: 0 })
+    .some((l) => l === '⚠️  config differs from snapshot "v4": tools');
+  it.each([
+    // Attacks (4): each change must be flagged.
+    ["the outcome function body", change({ outcome: (r: any) => (r.state === "queued" ? "pending" : "done") })],
+    ["outcome removed", change({ outcome: undefined })],
+    ["reconcileWith", change({ reconcileWith: "get_usage" })],
+    ["repeatable", change({ repeatable: true })],
+  ] as const)("changing %s → config differs", (_n, t) => expect(differs(t)).toBe(true));
+  // Allowed (1)
+  it("an identical tool → no warning", () => expect(differs(change())).toBe(false));
 });
