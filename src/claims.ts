@@ -120,7 +120,8 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
     const failed = latest.filter((w) => w.state === "failed").map((w) => w.name), pending = has("pending");
     if (failed.length) return `Reply says "${c.done[0]}", but ${failed.join(", ")} failed and hasn't succeeded since. Say what actually happened.`;
     if (pending) return `Reply says "${c.done[0]}", but ${pending.name} is still pending. Say it's processing, not done.`;
-    if (!has("done") && !has("reconciled")) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
+    const pleasantry = c.done.every((d) => /all set/.test(d));        // a bare "you're all set!" with no action verb
+    if (!pleasantry && !has("done") && !has("reconciled")) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
   }
 }
 

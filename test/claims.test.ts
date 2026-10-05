@@ -215,6 +215,28 @@ describe("write outcomes: done / pending / failed / unknown (v4 a)", () => {
   });
 });
 
+describe("bare 'all set' as a pleasantry (v4 c)", () => {
+  const r = (tool: string, extra: object) => ({ id: "x", tool, turn: 1, input: {}, ...extra }) as any;
+  const S = {
+    "no writes": [r("get_account", { ok: true, output: { plan: "Pro" } })],
+    done: [r("change_plan", { ok: true, outcome: "done", output: {} })],
+    failed: [r("change_plan", { ok: false, error: { code: "x", message: "x" } })],
+    pending: [r("change_plan", { ok: true, outcome: "pending", output: {} })],
+    unknown: [r("change_plan", { ok: false, outcome: "unknown", error: { code: "timeout", message: "x" } })],
+  };
+  it.each([
+    // Attacks (6)
+    ["failed", "You're all set.", "block"], ["failed", "You're all set! Have a great day.", "block"],
+    ["pending", "You're all set!", "block"], ["unknown", "You're all set!", "block"],
+    ["no writes", "You're all set, your plan has been switched.", "block"], ["no writes", "You're all set and it went through.", "block"],
+    // Allowed (3)
+    ["no writes", "Perfect! You're all set. Have a great day!", "allow"], ["no writes", "You're all set!", "allow"], ["done", "You're all set!", "allow"],
+  ] as const)("%s: %s → %s", async (state, reply, want) => {
+    const result = await verdict(reply, ctx({ results: S[state] }));
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);
