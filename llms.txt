@@ -19,6 +19,8 @@ The model chooses the words; code decides what's allowed. You write three things
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents working on this repo.
 - [CHANGELOG.md](CHANGELOG.md): changes per version (Keep a Changelog format).
 - [docs/how-it-was-built.md](docs/how-it-was-built.md): build log: timeline, decision log, the improvement loop, costs.
+- [CONTRIBUTING.md](CONTRIBUTING.md): setup, CI, rules for changing checks and simulation tasks, pull request checklist.
+- [SECURITY.md](SECURITY.md): reporting check bypasses and personal-data leaks privately.
 
 ## Prompts
 
