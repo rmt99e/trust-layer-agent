@@ -55,6 +55,10 @@ export class Agent {
       if (this.byName.has(t.name)) throw new TypeError(`two tools are named "${t.name}"; tool names must be unique`);
       this.byName.set(t.name, t);
     }
+    for (const t of opts.tools.filter((t) => t.reconcileWith)) {          // the read that settles an unknown outcome must exist
+      const r = this.byName.get(t.reconcileWith!);
+      if (!r || r.kind !== "read") throw new TypeError(`tool "${t.name}": reconcileWith "${t.reconcileWith}" ${r ? "is a write tool; it must name a read tool" : "isn't one of this agent's tools"}`);
+    }
     this.model = resolveModel(opts.model);
     if (opts.journeys) {
       const disabled = Object.entries(opts.builtins ?? {}).filter(([, v]) => v === false).map(([k]) => k);

@@ -250,6 +250,21 @@ describe("Agent", () => {
     expect(r.reply).toBe("I've opened case case_001 so the team can follow up.");
   });
 
+  describe("reconcileWith is validated at construction (v4.1 fix 2)", () => {
+    const change = (reconcileWith: string) => write({ name: "change_plan", description: "x", input: z.object({}), confirm: false, reconcileWith, run: () => ({}) });
+    const refund = write({ name: "refund_invoice", description: "x", input: z.object({}), confirm: false, run: () => ({}) });
+    const make = (reconcileWith: string) => () => new Agent({ model: scripted([]), instructions: "x", trace: false, tools: [tools.account, refund, change(reconcileWith)] });
+    it.each([
+      // Attacks (4)
+      ["get_acount", `tool "change_plan": reconcileWith "get_acount" isn't one of this agent's tools`],
+      ["Get_Account", `tool "change_plan": reconcileWith "Get_Account" isn't one of this agent's tools`],
+      ["refund_invoice", `tool "change_plan": reconcileWith "refund_invoice" is a write tool; it must name a read tool`],
+      ["change_plan", `tool "change_plan": reconcileWith "change_plan" is a write tool; it must name a read tool`],
+    ])("%s → throws", (name, message) => expect(make(name)).toThrow(message));
+    // Allowed (1)
+    it("an existing read tool → constructs", () => expect(make("get_account")).not.toThrow());
+  });
+
   it("rejects duplicate tool names and warns when nothing can verify", () => {
     expect(() => new Agent({ model: scripted([]), instructions: "x", tools: [tools.account, tools.account], trace: false })).toThrow(/unique/);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
