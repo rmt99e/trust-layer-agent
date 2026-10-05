@@ -80,6 +80,25 @@ describe("grader timing and async state", () => {
     const { trials } = await runSuite(s, { tasks: ["timing"] });
     expect(trials[0].grade!.claims).toMatchObject({ pass: false, detail: expect.stringContaining("Reply states the amount 9") });
   });
+  it("awaits an async createStore() (e.g. a database-backed store)", async () => {
+    task("asyncstore", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, compare: [plan] }");
+    const s = suite([{ call: "set_plan", input: { id: "a1", plan: "plus" } }, "Done, you're on plus."], ["Move me to plus, yes.", "###STOP###"],
+      { createStore: async (seed: any) => { await new Promise((r) => setTimeout(r, 5)); return makeStore(seed); } });
+    const { trials } = await runSuite(s, { tasks: ["asyncstore"] });
+    expect(trials[0]).toMatchObject({ status: "pass" });
+    expect(trials[0].grade!.state).toMatchObject({ pass: true, detail: "matches" });
+  });
+  it("defaults the cost cap to $10, like the CLI", async () => {
+    task("cap", "expect: {}");
+    const pricey = scripted(["hi", "###STOP###"], { id: "fake:customer", usage: { inputTokens: 1_000_000, outputTokens: 0 } });   // $1 per call
+    const run = await runSuite(suite(["ok"], [], { customerModel: pricey }), { tasks: ["cap"] });
+    expect(run.stopped).toBe(false);                                  // $2 < $10 (the old default of $5 would also pass; see next)
+    const many = scripted(Array(12).fill("hi"), { id: "fake:customer", usage: { inputTokens: 1_000_000, outputTokens: 0 } });
+    const run2 = await runSuite(suite(Array(12).fill("ok"), [], { customerModel: many }), { tasks: ["cap"] });
+    expect(run2.cost).toBeGreaterThan(5);                             // would have stopped at $5 before
+    expect(run2.cost).toBeLessThan(12);
+  });
+
   it("awaits an async state() (e.g. a database read)", async () => {
     task("async", "expect:\n  writes:\n    - { tool: set_plan, input: { id: a1, plan: plus }, compare: [plan] }");
     const s = suite([{ call: "set_plan", input: { id: "a1", plan: "plus" } }, "Done, you're on plus."], ["Move me to plus, yes.", "###STOP###"],

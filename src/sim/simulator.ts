@@ -12,7 +12,7 @@ export interface Suite {
   tools: Tool[];                                                    // the real tools: every declaration comes from here
   standIns: Record<string, StandIn>;                                // run functions by tool name, over the trial's store
   seed: unknown;
-  createStore(seed: unknown, opts: { now: () => Date }): unknown;   // a fresh store per trial
+  createStore(seed: unknown, opts: { now: () => Date }): unknown | Promise<unknown>;   // a fresh store per trial; may be async (a database)
   state(store: unknown): unknown | Promise<unknown>;               // what the grader compares; may read a database
   tasks: string | string[];
   agentModel: string | Model;
@@ -47,7 +47,7 @@ export async function prepare(suite: Suite, only?: string[]) {
     const named = [...t.expect.writes.map((w) => w.tool), ...t.expect.forbidden_actions, ...t.expect.allowed_writes, ...t.inject_failures.map((f) => f.tool)];
     const bad = named.find((n) => !names.has(n));
     if (bad) throw new Error(`task ${t.id}: unknown tool "${bad}"`);
-    await applyExpected(t, suite.createStore(seedFor(t, suite.seed), { now: () => new Date() }), suite.standIns);
+    await applyExpected(t, await suite.createStore(seedFor(t, suite.seed), { now: () => new Date() }), suite.standIns);
   }
   const models = { agent: resolveModel(suite.agentModel), customer: resolveModel(suite.customerModel) };
   for (const m of Object.values(models)) if (!suite.prices[m.id]) throw new Error(`no price for model "${m.id}" in suite.prices`);
@@ -57,7 +57,7 @@ export async function prepare(suite: Suite, only?: string[]) {
 /** Run every task k times. Stops early once accumulated cost passes maxCost. */
 export async function runSuite(suite: Suite, opts: { k?: number; tasks?: string[]; maxCost?: number; onTrial?: (t: Trial) => void } = {}) {
   const { tasks, models } = await prepare(suite, opts.tasks);
-  const budget = { spent: 0, max: opts.maxCost ?? 5 };
+  const budget = { spent: 0, max: opts.maxCost ?? 10 };              // same default as the CLI's --max-cost
   const trials: Trial[] = [];
   for (const task of tasks) for (let i = 1; i <= (opts.k ?? 1); i++) {
     const t = budget.spent > budget.max ? { task: task.id, trial: i, status: "stopped" as const, turns: 0, cost: 0, transcript: [], events: [] }
@@ -71,7 +71,7 @@ export async function runSuite(suite: Suite, opts: { k?: number; tasks?: string[
 
 async function runTrial(suite: Suite, task: Task, trial: number, models: { agent: Model; customer: Model }, budget: { spent: number; max: number }): Promise<Trial> {
   const now = () => new Date(suite.now ?? Date.now());
-  const store = suite.createStore(seedFor(task, suite.seed), { now });
+  const store = await suite.createStore(seedFor(task, suite.seed), { now });
   const fail = new Map(task.inject_failures.map((f) => [f.tool, f]));
   const tools = suite.tools.map((t): Tool => ({ ...t, run: (input, ctx) => {
     const f = fail.get(t.name);
@@ -117,7 +117,7 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
     throw e;
   }
   r.ended ??= "max_steps";
-  const gold = suite.createStore(seedFor(task, suite.seed), { now });
+  const gold = await suite.createStore(seedFor(task, suite.seed), { now });
   await applyExpected(task, gold, suite.standIns);
   for (const r of (session?.results ?? []).filter((x) => x.ok && task.expect.allowed_writes.includes(x.tool)))
     await suite.standIns[r.tool](r.input, { facts: {}, commitments: [] }, gold);     // allowed extras don't count against the state
