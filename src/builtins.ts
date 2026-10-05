@@ -66,10 +66,15 @@ const noUnconfirmedClaims = check("no_unconfirmed_claims", (e, ctx) => {
 });
 
 // A write that already succeeded this turn isn't repeated (e.g. opening another case while redrafting a reply).
+// An unknown or pending outcome may already have applied, so it can't be retried this turn either (even if repeatable).
 const noRepeatedWrites = check("no_repeated_writes", (e, ctx) => {
-  if (e.kind !== "action" || e.tool.kind !== "write" || e.tool.repeatable) return allow();
-  const prior = ctx.results.findLast((r) => r.ok && r.tool === e.tool.name && r.turn === ctx.turn);
-  return prior ? block(`${e.tool.name} already succeeded this turn (result: ${JSON.stringify(prior.output)}). Don't call it again; use that result.`) : allow();
+  if (e.kind !== "action" || e.tool.kind !== "write") return allow();
+  const prior = ctx.results.findLast((r) => r.tool === e.tool.name && r.turn === ctx.turn && (r.ok || r.outcome === "unknown"));
+  const unsettled = prior && (prior.outcome === "unknown" || prior.outcome === "pending");
+  if (!prior || (e.tool.repeatable && !unsettled)) return allow();
+  return block(unsettled ? `${e.tool.name}'s last call this turn has an ${prior.outcome} outcome and may already have applied. Don't retry it` +
+    `${e.tool.reconcileWith ? `; call ${e.tool.reconcileWith} to check what happened` : ""}.`
+    : `${e.tool.name} already succeeded this turn (result: ${JSON.stringify(prior.output)}). Don't call it again; use that result.`);
 });
 
 const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e, ctx) => {

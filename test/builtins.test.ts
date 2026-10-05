@@ -153,3 +153,32 @@ describe("no_repeated_writes (v4 b)", () => {
       block: `open_case already succeeded this turn (result: {"caseId":"case_002"}). Don't call it again; use that result.` });
   });
 });
+
+describe("no retry of an unknown or pending write in the same turn (v4.1 fix 1)", () => {
+  const W = (name: string, extra = {}) => ({ name, kind: "write" as const, confirm: false as const, reconcileWith: "get_account", ...extra });
+  const call = (tool: string, turn: number, extra: object) => ({ id: "c", tool, turn, input: {}, ...extra });
+  const timeout = (tool: string, turn = 2) => call(tool, turn, { ok: false, outcome: "unknown", error: { code: "timeout", message: "x" } });
+  const pending = (tool: string, turn = 2) => call(tool, turn, { ok: true, outcome: "pending", output: { status: "pending" } });
+  const failedCall = (tool: string, turn = 2) => call(tool, turn, { ok: false, error: { code: "declined", message: "x" } });
+  const go = (tool: any, results: any[]) =>
+    runChecks({ kind: "action", tool, input: {} }, ctx({ say: ["c: help", "a: ok", "c: please"], results, tools: [tool] }), only("no_repeated_writes"));
+  it.each([
+    // Attacks (5)
+    ["timeout, then the same write, same turn", W("change_plan"), [timeout("change_plan")], "block"],
+    ["pending, then the same write, same turn", W("change_plan"), [pending("change_plan")], "block"],
+    ["timeout, then the same repeatable write", W("open_case", { repeatable: true }), [timeout("open_case")], "block"],
+    ["timeout + a reconcile read, then a retry, same turn", W("change_plan"), [timeout("change_plan"), call("get_account", 2, { ok: true, output: {} })], "block"],
+    ["failure, then timeout, then retry, same turn", W("change_plan"), [failedCall("change_plan"), timeout("change_plan")], "block"],
+    // Allowed (3)
+    ["known failure, then a retry", W("change_plan"), [failedCall("change_plan")], "allow"],
+    ["timeout, then a retry in a later turn", W("change_plan"), [timeout("change_plan", 1)], "allow"],
+    ["timeout, then a different write", W("open_case"), [timeout("change_plan")], "allow"],
+  ] as const)("%s → %s", async (_n, tool, results, want) => {
+    const { result } = await go(tool, results as any);
+    expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+  it("tells the model the outcome is unknown and which read to call", async () => {
+    expect((await go(W("change_plan"), [timeout("change_plan")])).result).toEqual({
+      block: "change_plan's last call this turn has an unknown outcome and may already have applied. Don't retry it; call get_account to check what happened." });
+  });
+});
