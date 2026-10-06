@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project will follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from its first release.
 
-`v1` to `v4` are internal milestones (git tags), not npm releases. The first npm release will be **0.1.0**: package.json is already at 0.1.0, but nothing has been published to npm yet. Until then, install from GitHub; a `prepare` script builds the package on install.
+`v1` to `v4` are internal milestones (git tags), not npm releases. The first npm release will be **0.1.0**: package.json is already at 0.1.0, but nothing has been published to npm yet. Until then, install from GitHub; a `prepare` script builds the package on install. The `v0.1.0` git tag (2026-10-05) marks the first public release on GitHub.
 
 ## [Unreleased]
 
@@ -26,6 +26,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - A suite's `createStore()` may be async (for example, a store backed by a database), like `state()`.
 - `runSuite()`'s default cost cap is 10, the same as the CLI's `--max-cost` default. It was 5.
 - docs/design.md now opens with a note that SPEC.md describes current behavior.
+- README rewritten in plain, factual language; the v1–v4 results history moved to docs/how-it-was-built.md. The package description, SPEC.md, AGENTS.md, llms.txt, CONTRIBUTING.md, SECURITY.md and the copy-paste prompts were updated to match, and stale v4.1/v4.2 statements about unknown outcomes and repeated writes were corrected.
 
 ## [v4] - 2026-10-05
 

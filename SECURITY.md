@@ -25,7 +25,7 @@ This is a small project maintained on a best-effort basis. We aim to acknowledge
 Bypasses of what the library claims to enforce in code, for example:
 
 - a reply that states a price, date or "done" no tool returned and still passes `no_unconfirmed_claims`;
-- a reply that says a write worked or failed while its outcome is still unknown, or a successful write that runs again in the same turn (`no_repeated_writes`);
+- any reply sent while a write's outcome is still unknown, or a write that runs again in the same turn after it succeeded or while its outcome is unknown or pending (`no_repeated_writes`);
 - a write tool that runs without the required quote and yes (`yes_after_quote`), or account data returned before verification (`verified_first`);
 - a model or customer overriding a bound tool input (bind injection);
 - personal data reaching the model past field-level visibility, or reaching traces past masking;

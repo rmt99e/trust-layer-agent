@@ -2,9 +2,7 @@
 
 Version: **0.1**. Status: draft, normative for v0.1 ports.
 
-trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.
-
-The core idea: **the model chooses the words; code decides what's allowed.**
+trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
 This document is language-neutral. The TypeScript package (`src/`) is the reference implementation; where this text is silent, the reference implementation's behaviour is the spec. Type sketches below are illustrative TypeScript-ish notation, not a requirement to use TypeScript.
 

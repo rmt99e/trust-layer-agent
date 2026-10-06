@@ -1,12 +1,12 @@
 # How it was built
 
-A build log for trust-layer-agent: how the work was organized, what happened in what order, which decisions were made and why, what was measured, and what it cost. Versions are referred to by tag (`v1` to `v4`) and changes by commit message.
+A build log for trust-layer-agent: how the work was organized, what happened in what order, which decisions were made and why, what was measured, and what it cost. Versions are referred to by tag (`v1` to `v4`) and changes by commit message. v4.1 and v4.2 are untagged changes after `v4`; the `v0.1.0` tag marks the first public release.
 
 Built with Claude Code, with a second AI chat acting as project lead.
 
 ## What this is
 
-trust-layer-agent is a small trust layer for customer-facing agents that act, not just answer. It rests on one rule: **the model chooses the words; code decides what's allowed.** Tools run only when checks in code allow them, a reply can't claim a price, date or "done" that no tool confirmed, the model sees only the customer data it needs, and a version ships only after it passes simulations. Everything else in this log follows from taking that rule seriously and then measuring whether it held.
+trust-layer-agent is a TypeScript library that sits between an LLM and a customer-facing support agent's tools and replies. Tool calls are checked in code before they run, and replies are checked before they're sent: a reply can't state a price, date or "done" that no tool returned. Tools declare which fields the model may see. A simulator runs each version against simulated customers, and a snapshot pins the result. This log records how each check was added and what the simulations measured.
 
 ## How the work was organized
 
@@ -90,6 +90,16 @@ Local times, approximate. Results files are named in UTC, so they read four hour
 
 - **The v4 runs:** 22 tasks × 4 trials on each model (Sonnet's finished ~12:17am, Haiku's ~12:41am), then "chore: v4 snapshots" (tag `v4`) at ~12:41am. Sonnet's run passed the gate; Haiku's exited 1 (77% below `--min-pass`, and two tasks flipped pass→fail). The targeted harm went to 0 and a new one appeared.
 - **~12:57am, after `v4`:** "chore: install from GitHub, async createStore, aligned cost cap" (packaging, not yet in a tagged version) and "chore: v3 re-graded snapshots".
+- **~1:16am, v4.1, four fixes from review of v4** (decision 15): "fix: no retry of a write whose outcome is unknown", "fix: validate reconcileWith", "fix: a throwing outcome() is treated as unknown" and "fix: fingerprint covers outcome, reconcileWith, repeatable".
+- **~1:40am, demo toggles:** "feat(example): demo toggles for outcomes and model" (`CHANGE_PLAN_OUTCOME=fail|timeout|pending`, `AGENT_MODEL=sonnet|haiku` in the subscriptions chat).
+- **~1:53am, v4.2** (decision 16): "feat: reconcile unknown outcomes in code before any reply". In a demo rehearsal before it, after `change_plan` timed out (having applied), Haiku replied "Our team will handle your switch… You should hear back soon": no failure phrase, so no check fired, but it implied the change had failed.
+- **~1:55am, a re-run of `timeout-applied` only on v4.2** (k=4 per model, about $0.54 including one live check): the task passed 4/4 on both models, and all 8 trials told the customer the correct outcome on the turn the change timed out. See "v4.1 and v4.2".
+- **~2:05am, docs and publishing:** "docs: v4.1 and v4.2, demo toggles", "chore: public CLAUDE.md points to AGENTS.md" and "chore: repository links". Before publishing, the history was scrubbed of author and product references: every commit is authored as `trust-layer-agent`, and "docs: correct build-log evidence; remove author and product references" (Friday) had removed them from the docs. Tag `v0.1.0` ("First public release") at ~2:07am; the GitHub repository was created at ~2:11am. Not yet published to npm.
+
+### Tuesday 2026-10-06
+
+- **~2pm, plain README** (decision 17): "docs: plain README" rewrote the README to state facts about the code, its API and measured results, moved the v1–v4 results history into this log, and changed the package description to match. "docs: plain-English intro, example first" added a plain-terms paragraph, checked sentence by sentence against src/claims.ts and src/builtins.ts, and moved the example to the top.
+- **Then a docs consistency pass:** "docs: consistency pass after plain README" corrected statements in SPEC.md, the copy-paste prompts, SECURITY.md, CONTRIBUTING.md, AGENTS.md and llms.txt that v4.1 and v4.2 had made untrue, and moved this log's unfinished "What I learned" section out of the repository.
 
 ## Model size × checks
 
@@ -188,7 +198,33 @@ Every Haiku trial went the same way: a draft about the outcome was blocked, Haik
 
 Haiku's 9 failed trials: 8 were unneeded handoffs (safe, but they cost a person's time). The ninth was harmful. In switch-request-after-quote #2 it offered "Starter at $9/month with 100 credits - covers your usage easily". The customer used 180–240 credits a month, and `get_usage` had suggested Plus. The customer said yes and Haiku switched them: "Done! You're now on the Starter plan." Harmful cases: Sonnet 0 → 0, Haiku 3 → 1.
 
+v4.2 later widened the unknown-outcome rule from "neither worked nor failed" to "no reply at all" (see "v4.1 and v4.2").
+
 Bugs left open: fit and eligibility claims aren't checked (they are judgments, not numbers, dates or done language); done language isn't tied to *which* write succeeded (a v4 unit test showed "switched to Plus" allowed after only `open_case` succeeded); and Haiku's unneeded handoffs keep rising as the checks tighten (4 → 5 → 8 of 72). Checks can't stop a handoff the model chooses; that needs a prompt or journey change, measured on its own.
+
+## v4.1 and v4.2
+
+Neither is a tagged version; both landed before `v0.1.0`.
+
+**v4.1** closed four gaps found in review of v4, each with tests:
+
+- `no_repeated_writes` also blocks retrying a write whose latest call this turn has an unknown or pending outcome, even if the write is `repeatable`, because it may already have applied. A known failure can still be retried, and an unknown one can be retried in a later turn (test/builtins.test.ts, "no retry of an unknown or pending write in the same turn").
+- `reconcileWith` must name a read tool of the same agent, or `new Agent()` throws.
+- A write whose `outcome(output)` throws is treated as unknown, with the error recorded as `outcomeError`; the turn doesn't crash.
+- The snapshot fingerprint covers each tool's `outcome` source, `reconcileWith` and `repeatable`.
+
+**v4.2** moved the re-check from the model to code. When a write ends with an unknown outcome and its `reconcileWith` read needs only inputs code already has (bound fields or the failed call's input), the agent runs that read itself before the model replies and adds the result to the write's tool message. While an outcome is still unknown, `no_unconfirmed_claims` blocks every draft, not only "done" and failure wording; a handoff is still possible. A write with no `reconcileWith` can't be settled, and the block tells the model to hand off.
+
+The trigger was the rehearsal reply "Our team will handle your switch… You should hear back soon", which implied a failure without any phrase a check matched.
+
+Re-running only `timeout-applied` (k=4 per model, about $0.54 including one live check):
+
+| | Trials with the correct outcome on the timeout turn | Friction per trial, v4 → v4.2 |
+|---|---|---|
+| Sonnet 5.5 | 4 of 4 | 0.5 → 0 |
+| Haiku 4.5 | 4 of 4 | 1.75 → 0.75 |
+
+Code's re-check ran before every reply on the timeout turn. Haiku's remaining blocks were an unrelated unbacked "$50" savings stated before the quote. This was a single-task re-run; the full suite was not re-run on v4.2, and no snapshot was taken.
 
 ## Harm moves up a level
 
@@ -311,6 +347,24 @@ Alternatives: keep treating any tool error as "not done", and leave failure lang
 Why: v3's harm was a false "it failed" after a write that had applied, and drafts retried after a block repeated writes.
 Evidence: in timeout-applied, false "it failed" replies went Haiku 3 → 0 and Sonnet 1 → 0, and re-reads before answering went Haiku 0 → 4 of 4 and Sonnet 3 → 4 of 4. The unknown-outcome rule blocked a draft in every Haiku trial, and each block was followed by a `get_account` call. Repeated writes in a turn went Haiku 3 → 0, but `no_repeated_writes` never fired, so only test/builtins.test.ts and test/agent.test.ts show it working. pass^4: Sonnet 100% (22/22, 88/88 trials), Haiku 77% (17/22, 79/88).
 
+**15. No retry of an unsettled write (v4.1).**
+Decision: a write whose latest call this turn has an unknown or pending outcome can't run again in that turn, even if it is `repeatable`.
+Alternatives: block only repeats of a write that succeeded (v4).
+Why: an unknown or pending write may already have applied, so a retry can apply it twice.
+Evidence: "fix: no retry of a write whose outcome is unknown" and its tests in test/builtins.test.ts. The same review produced "fix: validate reconcileWith", "fix: a throwing outcome() is treated as unknown" and "fix: fingerprint covers outcome, reconcileWith, repeatable", each with tests in test/agent.test.ts or test/cli.test.ts.
+
+**16. Code reconciles before any reply (v4.2).**
+Decision: after an unknown outcome, the agent runs the `reconcileWith` read itself when it has the inputs, and blocks every draft until a reconcile read succeeds.
+Alternatives: leave the read to the model and block only "done" and failure wording (v4).
+Why: a reply can imply an outcome without any phrase a check matches ("Our team will handle your switch… You should hear back soon").
+Evidence: "feat: reconcile unknown outcomes in code before any reply"; test/agent.test.ts, "code reconciles unknown outcomes before any reply (v4.2)". In the `timeout-applied` re-run, 8 of 8 trials gave the correct outcome on the timeout turn, and friction per trial fell (Sonnet 0.5 → 0, Haiku 1.75 → 0.75).
+
+**17. A plain, factual README.**
+Decision: the README states facts about the code, its API and measured results, with no hook or tagline; the results history lives in this log.
+Alternatives: open with a failure story and narrate the results in the README.
+Why: a reader needs to know what the library does and what it guarantees; the history is detail for those who want it.
+Evidence: "docs: plain README" and "docs: plain-English intro, example first". Checking each README sentence against src/ found a stale unknown-outcome statement and two overstated claims in a draft intro (a shown price is required only for writes with `confirm`; failure wording is blocked only after a tool reported success), all fixed before commit. "docs: consistency pass after plain README" fixed the same stale statements in the other docs.
+
 ## The loop
 
 ```mermaid
@@ -347,36 +401,7 @@ Paid model runs, in order:
 | v3, Sonnet + Haiku, 88 trials each ($5.02 + $2.63) | $7.65 |
 | Offline re-grade of v3 | $0 (no model calls) |
 | v4, Sonnet + Haiku, 88 trials each ($5.05 + $2.59) | $7.64 |
+| v4.2, `timeout-applied` only, 4 trials per model, plus one live check | ≈ $0.54 |
 | Hands-on chat and demo sessions | not metered, small |
 
-Metered total through `v4`: about **$38.50**, plus a few cents. Every check, journey and agent-loop test runs on a scripted fake model and costs nothing. Haiku cost about half as much as Sonnet per run throughout.
-
-## What I learned
-
-### Rules in prompts vs checks in code
-
-TODO: the author writes this in their own words.
-
-### Reading the v1 → v2 diff
-
-TODO: the author writes this in their own words.
-
-### Why pass^k
-
-TODO: the author writes this in their own words.
-
-### Noise and trial counts
-
-TODO: the author writes this in their own words.
-
-### Model size
-
-TODO: the author writes this in their own words.
-
-### Harm the suite didn't test for
-
-TODO: the author writes this in their own words.
-
-### What I'd do differently
-
-TODO: the author writes this in their own words.
+Metered total through `v4`: about **$38.50**, plus a few cents. Through v4.2: about **$39.04**. Every check, journey and agent-loop test runs on a scripted fake model and costs nothing. Haiku cost about half as much as Sonnet per run throughout.

@@ -1,6 +1,6 @@
 # Prompt: port trust-layer-agent to my language
 
-trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.
+trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
 SPEC.md defines the parts that don't depend on a language: the session JSON, the check result shape, the journey schema and the simulation task format. The TypeScript package is the reference implementation. This prompt has your coding agent build a port in another language, smallest piece first, using the reference tests as conformance cases. It finishes by running the same simulation suite the reference passes and comparing the scores. It stops for your OK after the plan and after the check tables pass. Only the last step costs money.
 
@@ -11,9 +11,8 @@ Port trust-layer-agent to <language>. Reference repo: <repo-url>. Clone it and r
 1,500 lines of TypeScript), test/ and examples/subscriptions/. SPEC.md is the contract. Where SPEC.md, the
 source and the tests disagree, the source and its tests win; list every disagreement for me.
 
-The idea to keep intact: the model chooses the words; code decides what's allowed. Three things a user writes
-(tools, checks, journeys), one call (respond), two commands (test, snapshot), four extension points (tools,
-checks, journeys, model adapters). Don't add features. Put ideas in a list for me instead.
+Keep the design intact: three things a user writes (tools, checks, journeys), one call (respond), two commands
+(test, snapshot), four extension points (tools, checks, journeys, model adapters). Don't add features. Put ideas in a list for me instead.
 
 RULES
 - Dependencies: a schema validator that can emit JSON Schema, and a YAML parser that keeps line numbers. Use
@@ -68,8 +67,8 @@ make them pass before moving on.
    refusal allowance (a number the customer said may appear only inside the agent's own refusal that governs
    it, and comparatives like "lower than" or "better deal than" disqualify it); markShown. Then write outcomes,
    from each write tool's latest call: done, pending, failed, or unknown until a later successful call of its
-   reconcileWith read. While any is unknown, block both done wording and failure wording, naming the read to
-   call. The failure-language guard: failure wording ("didn't go through", "failed", "nothing has been
+   reconcileWith read. While any is unknown, block every draft, whatever it says, naming the read to call
+   (or, with no reconcileWith, telling the model to hand off). The failure-language guard: failure wording ("didn't go through", "failed", "nothing has been
    changed"...) is blocked when no write failed and one is done. Done wording is blocked while a write failed or
    is pending; "went through" and "has gone through" are done wording; a bare "you're all set" is blocked only
    after a failed, pending or unknown write.
@@ -79,8 +78,9 @@ make them pass before moving on.
    (affirmative and proceed-request detection, including "go with that", "I'll take it", "n't" as a negation
    and lower-cased custom phrases; quote commitments that must exist, be open and unexpired, and be shown in an
    earlier turn), handoff_after_failures, no_repeated_writes (a write that already succeeded in this turn is
-   blocked, with the prior result in the exact block reason, unless the tool is repeatable; an earlier turn or a
-   failed earlier call doesn't count). With untrusted_text_is_data that makes six built-ins; the pipeline test
+   blocked, with the prior result in the exact block reason, unless the tool is repeatable; a call this turn
+   with an unknown or pending outcome blocks a retry even when the tool is repeatable; an earlier turn or a
+   known failure doesn't count). With untrusted_text_is_data that makes six built-ins; the pipeline test
    fixes the order of the other five. untrusted_text_is_data is structural and is built in steps 2 and 6.
    SPEC: 5.1, 5.2, 5.5, 5.6. Source: src/builtins.ts. Tests: the rest of test/builtins.test.ts, including
    "no_repeated_writes (v4 b)".
@@ -90,7 +90,9 @@ make them pass before moving on.
    from the session with bound fields stripped. Customer text and tool output fenced as data with angle
    brackets escaped, and the system prompt's data rule copied exactly. System notes outside the fences. A
    blocked action returned to the model as a "Not run. Blocked: ..." error. A blocked reply retried up to
-   maxRetries, then handed off. maxToolCalls. The handoff_to_person tool. Journey handoffs checked before any
+   maxRetries, then handed off. maxToolCalls. Auto-reconcile: after a write ends with an unknown outcome and
+   declares reconcileWith, run that read before the next model call when its input can be built from the
+   failed call's input and bound fields (SPEC section 2). The handoff_to_person tool. Journey handoffs checked before any
    model call. Commitments marked as shown; a successful confirm write spends only the commitment matching both
    its id and its type; rev + 1 per turn; a handed-off session returns the handoff message without calling
    the model.

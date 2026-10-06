@@ -1,16 +1,16 @@
 # Prompt: add trust-layer-agent to my app
 
-trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.
+trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
 This prompt has your coding agent add a support agent to an existing JavaScript or TypeScript app. It wraps your data functions as tools, adds one chat route that stores the session in your database, then writes a journey file and five simulation tasks and runs them. It stops after each step for your OK. Only step 8 costs money, because it calls a model; it shows an estimate first and stops at a cost limit.
 
 Copy everything inside the block into your coding agent, from the app's root folder.
 
 ````text
-Add trust-layer-agent to this app. The model chooses the words; code decides what's allowed. You write three
-things (tools, checks, journeys), call one function (agent.respond) and run two commands (test, snapshot).
+Add trust-layer-agent to this app. You write three things (tools, checks, journeys), call one function
+(agent.respond) and run two commands (test, snapshot).
 Extend only through tools, checks, journeys and model adapters; never patch the package. It ships as plain ESM
-JavaScript with types: no build step in plain-JS apps, types for free in TS. Use only names the installed
+JavaScript with types: no build step in plain-JS apps, and TS apps get the types. Use only names the installed
 package exports (node_modules/trust-layer-agent/dist/index.d.ts): Agent, read, write, z, ToolError, check,
 allow, block, rewrite, handoff, createSession, forget, jsonl, maskTrace, anthropic, openaiCompatible, ModelError.
 If this prompt disagrees with those type files, the type files win; tell me. At every STOP, show me your work
@@ -69,8 +69,10 @@ Declare write outcomes for writes that can time out or be pending (get_account a
 - outcome: (output) => "done" | "pending" (default "done"). The agent may not call a pending write done.
 - ToolError(code, message, { outcome: "unknown" }) for a write that may have happened (a timeout after the
   request was sent). A plain ToolError means it didn't happen.
-- reconcileWith: "<read tool>" names the read that shows the true state. While an outcome is unknown, no reply
-  may say it worked or failed until that read runs; without reconcileWith the agent can only say it's checking.
+- reconcileWith: "<read tool>" names the read that shows the true state. When a write's outcome is unknown,
+  the agent runs that read itself before the model replies, if every input it needs is bound or in the failed
+  call. Until a reconcile read succeeds, every draft reply is blocked (a handoff is still possible). Without
+  reconcileWith, every draft is blocked and the model is told to hand off.
 - repeatable: true only for a write that may legitimately succeed twice in one turn (two separate refunds,
   say). Otherwise no_repeated_writes blocks a second call once the first succeeded.
 
