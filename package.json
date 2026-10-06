@@ -1,7 +1,7 @@
 {
   "name": "trust-layer-agent",
   "version": "0.1.0",
-  "description": "trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.",
+  "description": "A TypeScript library that checks an LLM support agent's tool calls before they run and its replies before they're sent.",
   "keywords": [
     "ai",
     "agents",

@@ -1,8 +1,8 @@
 # trust-layer-agent
 
-> trust-layer-agent is a small trust layer for customer-facing agents: tools gated by checks in code, replies that can't claim what no tool confirmed, customer data shown to the model only on a need-to-know basis, and releases that must pass simulations first.
+> trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
-The model chooses the words; code decides what's allowed. You write three things: tools (functions wrapped with `read()` or `write()`, each declaring which fields the model may see), checks (one function type returning allow, block, rewrite or handoff, guarding both tool calls and replies), and optional journey YAML files. You call one thing: `await agent.respond(session, message)`, where the session is plain JSON your app stores anywhere. Two commands: `test` runs simulated customers k times per task and reports pass^k; `snapshot` pins a passing version.
+You write three things: tools (functions wrapped with `read()` or `write()`, each declaring which fields the model may see), checks (one function type returning allow, block, rewrite or handoff, guarding both tool calls and replies), and optional journey YAML files. You call one thing: `await agent.respond(session, message)`, where the session is plain JSON your app stores anywhere. Two commands: `test` runs simulated customers k times per task and reports pass^k; `snapshot` pins a passing version.
 
 - Install: `npm install github:rmt99e/trust-layer-agent` (not on npm yet; `dist/` builds on install). Node 20+.
 - About 10 lines for a working agent: define a `read` tool and a `write` tool with zod inputs, then `new Agent({ model: "anthropic:<model>", instructions, tools })` and `await agent.chat()` to try it.
@@ -13,7 +13,7 @@ The model chooses the words; code decides what's allowed. You write three things
 
 ## Docs
 
-- [README.md](README.md): the failure it prevents, the quickstart, the design and the example.
+- [README.md](README.md): what it enforces, the quickstart, how it works, the example and results.
 - [SPEC.md](SPEC.md): language-neutral spec: journey JSON Schema, check result shape, session JSON, simulation task format.
 - [docs/design.md](docs/design.md): the API design: tools, checks, session, Model interface, journeys, traces, commands.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents working on this repo.
