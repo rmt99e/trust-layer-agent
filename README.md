@@ -5,7 +5,33 @@
 
 trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator and a `test` command that run simulated customers against your agent and report pass^k.
 
-[What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Example](#example) · [How it works](#how-it-works) · [The subscriptions example](#the-subscriptions-example) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+In plain terms: an AI support agent can change a customer's account (a refund, a plan change) and then tell the customer what happened. Both steps can go wrong. The model can make a change the customer never agreed to, or say a refund went through when the refund tool failed. This library checks each step against what your systems actually returned. A change runs only after the customer's latest message is a clear yes, and a change tied to a quote also needs that quote to have been shown first. A reply that states a price or a date is sent only if a tool result or your own instructions back it. A reply that says something is done is sent only if a tool reported success, and one that says a change failed is blocked if the tool reported success. A blocked draft is discarded and the model writes again, up to two more times by default, before the conversation is handed to a person. It's for teams adding an AI agent to a product that handles accounts, billing or orders.
+
+[Example](#example) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [The subscriptions example](#the-subscriptions-example) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+
+## Example
+
+This is what happens when a tool fails and the model drafts a reply claiming success:
+
+```
+you   > Please refund order 123.
+agent > I can refund order 123 in full. Shall I go ahead?
+
+you   > yes
+   · refund_order → failed (payment_provider_down)
+   ✗ draft not sent  [no_unconfirmed_claims]
+     draft:  "Your refund has been processed."
+     reason: Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.
+agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
+```
+
+`no_unconfirmed_claims` blocked the draft because `refund_order` failed. The model received the reason and wrote a second draft, which was sent. The trace records the blocked draft:
+
+```json
+{"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
+```
+
+This exchange is the first test in [test/agent.test.ts](test/agent.test.ts). It uses a scripted model, so it runs the same way every time.
 
 ## What it enforces
 
@@ -76,30 +102,6 @@ if (handoff) notifyATeammate(handoff.summary);
 // When the customer asks to be forgotten:
 await save(agent.forget(next));         // stores a tombstone; also deletes the trace when the sink supports it
 ```
-
-## Example
-
-This is what happens when a tool fails and the model drafts a reply claiming success:
-
-```
-you   > Please refund order 123.
-agent > I can refund order 123 in full. Shall I go ahead?
-
-you   > yes
-   · refund_order → failed (payment_provider_down)
-   ✗ draft not sent  [no_unconfirmed_claims]
-     draft:  "Your refund has been processed."
-     reason: Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.
-agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
-```
-
-`no_unconfirmed_claims` blocked the draft because `refund_order` failed. The model received the reason and wrote a second draft, which was sent. The trace records the blocked draft:
-
-```json
-{"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
-```
-
-This exchange is the first test in [test/agent.test.ts](test/agent.test.ts). It uses a scripted model, so it runs the same way every time.
 
 ## How it works
 
