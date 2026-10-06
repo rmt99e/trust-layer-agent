@@ -94,7 +94,7 @@ Local times, approximate. Results files are named in UTC, so they read four hour
 - **~1:40am, demo toggles:** "feat(example): demo toggles for outcomes and model" (`CHANGE_PLAN_OUTCOME=fail|timeout|pending`, `AGENT_MODEL=sonnet|haiku` in the subscriptions chat).
 - **~1:53am, v4.2** (decision 16): "feat: reconcile unknown outcomes in code before any reply". In a demo rehearsal before it, after `change_plan` timed out (having applied), Haiku replied "Our team will handle your switch… You should hear back soon": no failure phrase, so no check fired, but it implied the change had failed.
 - **~1:55am, a re-run of `timeout-applied` only on v4.2** (k=4 per model, about $0.54 including one live check): the task passed 4/4 on both models, and all 8 trials told the customer the correct outcome on the turn the change timed out. See "v4.1 and v4.2".
-- **~2:05am, docs and publishing:** "docs: v4.1 and v4.2, demo toggles", "chore: public CLAUDE.md points to AGENTS.md" and "chore: repository links". Before publishing, the history was scrubbed of author and product references: every commit is authored as `trust-layer-agent`, and "docs: correct build-log evidence; remove author and product references" (Friday) had removed them from the docs. Tag `v0.1.0` ("First public release") at ~2:07am; the GitHub repository was created at ~2:11am. Not yet published to npm.
+- **~2:05am, docs and publishing:** "docs: v4.1 and v4.2, demo toggles", "chore: public CLAUDE.md points to AGENTS.md" and "chore: repository links". At ~2:07am the repository was published on GitHub as `v0.1.0`. Not yet published to npm.
 
 ### Tuesday 2026-10-06
 
