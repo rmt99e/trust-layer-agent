@@ -55,7 +55,7 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
 const modelId = (m: string | Model) => (typeof m === "string" ? m : m.id);
 // Every declaration that changes behavior, with function bodies as source text (JSON would drop them).
 const toolFingerprint = (t: Tool) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
-  before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromUser: t.fromUser });
+  before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromUser: t.fromUser, secret: t.secret });
 const kindFingerprint = (k: ClaimKind) => ({ name: k.name, find: String(k.find), confirms: k.confirms?.toString() });
 
 // Every compiled .js file in this package, recursively (sim/, models/ too), in a stable order.

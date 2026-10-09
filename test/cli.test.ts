@@ -178,7 +178,7 @@ describe("grader: only asserted phrases count (negated or conditional uses don't
   });
 });
 
-describe("fingerprint covers outcome, reconcileWith, repeatable and fromUser", () => {
+describe("fingerprint covers outcome, reconcileWith, repeatable, fromUser and secret", () => {
   const suiteFile = join(mkdtempSync(join(tmpdir(), "tla-fp-")), "suite.js");
   writeFileSync(suiteFile, "export default {}");
   const get = read({ name: "get_account", description: "x", input: z.object({}), run: () => ({}) });
@@ -198,6 +198,11 @@ describe("fingerprint covers outcome, reconcileWith, repeatable and fromUser", (
   // Allowed (1)
   it("an identical tool → no warning", () => expect(differs(change())).toBe(false));
   it("fromUser is covered", () => expect(differs(change({ fromUser: [] }))).toBe(true));
+  it("secret is covered: redaction changes the history the model sees", () => {
+    const withPin = (o: Record<string, unknown> = {}) => write({ name: "change_plan", description: "x", input: z.object({ pin: z.string() }), confirm: false, run: () => ({}), ...o });
+    const a = cfg(withPin()), b = cfg(withPin({ secret: ["pin"] }));
+    expect(compare({ config: a, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: b, summary: {}, overall: 1, cost: 0 })).toContain('⚠️  config differs from snapshot "v4": tools');
+  });
 });
 
 describe("fingerprint covers claim kinds, which JSON alone would drop", () => {

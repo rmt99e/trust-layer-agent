@@ -109,7 +109,7 @@ STEP 5: One table and one Express route:
   create table agent_sessions (id text primary key, account_id text not null, rev integer not null,
     data jsonb not null, updated_at timestamptz not null default now());
 
-  import { createSession, ModelError } from "trust-layer-agent";
+  import { createSession, TurnFailed } from "trust-layer-agent";
   router.post("/support/messages", async (req, res) => {
     const { sessionId, message } = req.body, accountId = req.user.accountId;    // from auth, never the body
     let session;

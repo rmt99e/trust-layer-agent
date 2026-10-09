@@ -20,7 +20,7 @@ A suite is a `suite.js` that exports the agent options, your tools, a stand-in `
 
 ## Task fields
 
-A task is a YAML file with an `id`, a `user` block (`persona`, `reason`, `known_info`, `unknown_info`, `instructions`) that drives the simulated user, `max_steps`, and an `expect` block:
+A task is a YAML file with an `id`, a `purpose` (what it tests), a `user` block (`persona`, `reason`, `known_info`, `unknown_info`, `instructions`) that drives the simulated user, an optional `initial_state` (dot paths set in the seed before the trial) and `inject_failures` (tools that throw a given `ToolError` on every call), `max_steps`, and an `expect` block:
 
 - `writes`: the writes that must have happened, applied to a copy of the seed to produce the expected final state; each has `tool`, `input`, the `compare` fields, and optionally `allow_error` for a write that may end in a named ToolError (a write that applies, then times out).
 - `allowed_writes`: tools whose extra successful calls are fine in this task.

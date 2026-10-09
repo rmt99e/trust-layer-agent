@@ -5,7 +5,7 @@
 
 The model chooses the words; code decides what's allowed. Two parts of the original page still earn their place: the acceptance sketch that shaped `createSession({ facts })`, and the decisions that closed the open questions.
 
-## 12. Acceptance check: plain-JS Express + Postgres
+## 1. Acceptance check: plain-JS Express + Postgres
 
 ```js
 // routes/support.js  (plain ESM, no build step)
@@ -26,9 +26,9 @@ export async function supportRoute(req, res) {
 }
 ```
 
-Writing this sketch changed the design in one place. A logged-in app already knows who the customer is, so `createSession({ facts })` was added (section 4): chat-based verification is only for anonymous channels. No core change is needed for the four target journeys ("which plan fits me", "where's my request", general product questions, "I'm in danger"): each is tools + journey YAML + simulation tasks, and "I'm in danger" (escalate to a person) is a `handoff_when: { customer_says: [...] }` guardrail.
+Writing this sketch changed the design in one place. A logged-in app already knows who the customer is, so `createSession({ facts })` was added (SPEC.md section 7): chat-based verification is only for anonymous channels. No core change is needed for the four target journeys ("which plan fits me", "where's my request", general product questions, "I'm in danger"): each is tools + journey YAML + simulation tasks, and "I'm in danger" (escalate to a person) is a `handoff_when: { user_says: [...] }` guardrail.
 
-## 13. Decisions (formerly open questions)
+## 2. Decisions (formerly open questions)
 
 1. **Default visibility.** If `visible` is omitted, fields that look like personal data (by name or by value: email, phone, address, dob/date of birth, ssn, card numbers) are hidden and everything else is visible. The constructor lists the hidden fields per tool. `strictVisibility: true` hides every field not listed.
 2. **Customer-stated numbers.** They never count as confirmed. Only tool results, commitments and operator-authored text do. The block reason tells the model to rephrase.
