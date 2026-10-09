@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent has a 1,600-line cap on logic in `src/` (checks, the agent loop, two model adapters, the store contract with its Postgres adapter, and the simulator), and it is at 1,586. A change that adds a feature needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300 and is at 1,228; the simulator and CLI stay under 450 and are at 396. A change that adds a feature near a cap needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
@@ -44,12 +44,13 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - **Never weaken a simulation task to make it pass.** Fix tools, checks or journeys instead.
 - **Measure behavior changes against a snapshot.** Run `test --against <snapshot>` and include the diff. Keep behavior-neutral fixes (refactors, messages, docs) in separate pull requests from behavior changes, so each diff means one thing.
 - **Re-baseline after changing the grader.** A grader change moves every score; run the old snapshot's configuration again under the new grader before comparing.
-- **Checks are deterministic.** Built-in checks never call a model. Small-model reply review stays an optional extra, off by default.
+- **Checks are deterministic.** Built-in checks never call a model. A model-backed check would be a custom check an operator writes; the library ships none.
 - **No prices or business values in `src/`.** They come from tools.
 - **Vendor-neutral names.** No real company or product names in code, examples or sample data.
 - **Extension only through tools, checks, journeys, model adapters and session stores.** If a use case needs a core change, the interface is wrong; open an issue first. Things that don't fit go in docs/roadmap.md.
-- **Logic-line cap.** `src/` stays under 1,600 non-blank, non-comment lines. Count with:
-  `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
+- **Logic-line caps.** The library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 non-blank, non-comment lines; the simulator and CLI under 450. Count with:
+  `cat $(ls src/*.ts src/models/*.ts src/stores/*.ts | grep -v cli.ts) | grep -Ev '^\s*($|//|/?\*)' | wc -l`
+  `cat src/cli.ts src/sim/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Runtime dependencies stay `zod` and `yaml` only. Adapters use `fetch`, no provider SDKs.
 
 ## Pull request checklist
@@ -59,7 +60,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - [ ] Behavior changes include a `test --against <snapshot>` diff with trial counts (or say a maintainer should run it).
 - [ ] SPEC.md updated if behavior in the spec changed.
 - [ ] A `CHANGELOG.md` entry under `[Unreleased]`.
-- [ ] Logic-line count still under 1,600.
+- [ ] Logic-line counts still under their caps (library 1,300; simulator and CLI 450).
 - [ ] No secrets, personal data or real company names in code, fixtures or traces.
 
 ## Where docs live

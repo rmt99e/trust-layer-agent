@@ -1,5 +1,5 @@
 export { z } from "zod";
-export { Agent } from "./agent.js";
+export { Agent, TurnFailed } from "./agent.js";
 export type { AgentOptions, Reply, Usage } from "./agent.js";
 export { read, write, ToolError } from "./tools.js";
 export type { Tool, ToolDef, ToolContext, Records } from "./tools.js";

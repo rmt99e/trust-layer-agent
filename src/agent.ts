@@ -1,6 +1,6 @@
 import { BUILTIN_NAMES, checkPipeline, verificationWarning, type BuiltinOptions } from "./builtins.js";
 import { chatLoop, type Observer } from "./chat.js";
-import { block, contextFrom, runChecks, toolInfo, type Check, type ToolInfo, type Verdict } from "./checks.js";
+import { block, contextFrom, handoff, runChecks, toolInfo, type Check, type CheckEvent, type ToolInfo, type Verdict } from "./checks.js";
 import { markShown } from "./claims.js";
 import { listFiles } from "./files.js";
 import { loadJourneys, type LoadedJourneys } from "./journeys.js";
@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { createSession, currentTurn, FACTS_PREFIX, forget, HANDOFF_TOOL, loadSession, nextResultId, SESSION_ID, stableJson,
   type Approval, type ForgottenSession, type Json, type Session, type ToolResult } from "./session.js";
-import { runTool, toolSpec, unboundInput, unboundSchema, type Tool } from "./tools.js";
+import { redactInput, runTool, toolSpec, unboundInput, unboundSchema, type Tool } from "./tools.js";
 import { jsonl, maskTrace, type TraceSink } from "./trace.js";
 
 export interface AgentOptions {
@@ -30,6 +30,12 @@ export interface AgentOptions {
   warn?: (message: string) => void;  // where startup notices go; default console.warn
 }
 export interface Usage { inputTokens: number; outputTokens: number; calls: number }
+/** The model failed mid-turn. `session` holds everything that ran before it did (the user's message, tool results, parked approvals), so a store can keep it. */
+export class TurnFailed extends Error {
+  constructor(public session: Session, public cause: Error, public approvals: Approval[], public usage: Usage) {
+    super(`turn ${currentTurn(session)} failed: ${cause?.message ?? String(cause)}`); this.name = "TurnFailed";
+  }
+}
 export interface Reply { reply: string; session: Session; handoff?: { summary: string; reason: string }; approvals?: Approval[]; usage: Usage }
 type Ran = Awaited<ReturnType<typeof runTool>>;
 
@@ -43,6 +49,7 @@ const fenceTool = (content: unknown) => `<tool_result>${escapeTags(JSON.stringif
 /** A system note: the library's own words. Anything interpolated from the model, user or tools is escaped first. */
 const note = (text: string) => `<system_note>${text}</system_note>`;
 const NO_MECHANICS = "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.";
+const CHECK_ERROR = "check_error";                                    // a check that throws fails closed: the turn hands off
 const INCOMPLETE = "complete_reply";                                   // the structural reply check: a draft must be whole
 const incomplete = (res: ModelResponse) => res.stop === "max_tokens" ? "The draft was cut off by the model's output limit. Write a shorter reply."
   : !res.text.trim() ? "The draft was empty. Write a reply." : undefined;
@@ -68,6 +75,8 @@ export class Agent {
     for (const t of opts.tools.filter((t) => t.reconcileWith)) {          // the read that settles an unknown outcome must exist
       const r = this.byName.get(t.reconcileWith!);
       if (!r || r.kind !== "read") throw new TypeError(`tool "${t.name}": reconcileWith "${t.reconcileWith}" ${r ? "is a write tool; it must name a read tool" : "isn't one of this agent's tools"}`);
+      const leak = (t.secret ?? []).find((k) => k in r.input.shape && !r.secret?.includes(k));     // the read gets the real value; it must keep it secret too
+      if (leak) throw new TypeError(`tool "${t.name}": reconcileWith "${r.name}" takes secret field "${leak}" but doesn't declare it secret`);
     }
     this.infos = opts.tools.map(toolInfo);
     this.model = resolveModel(opts.model);
@@ -135,14 +144,14 @@ export class Agent {
       : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
     s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
     if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
-    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id } : x) };
+    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id, input: redactInput(x, x.input) } : x) };
     this.log(s, turn, "approval", { approval: id, decision: status, ...this.toolLine(ran.result) });
     return { session: s, result: ran.result };
   }
 
   /** A ToolResult for a parked action that did not run, appended to the session. */
   private failedResult(s: Session, a: Approval, code: string, message: string): Ran {
-    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: a.input, error: { code, message } };
+    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: redactInput(a, a.input), error: { code, message } };
     return { result, session: { ...s, results: [...s.results, result] } };
   }
 
@@ -199,9 +208,10 @@ export class Agent {
       { role: "assistant", content: "", toolCalls: [{ id: r.id, name: r.tool, input: unboundInput(this.byName.get(r.tool) ?? { bind: {} } as Tool, r.input) }] },
       { role: "tool", toolCallId: r.id, name: r.tool, content: fenceTool(r.ok ? r.output : { error: r.error }), isError: !r.ok }];
     const results = (m: { turn: number }, decidedOnes: boolean) => s.results.filter((r) => r.turn === m.turn && decided.has(r.id) === decidedOnes).flatMap(pair);
+    const answered = (turn: number) => s.messages.some((m) => m.role === "agent" && m.turn === turn);   // a failed turn has no reply to replay after
     return s.messages.flatMap((m): ModelMessage[] => m.role === "agent"
       ? [{ role: "assistant", content: m.text }, ...results(m, true)]
-      : [{ role: "user", content: fenceUser(m.text) }, ...results(m, false)]);
+      : [{ role: "user", content: fenceUser(m.text) }, ...results(m, false), ...(answered(m.turn) ? [] : results(m, true))]);
   }
 
   private async turn(session: Session | null, message: string, observe?: Observer): Promise<Reply> {
@@ -213,8 +223,9 @@ export class Agent {
     const emit = (type: string, data: Record<string, unknown>) => this.log(s, turn, type, data, observe);
     const msgs = this.history(s);
     const waiting = s.approvals.filter((a) => a.status === "pending");           // still parked from earlier turns
+    const shownInput = (a: Approval) => unboundInput(this.byName.get(a.tool) ?? { bind: {} } as Tool, redactInput(a, a.input));
     if (waiting.length) msgs.push({ role: "user", content: note(`Waiting for a person's approval: ${waiting.map((a) =>
-      `${a.tool} ${escapeTags(JSON.stringify(unboundInput(this.byName.get(a.tool) ?? { bind: {} } as Tool, a.input)))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
+      `${a.tool} ${escapeTags(JSON.stringify(shownInput(a)))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
     const tools = this.opts.tools.map(toolSpec);
     const parked: Approval[] = [];
     let calls = 0, retries = 0;
@@ -227,13 +238,16 @@ export class Agent {
       return { reply: text, session: s, usage, ...(handoff && { handoff }), ...(parked.length ? { approvals: parked } : {}) };
     };
     const handoffNow = (summary: string, reason: string) => finish(this.opts.handoffMessage, { summary, reason });
+    const verdict = (e: CheckEvent) => runChecks(e, this.ctx(s), this.checks)
+      .catch((err: Error): Verdict => ({ result: handoff(`A check failed: ${err.message}`), by: CHECK_ERROR, trail: [] }));
 
     for (const due of this.journeys.handoffs) {          // deterministic handoffs need no model call
       const summary = due(this.ctx(s));
       if (summary) return handoffNow(summary, "journey");
     }
     for (;;) {
-      const res = await this.model.generate({ system: this.system, messages: msgs, tools });
+      const res = await Promise.resolve().then(() => this.model.generate({ system: this.system, messages: msgs, tools }))
+        .catch((e: Error) => { throw new TurnFailed({ ...s, rev: s.rev + 1 }, e, parked, usage); });   // what ran stays in the session
       usage.calls++; usage.inputTokens += res.usage?.inputTokens ?? 0; usage.outputTokens += res.usage?.outputTokens ?? 0;
       if (res.stop === "refusal") return handoffNow("The model declined to respond.", "refusal");
       if (res.toolCalls.length) {
@@ -245,20 +259,21 @@ export class Agent {
           const tool = this.byName.get(call.name);
           if (!tool) { answer(note(`There is no tool named ${escapeTags(call.name)}.`), true); continue; }
           const modelInput = unboundInput(tool, (call.input ?? {}) as Record<string, Json>);   // the model never supplies a bound field, even in a record
-          const input = { ...modelInput, ...this.boundValues(tool, s) };
-          const v = await runChecks({ kind: "action", tool: toolInfo(tool), input }, this.ctx(s), this.checks);
+          const input = { ...modelInput, ...this.boundValues(tool, s) }, shown = redactInput(tool, modelInput);
+          const v = await verdict({ kind: "action", tool: toolInfo(tool), input });
           if ("handoff" in v.result) return handoffNow(v.result.handoff, v.by!);
           if ("block" in v.result) {
-            emit("check", { event: "action", tool: call.name, input: modelInput, check: v.by, result: v.result });
+            emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result });
             answer(note(`Not run. Blocked: ${escapeTags(v.result.block)} ${NO_MECHANICS}`), true);
             continue;
           }
           if ("approve" in v.result) {                    // parked for a person; the same call isn't parked twice
             const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && stableJson(a.input) === stableJson(input));
-            const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, turn, reason: v.result.approve, by: v.by!, status: "pending" };
+            const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, ...(tool.secret?.length && { secret: tool.secret }),
+              turn, reason: v.result.approve, by: v.by!, status: "pending" };
             if (!same) {
               s = { ...s, approvals: [...s.approvals, a] }; parked.push(a);
-              emit("check", { event: "action", tool: call.name, input: modelInput, check: v.by, result: v.result, approval: a.id });
+              emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result, approval: a.id });
             }
             answer(note(`Not run: ${tool.name} needs a person's approval (${escapeTags(v.result.approve)})${same ? ", which is already requested" : ""}. ` +
               `Tell the user it's been requested, not done. ${NO_MECHANICS}`), true);
@@ -267,7 +282,7 @@ export class Agent {
           const r = await runTool(tool, modelInput, s, { strictVisibility: this.opts.strictVisibility });
           s = this.spend({ ...r.session, failures: r.result.ok ? 0 : s.failures + 1 }, tool, r.result);
           emit("tool", this.toolLine(r.result));
-          const auto = r.result.outcome === "unknown" ? await this.reconcile(tool, r.result.input, s) : undefined;
+          const auto = r.result.outcome === "unknown" ? await this.reconcile(tool, input, s) : undefined;   // the real input, not the redacted record
           if (auto) {
             s = { ...auto.session, failures: auto.result.ok ? 0 : s.failures + 1 };
             emit("tool", { ...this.toolLine(auto.result), reconcile: true });
@@ -280,7 +295,7 @@ export class Agent {
         continue;
       }
       const cut = incomplete(res);                           // a cut-off or empty draft is refused like any other, before the checks see it
-      const v: Verdict = cut ? { result: block(cut), by: INCOMPLETE, trail: [] } : await runChecks({ kind: "reply", text: res.text }, this.ctx(s), this.checks);
+      const v: Verdict = cut ? { result: block(cut), by: INCOMPLETE, trail: [] } : await verdict({ kind: "reply", text: res.text });
       if ("handoff" in v.result) return handoffNow(v.result.handoff, v.by!);
       if ("block" in v.result) {
         emit("check", { event: "reply", check: v.by, result: v.result, draft: res.text });

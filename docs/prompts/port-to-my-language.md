@@ -12,14 +12,14 @@ Port trust-layer-agent to <language>. Reference repo: <repo-url>. Clone it and r
 source and the tests disagree, the source and its tests win; list every disagreement for me.
 
 Keep the design intact: three things a user writes (tools, checks, journeys), one call (respond), two commands
-(test, snapshot), four extension points (tools, checks, journeys, model adapters). Don't add features. Put ideas in a list for me instead.
+(test, snapshot), five extension points (tools, checks, journeys, model adapters, session stores). Don't add features. Put ideas in a list for me instead.
 
 RULES
 - Dependencies: a schema validator that can emit JSON Schema, and a YAML parser that keeps line numbers. Use
   the standard library for HTTP, JSON, UUIDs, hashing and files. No model provider SDKs and no agent framework.
 - Same wire formats, byte for byte where it matters: session JSON (v, id, rev, status, facts, commitments,
   results with each write's outcome, messages, failures), check results ({allow: true} | {block} | {rewrite} |
-  {handoff}), journey and task YAML, trace lines, results/ and snapshots/ JSON. A session saved by the TypeScript package must load in
+  {handoff} | {approve}), journey and task YAML, trace lines, results/ and snapshots/ JSON. A session saved by the TypeScript package must load in
   the port and the other way round.
 - Checks are deterministic code. Copy phrase lists, regexes, block reasons and notes exactly (SPEC.md requires
   the exact strings), then fix regex-dialect differences until the reference tables pass: \b is the ASCII word
@@ -86,7 +86,8 @@ make them pass before moving on.
    "no_repeated_writes (v4 b)".
    STOP: show me pass counts for every table in steps 1 to 5, allowed and attack rows separately, and each
    deviation you had to resolve.
-6. The agent loop, respond(session, message) returning { reply, session, handoff?, usage }. History rebuilt
+6. The agent loop, respond(session, message) returning { reply, session, handoff?, approvals?, usage }, and rejecting
+   with TurnFailed { session, cause, approvals, usage } when the model fails mid-turn (the session so far, rev + 1, no turn trace line). History rebuilt
    from the session with bound fields stripped. User text and tool output fenced as data with angle
    brackets escaped, and the system prompt's data rule copied exactly. System notes outside the fences. A
    blocked action returned to the model as a "Not run. Blocked: ..." error. A blocked reply retried up to

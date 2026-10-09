@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- **A write that ran was lost when the model failed later in the turn.** `respond()` rejected with the bare provider error and the session it had built, tool results included, went with it; a store never saw the write, and a retry could run it again. `respond()` now rejects with `TurnFailed { session, cause, approvals, usage }`, `withStore` saves that session before rethrowing, the decided results of a turn with no reply are replayed to the model after its user message, and `no_repeated_writes` treats a write from a turn that never got a reply as current, so the retry is refused with the prior result.
+- **A custom check that threw crashed the turn.** The runner names the check (`check "<name>" threw: …`) and the agent fails closed: the turn hands off with reason `check_error`. `review()` still propagates the error.
+- AGENTS.md and CONTRIBUTING.md described a small-model reply review that the library has never shipped; the prompt docs listed four extension points, check results without `approve`, and an export allowlist missing `approve`, `withStore`, `memoryStore`, `loadSession`, `StaleSession` and `teachingView`.
 - From a full-codebase review:
   - A tool's `records()` throwing crashed the turn after the tool had run. It is now caught: nothing is recorded, the message is stored as `recordsError`, and a write's outcome is `unknown`.
   - A draft cut off by the model's output limit, or an empty draft, was sent. Both are now refused like any blocked draft (structural check `complete_reply`), so the retry and handoff path applies.
@@ -34,6 +37,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **`secret` on a tool declaration.** Input fields named in `secret` (a PIN, a card's security code) reach `run` and `records` as given and are stored as `[redacted]` everywhere else: the ToolResult, the trace lines, the model's replayed history, and the Approval record once a person decides. Until now a verified PIN sat in `results[]` for the life of the session.
+- `TurnFailed` is exported.
+- The logic-line cap is two caps: library 1,300, simulator and CLI 450. The aggregate ceiling rises from 1,600 to 1,750; the two grow for different reasons and the trust boundary is the one to watch.
 - **Typed tool declarations.** `read()`/`write()` infer the input type from the zod schema: `run`, `bind`, `fromUser` and `confirm.by` are typed against it, so a misspelled field is a compile error; `records` and `outcome` are typed from `run`'s return when `run` is declared first. `ToolDef.output` (accepted, never used) is gone.
 - Both adapters take `timeoutMs` and `retryDelayMs` (`HttpOptions`). `AgentOptions.warn` routes startup notices (the simulator silences them). `teachingView` is exported: the terminal view `chat()` uses, for demos.
 - `npm run typecheck` (`tsconfig.test.json`) type-checks the tests and vitest config; CI runs it, plus Node 24 and `npm pack --dry-run`. `engines.node` is `>=20.12`.

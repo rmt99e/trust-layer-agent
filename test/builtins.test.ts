@@ -156,6 +156,10 @@ describe("no_repeated_writes", () => {
     const { result } = await go(tool, results as any);
     expect("allow" in result ? "allow" : "block").toBe(want);
   });
+  it("a write in an earlier turn that got no reply (the turn failed) still counts; an answered turn's doesn't", async () => {
+    expect("block" in (await go(W("open_case"), [done("open_case", 1)], ["c: help", "c: please"])).result).toBe(true);
+    expect("allow" in (await go(W("open_case"), [done("open_case", 1)], ["c: help", "a: ok", "c: please"])).result).toBe(true);
+  });
   it("puts the prior result in the block reason", async () => {
     expect((await go(W("open_case"), [done("open_case", 2)])).result).toEqual({
       block: `open_case already succeeded this turn (result: {"caseId":"case_002"}). Don't call it again; use that result.` });
