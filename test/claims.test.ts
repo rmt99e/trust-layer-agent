@@ -256,6 +256,15 @@ describe("operator-defined claim kinds", () => {
     expect(verdict("We found 14 records.", ctx({ results: [ok("get_account", { found: 14 })] }), [count])).toBeUndefined();
     expect(verdict("We found 15 records.", ctx({ results: [ok("get_account", { found: 14 })] }), [count])).toBe(reason("count", "15"));
   });
+  it("a RegExp kind skips negated clauses, like done words; attacks still state the claim", () => {
+    const state: ClaimKind = { name: "status", find: /\b(ordered|placed)\b/i };
+    for (const honest of ["It hasn't been ordered yet.", "Nothing has been placed; it's waiting for approval.", "No, it is not ordered."])
+      expect(verdict(honest, ctx(), [state])).toBeUndefined();
+    for (const claim of ["No, it's ordered.", "No problem, your order has been placed.", "It wasn't cheap, but it's ordered."])
+      expect(verdict(claim, ctx(), [state])).toMatch(/Reply states the status/);
+    const fn: ClaimKind = { name: "status", find: (t) => [...t.matchAll(/\b(ordered)\b/gi)].map((m) => m[1].toLowerCase()) };
+    expect(verdict("It hasn't been ordered yet.", ctx(), [fn])).toMatch(/Reply states the status/);       // a function find applies its own rule
+  });
   it("a function kind: backed by a string anywhere in a tool output, case-insensitively", () => {
     expect(verdict("Your entry was Removed.", ctx({ results: [ok("get_account", { items: [{ state: "removed" }] })] }), [status])).toBeUndefined();
     expect(verdict("Your entry was suppressed.", ctx({ results: [ok("get_account", { items: [{ state: "removed" }] })] }), [status])).toBe(reason("status", "suppressed"));

@@ -1,6 +1,6 @@
 # trust-layer-agent
 
-> trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+> trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks every tool call before it runs and every reply before it's sent, against what the tools returned and what the user agreed to. Customer support and internal operations with approvals are the two shipped journeys; the same primitives carry any agent that both does things and says things. It also ships a simulator for testing agents.
 
 You write three things: tools (functions wrapped with `read()` or `write()`, each declaring which fields the model may see), checks (one function type returning allow, block, rewrite, handoff or approve, guarding both tool calls and replies), and optional journey YAML files. You call one thing: `await agent.respond(session, message)`, where the session is plain JSON your app stores anywhere. `agent.review(session, draft)` runs the same reply checks on a message your app wrote; `agent.approve(session, id)` and `agent.decline(session, id)` settle an action a check parked for a person. Two commands: `test` runs simulated users k times per task and reports pass^k; `snapshot` pins a passing version.
 
@@ -38,6 +38,7 @@ You write three things: tools (functions wrapped with `read()` or `write()`, eac
 - [examples/subscriptions/knowledge/policy.md](examples/subscriptions/knowledge/policy.md): the policy the agent follows.
 - [examples/subscriptions/sim/suite.js](examples/subscriptions/sim/suite.js): the simulation suite: seeded store, stand-in tools, graded state.
 - [examples/subscriptions/sim/tasks/](examples/subscriptions/sim/tasks/): simulation tasks (persona, goal, expected writes and claims).
+- [examples/procurement/](examples/procurement/): the second journey, internal purchasing: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two claim kinds, and `agent.review()` on the app's own supplier email. `sim/` has 4 tasks.
 
 ## Optional
 

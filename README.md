@@ -3,11 +3,13 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator and a `test` command that run simulated users against your agent and report pass^k.
+trust-layer-agent is a trust layer for LLM agents that act on someone's behalf. It is a TypeScript library (Node 20+) that sits between the model and your tools: every tool call is checked before it runs, and every reply is checked before it's sent, against what your systems actually returned and what the user actually agreed to. It also ships a simulator and a `test` command that run simulated users against your agent and report pass^k.
 
-In plain terms: an AI agent can change a user's account (a refund, a plan change) and then tell the user what happened. Both steps can go wrong. The model can make a change the user never agreed to, or say a refund went through when the refund tool failed. This library checks each step against what your systems actually returned. A change runs only after the user's latest message is a clear yes, and a change tied to a quote also needs that quote to have been shown first. A reply that states a price or a date is sent only if a tool result or your own instructions back it. A reply that says something is done is sent only if a tool reported success, and one that says a change failed is blocked if the tool reported success. A blocked draft is discarded and the model writes again, up to two more times by default, before the conversation is handed to a person. It's for teams adding an AI agent to a product that handles accounts, billing or orders.
+It fits any agent that both does things and says things. An agent that changes an account, places an order, files a request or sends a notice can act without consent, or describe what happened wrongly: a change the user never agreed to, "done" when the tool failed, a price or a date no tool returned, a search for something nobody asked for. This library makes each of those a rule in code. A write runs only after a clear yes, and a write tied to a quote also needs that quote to have been shown. A reply may state only what a tool result or your own instructions back. An action a person should decide is parked, not run or refused, and the conversation goes on. A blocked draft is discarded and the model writes again, up to two more times by default, before the conversation is handed to a person.
 
-[Example](#example) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [The subscriptions example](#the-subscriptions-example) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+Customer support is one journey it was built on, and the fullest example in the repo. Internal operations with approvals is the second. The same tools, checks, journeys and session carry both.
+
+[Example](#example) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [The two examples](#the-two-examples) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
 
 ## Example
 
@@ -219,7 +221,11 @@ await bound.forget(session.id);            // deletes the trace rows and stores 
 
 A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
-## The subscriptions example
+## The two examples
+
+Two fictional apps, one journey each. Both run the full library: tools with bound ids and field visibility, journeys with guardrails, every built-in check, a simulation suite the grader can score.
+
+### Subscriptions: customer support
 
 [examples/subscriptions/](examples/subscriptions/) is a fictional subscription app with plans, usage credits, invoices and seeded customers. The agent verifies the customer, reviews usage, recommends a plan, quotes it, and changes it only after a yes.
 
@@ -235,6 +241,22 @@ CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subs
 ```
 
 `chat.js` takes `CHANGE_PLAN_OUTCOME=fail|timeout|pending` and `AGENT_MODEL=sonnet|haiku`; see [examples/README.md](examples/README.md). The same data, tools and policy back the simulator suite in [sim/](examples/subscriptions/sim/), which has 22 tasks. `TRUST_LAYER_CHECKS=off` runs the example agent with every built-in check off and journey guardrails removed, keeping all prompt text.
+
+### Procurement: internal operations with approvals
+
+[examples/procurement/](examples/procurement/) is a company's purchasing desk. Staff identify themselves and their team, search a catalog, get a quote and place orders against the team's quarterly budget. It is the same shape as support with three differences the library handles for it:
+
+- the catalog search declares `fromUser: ["query"]`, so the model can only search for what the requester actually said (`no_invented_inputs`);
+- an order above the team's limit returns `approve(...)` from one custom check, so it is parked for a person in purchasing while the chat goes on, and "ordered" stays blocked until it runs;
+- the purchase-order email to the supplier is rendered by the app, not the model, and goes through `agent.review()` before it is sent. Two claim kinds (`count`, `status`) extend the claim check to what purchasing replies state.
+
+Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `place_order` (`reconcileWith: "list_orders"` settles a timeout), `open_ticket`, `handoff_to_person`. Rules in [store.js](examples/procurement/store.js), the journey in [journeys/order.yaml](examples/procurement/journeys/order.yaml), the suite in [sim/](examples/procurement/sim/) with 4 tasks.
+
+```sh
+node --env-file=.env examples/procurement/demo.js     # a scripted requester, then a person approving, then the email through review()
+```
+
+`test/examples.test.ts` drives both examples with a scripted model, so they are checked on every CI run without a model call.
 
 ## Testing your agent
 
@@ -306,12 +328,13 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Units come from field names: `price`, `charge`, `amount`, `fee`, `cost`, `total`, `balance`, `savings`, `increase` and `refund` mean money; `percent` and `pct` mean a percentage. A number in any other field can't confirm "$29"; rename the field or return `"$29"`. Sums and differences aren't computed, so tools should return every number the agent may say.
 - The refusal allowance matches Sonnet's "I can't offer…" refusals; Haiku's phrasing mostly falls outside it.
 - Claims about fit or eligibility aren't checked (see [Results](#results)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
+- The procurement example has no pinned simulation results yet; its suite is validated and driven by a scripted model in CI, not scored against a real model.
 - `no_invented_inputs` matches whole words, case-insensitively. A user who typed "Springfeld" can be searched for as "Springfeld", not "Springfield".
 - Done wording isn't tied to a specific write: after `open_case` succeeded, "switched to Plus" was allowed (shown in a v4 unit test).
 - Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,488 non-blank, non-comment lines, against a 1,500-line cap.
+- The logic in `src/` is 1,490 non-blank, non-comment lines, against a 1,500-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
 - The suite is small, written by the same authors as the fixes, and run once per version.
@@ -337,7 +360,7 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 
 ## Contributing
 
-Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, tests and the four extension points. Report security issues privately as described in [SECURITY.md](SECURITY.md), not in public issues.
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, tests and the five extension points. Report security issues privately as described in [SECURITY.md](SECURITY.md), not in public issues.
 
 ## Acknowledgments and citations
 

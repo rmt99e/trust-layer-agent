@@ -13,6 +13,7 @@ const RELATIVE = /\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|mo
 // "No problem, your plan has been switched" keep their claims; "no problem"/"no worries" are interjections, never negations.
 const NEGATED = /\b(?:not|never|no longer|nothing|none|no)\b|n't\b/i;
 const INTERJECTION = /^\s*no (?:problem|worries|worry)\b/i;
+const clauseOf = (text: string, i: number) => (text.slice(0, i).split(/[.!?;:,\n]|\bbut\b/i).pop() ?? "").replace(INTERJECTION, "");
 // "You're all set staying on Starter" reports that nothing changed: status, not a claim that something was done.
 // Failure wording is only honest after a known failure; after a success it's a false "it failed".
 const FAILED_WORDS = /\b(?:didn't go through|did not go through|failed|wasn't applied|was not applied|nothing has changed|nothing has been changed|nothing was changed|no changes were made)\b/i;
@@ -40,7 +41,7 @@ export function extractClaims(text: string): Claims {
     ...all(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/g).filter((m) => +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31)
       .map((m) => (m[3] ? `${m[3]}-` : "") + md(+m[1], m[2])),
   ];
-  const clauseBefore = (i: number) => (text.slice(0, i).split(/[.!?;:,\n]|\bbut\b/i).pop() ?? "").replace(INTERJECTION, "");
+  const clauseBefore = (i: number) => clauseOf(text, i);
   const isStatus = (m: RegExpMatchArray) => /all set/i.test(m[0]) && STATUS_AFTER.test(text.slice(m.index! + m[0].length));
   const done = all(DONE).filter((m) => !NEGATED.test(clauseBefore(m.index!)) && !isStatus(m)).map((m) => m[0].toLowerCase());
   return { money, percents, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done };
@@ -141,11 +142,13 @@ export function unconfirmed(text: string, ctx: CheckContext, kinds: readonly Cla
  */
 export interface ClaimKind {
   name: string;                                   // in the block reason: Reply states the <name> "<value>"…
-  find: RegExp | ((text: string) => string[]);    // claims in a text; a RegExp yields its first group (else the match), lower-cased
+  find: RegExp | ((text: string) => string[]);    // claims in a text; a RegExp yields its first group (else the match), lower-cased, skipping negated clauses
   confirms?: (source: Json) => string[];          // what one source backs; default: each string or number in it, whole and lower-cased, plus find() over it
 }
+// A RegExp kind skips a match whose own clause negates it ("it hasn't been ordered yet"), the same rule as done words.
 const finder = ({ find }: ClaimKind) => typeof find === "function" ? find
-  : (text: string) => [...text.matchAll(new RegExp(find.source, find.flags.replace("g", "") + "g"))].map((m) => (m[1] ?? m[0]).toLowerCase());
+  : (text: string) => [...text.matchAll(new RegExp(find.source, find.flags.replace("g", "") + "g"))]
+    .filter((m) => !NEGATED.test(clauseOf(text, m.index!))).map((m) => (m[1] ?? m[0]).toLowerCase());
 const texts = (v: Json): string[] => typeof v === "string" ? [v] : typeof v === "number" ? [String(v)]
   : Array.isArray(v) ? v.flatMap(texts) : v && typeof v === "object" ? Object.values(v).flatMap(texts) : [];
 
