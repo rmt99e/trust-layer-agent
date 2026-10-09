@@ -14,7 +14,8 @@ You write three things: tools (functions wrapped with `read()` or `write()`, eac
 
 ## Docs
 
-- [README.md](README.md): what it enforces, the quickstart, how it works, the example and results.
+- [README.md](README.md): what it is and why, what it enforces, the quickstart, the reference, the two examples.
+- [docs/results.md](docs/results.md): measured pass^k per version. [docs/roadmap.md](docs/roadmap.md): plans. [docs/testing.md](docs/testing.md): the `test` command reference.
 - [SPEC.md](SPEC.md): language-neutral spec: journey JSON Schema, check result shape, session JSON, simulation task format.
 - [docs/design.md](docs/design.md): the API design: tools, checks, session, Model interface, journeys, traces, commands.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents working on this repo.

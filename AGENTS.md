@@ -77,7 +77,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 
 ## More
 
-- [README.md](README.md): what it is, quickstart, the example.
+- [README.md](README.md): what it is, quickstart, the two examples. Measurements live in docs/results.md and plans in docs/roadmap.md; the README carries nothing that goes stale.
 - [SPEC.md](SPEC.md): the language-neutral spec (journey schema, check results, session JSON, task format).
 - [docs/design.md](docs/design.md): the approved API design. Where it and the code disagree, the code is current.
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, CI, the rules above and the pull request checklist.

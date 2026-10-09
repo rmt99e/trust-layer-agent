@@ -44,7 +44,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - **Checks are deterministic.** Built-in checks never call a model. Small-model reply review stays an optional extra, off by default.
 - **No prices or business values in `src/`.** They come from tools.
 - **Vendor-neutral names.** No real company or product names in code, examples or sample data.
-- **Extension only through tools, checks, journeys, model adapters and session stores.** If a use case needs a core change, the interface is wrong; open an issue first. Things that don't fit go on the README roadmap.
+- **Extension only through tools, checks, journeys, model adapters and session stores.** If a use case needs a core change, the interface is wrong; open an issue first. Things that don't fit go in docs/roadmap.md.
 - **Logic-line cap.** `src/` stays under 1,500 non-blank, non-comment lines. Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Runtime dependencies stay `zod` and `yaml` only. Adapters use `fetch`, no provider SDKs.
@@ -61,7 +61,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 
 ## Where docs live
 
-- [README.md](README.md): what it is, quickstart, the example, roadmap.
+- [README.md](README.md): what it is, quickstart, the two examples. Keep measurements, counts and plans out of it: results go in docs/results.md, plans in docs/roadmap.md.
 - [SPEC.md](SPEC.md): normative and language-neutral. Update it in the same pull request as any behavior change it covers.
 - [CHANGELOG.md](CHANGELOG.md): add an entry under `[Unreleased]`.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents.
