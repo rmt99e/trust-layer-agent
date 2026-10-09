@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent has a 1,400-line cap on logic in `src/` (checks, the agent loop, two model adapters and the simulator), and it is at 1,390. A change that adds a feature needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent has a 1,400-line cap on logic in `src/` (checks, the agent loop, two model adapters and the simulator), and it is at 1,398. A change that adds a feature needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 

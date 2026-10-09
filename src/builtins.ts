@@ -74,9 +74,9 @@ const leaves = (v: Json | undefined): (string | number)[] => typeof v === "strin
   : Array.isArray(v) ? v.flatMap(leaves) : v && typeof v === "object" ? Object.values(v).flatMap(leaves) : [];
 const noInventedInputs = check("no_invented_inputs", (e, ctx) => {
   if (e.kind !== "action" || !e.tool.fromCustomer?.length) return allow();
-  const said = ctx.messages.filter((m) => m.role === "customer").map((m) => m.text).join("\n").replace(/\s+/g, " "), known = leaves(ctx.facts as Json).map(String);
-  const gave = (v: string | number) => known.includes(String(v)) ||
-    new RegExp(String.raw`(?:^|[^\p{L}\p{N}])${escape(String(v).trim().replace(/\s+/g, " "))}(?=$|[^\p{L}\p{N}])`, "iu").test(said);
+  const said = ctx.messages.filter((m) => m.role === "customer").map((m) => m.text).join("\n").replace(/\s+/g, " "), known = leaves(ctx.facts as Json).map((f) => String(f).toLowerCase());
+  const gave = (v: string | number) => { const t = String(v).trim().replace(/\s+/g, " ");
+    return !t || known.includes(t.toLowerCase()) || new RegExp(String.raw`(?:^|[^\p{L}\p{N}])${escape(t)}(?=$|[^\p{L}\p{N}])`, "iu").test(said); };
   for (const field of e.tool.fromCustomer) {
     const bad = leaves(e.input[field]).find((v) => !gave(v));
     if (bad !== undefined) return block(`The customer never said "${bad}" (${field} in ${e.tool.name}). Use only values the customer gave, or ask them.`);

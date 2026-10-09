@@ -293,7 +293,7 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,390 non-blank, non-comment lines, against a 1,400-line cap.
+- The logic in `src/` is 1,398 non-blank, non-comment lines, against a 1,400-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
 - The suite is small, written by the same authors as the fixes, and run once per version.

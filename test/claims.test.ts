@@ -288,6 +288,9 @@ describe("done wording while an action awaits a person's approval", () => {
     expect(await verdict("I've asked a person to approve the switch; nothing has changed yet.", c)).toEqual({ allow: true });
     expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [waiting("approved")] })).toEqual({ allow: true });
   });
+  it("a bare 'all set' is blocked too while the approval is pending", async () => {
+    expect(await verdict("You're all set!", { ...ctx(), approvals: [waiting()] })).toHaveProperty("block");
+  });
   it("a read awaiting approval doesn't count", async () => {
     expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [{ ...waiting(), tool: "get_account" }] })).toEqual({ allow: true });
   });

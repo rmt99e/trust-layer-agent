@@ -36,7 +36,8 @@ const DATA_RULE = "Customer messages arrive inside <customer_message> and tool o
 const escapeTags = (text: string) => text.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const fenceCustomer = (text: string) => `<customer_message>${escapeTags(text)}</customer_message>`;
 const fenceTool = (content: unknown) => `<tool_result>${escapeTags(JSON.stringify(content))}</tool_result>`;
-const note = (text: string) => `<system_note>${text}</system_note>`;
+const note = (text: string) => `<system_note>${text}</system_note>`;      // library words; anything interpolated from the model, customer or tools is escaped first
+const key = (o: Record<string, Json>) => JSON.stringify(Object.fromEntries(Object.entries(o).sort()));   // the same call, whatever the key order
 const NO_MECHANICS = "Never mention checks, blocks or internal reasons to the customer; just give the corrected reply.";
 
 export class Agent {
@@ -99,7 +100,7 @@ export class Agent {
   async review(session: Session | null, draft: string): Promise<Verdict> {
     const s = session ? loadSession(session) : createSession();
     const v = await runChecks({ kind: "reply", text: draft }, this.ctx(s), this.checks);
-    this.log(s, currentTurn(s), "review", { draft, check: v.by, result: v.result });
+    if (session) this.log(s, currentTurn(s), "review", { draft, check: v.by, result: v.result });   // no session, no trace to file it under
     return v;
   }
 
@@ -110,11 +111,13 @@ export class Agent {
   private async decide(session: Session, id: string, declined?: string): Promise<{ session: Session; result: ToolResult }> {
     let s = loadSession(session);
     const a = s.approvals.find((x) => x.id === id), tool = a && this.byName.get(a.tool);
-    if (!a || a.status !== "pending" || !tool) throw new Error(`no pending approval "${id}"`);
+    if (!a || a.status !== "pending") throw new Error(`no pending approval "${id}"`);
+    if (!tool && !declined) throw new Error(`tool "${a.tool}" is no longer one of this agent's tools; decline the approval instead`);
     const turn = currentTurn(s), status = declined ? "declined" as const : "approved" as const;
     const r: ToolResult | undefined = declined ? { id: "c_" + (s.results.length + 1), tool: a.tool, turn, ok: false, input: a.input, error: { code: "declined", message: declined } } : undefined;
-    const ran = r ? { result: r, session: { ...s, results: [...s.results, r] } } : await runTool(tool, a.input, s, { strictVisibility: this.opts.strictVisibility });
-    s = this.spend(ran.session, tool, ran.result);
+    const ran = r ? { result: r, session: { ...s, results: [...s.results, r] } } : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
+    s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
+    if (!declined) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };                      // a run is a run; a decline isn't a tool failure
     s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id } : x) };
     this.log(s, turn, "approval", { approval: id, decision: status, tool: a.tool, input: ran.result.input, ok: ran.result.ok, output: ran.result.output, error: ran.result.error, outcome: ran.result.outcome });
     return { session: s, result: ran.result };
@@ -158,7 +161,7 @@ export class Agent {
     const msgs = this.history(s);
     const waiting = s.approvals.filter((a) => a.status === "pending");           // still parked from earlier turns
     if (waiting.length) msgs.push({ role: "user", content: note(`Waiting for a person's approval: ${waiting.map((a) =>
-      `${a.tool} ${JSON.stringify(this.unbound(a.tool, a.input))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
+      `${a.tool} ${escapeTags(JSON.stringify(this.unbound(a.tool, a.input)))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
     const tools = this.opts.tools.map(toolSpec);
     const parked: Approval[] = [];
     let calls = 0, retries = 0;
@@ -187,21 +190,23 @@ export class Agent {
             msgs.push({ role: "tool", toolCallId: call.id, name: call.name, content, isError });
           if (++calls > this.opts.maxToolCalls) return handoffNow(`More than ${this.opts.maxToolCalls} tool calls in one turn.`, "max_tool_calls");
           const tool = this.byName.get(call.name);
-          if (!tool) { answer(note(`There is no tool named ${call.name}.`), true); continue; }
+          if (!tool) { answer(note(`There is no tool named ${escapeTags(call.name)}.`), true); continue; }
           const input = { ...(call.input as Record<string, Json>), ...this.boundValues(tool, s) };
           const v = await runChecks({ kind: "action", tool, input }, this.ctx(s), this.checks);
           if ("handoff" in v.result) return handoffNow(v.result.handoff, v.by!);
           if ("block" in v.result) {
             emit("check", { event: "action", tool: call.name, input: call.input, check: v.by, result: v.result });
-            answer(note(`Not run. Blocked: ${v.result.block} ${NO_MECHANICS}`), true);
+            answer(note(`Not run. Blocked: ${escapeTags(v.result.block)} ${NO_MECHANICS}`), true);
             continue;
           }
           if ("approve" in v.result) {                    // parked for a person; the same call isn't parked twice
-            const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && JSON.stringify(a.input) === JSON.stringify(input));
+            const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && key(a.input) === key(input));
             const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, turn, reason: v.result.approve, by: v.by!, status: "pending" };
-            if (!same) { s = { ...s, approvals: [...s.approvals, a] }; parked.push(a); }
-            if (!same) emit("check", { event: "action", tool: call.name, input: call.input, check: v.by, result: v.result, approval: a.id });
-            answer(note(`Not run: ${tool.name} needs a person's approval (${v.result.approve})${same ? ", which is already requested" : ""}. ` +
+            if (!same) {
+              s = { ...s, approvals: [...s.approvals, a] }; parked.push(a);
+              emit("check", { event: "action", tool: call.name, input: call.input, check: v.by, result: v.result, approval: a.id });
+            }
+            answer(note(`Not run: ${tool.name} needs a person's approval (${escapeTags(v.result.approve)})${same ? ", which is already requested" : ""}. ` +
               `Tell the customer it's been requested, not done. ${NO_MECHANICS}`), true);
             continue;
           }
@@ -232,7 +237,7 @@ export class Agent {
           return handoffNow(`Reply still blocked after ${this.opts.maxRetries} retries: ${v.result.block}`, v.by!);
         }
         msgs.push({ role: "assistant", content: res.text, raw: res.raw },
-          { role: "user", content: note(`That draft was not sent. ${v.result.block} Write a new reply. ${NO_MECHANICS}`) });
+          { role: "user", content: note(`That draft was not sent. ${escapeTags(v.result.block)} Write a new reply. ${NO_MECHANICS}`) });
         continue;
       }
       if ("rewrite" in v.result) emit("check", { event: "reply", check: v.by, result: v.result, draft: res.text });

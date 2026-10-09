@@ -200,6 +200,8 @@ describe("no_invented_inputs", () => {
     ["a number the customer gave, as a number", { aliases: [34] }],
     ["every element of a list", { aliases: ["D. Whitfield", "Dana"] }],
     ["a value from a session fact", { city: "Riverton" }],
+    ["a fact in another case", { city: "RIVERTON" }],
+    ["an empty value", { city: " " }],
     ["an input the tool doesn't declare fromCustomer", { depth: "deep" }],
   ])("allows %s", async (_n, input) => expect((await run(input, said, { verified: true, city: "Riverton" })).result).toEqual(allow()));
 

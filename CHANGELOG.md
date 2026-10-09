@@ -13,11 +13,12 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Operator-defined claim kinds**: `builtins: { no_unconfirmed_claims: { kinds: [{ name, find, confirms? }] } }` extends the claim check to an app's own vocabulary (counts, status words, reference numbers). `find` is a RegExp or a function; by default any string or number in a tool output, commitment or operator text backs a claim, or `confirms(source)` decides. The simulator's grader applies the suite's kinds.
 - **`fromCustomer`** on a tool and the built-in check **`no_invented_inputs`**: listed input fields must hold values the customer gave (whole-word, case-insensitive, in a customer message) or a session fact. Tool output never counts, so a tool can't search for something it only discovered. A field can't be both bound and `fromCustomer`. Journeys may list the check; `builtins: { no_invented_inputs: false }` turns it off.
 - `loadSession(session)`: a copy of a stored session with `approvals` filled in for sessions saved before it existed. `respond()`, `review()`, `approve()` and `decline()` all load this way.
+- System notes escape anything interpolated from outside the library (an invented tool name, a check's block reason, a parked action's input), so model or customer text can't forge a `<system_note>` through a note. The snapshot fingerprint covers `fromCustomer` and the claim kinds' source text.
 - Exports: `approve`, `loadSession`, and the types `Approval`, `ClaimKind`, `Verdict`.
 
 ### Changed
 
-- The `src/` logic-line cap is 1,400 (was 1,300); the four additions above are 93 lines.
+- The `src/` logic-line cap is 1,400 (was 1,300); the additions above bring `src/` to 1,398.
 
 - v4.2: **code reconciles unknown outcomes before any reply.** When a write ends with an unknown outcome and declares `reconcileWith`, the agent runs that read itself before the model replies, if every input the read needs is bound or present in the failed call. Its visible result is added to the write's tool message as `reconcile: { tool, output }`, and the trace marks it `reconcile: true`. If the read can't be run (it needs inputs code doesn't have) or fails, every draft is blocked until a successful reconcile read; a handoff is still possible. In rehearsal, a reply implied failure ("our team will handle your switch… you should hear back soon") without any failure phrase; this closes that gap.
 - Demo toggles in examples/subscriptions/chat.js: `CHANGE_PLAN_OUTCOME=fail|timeout|pending` (`FAIL_CHANGE_PLAN=1` still means fail) and `AGENT_MODEL=sonnet|haiku`. The `chat()` view labels code's re-check `(auto re-check)`.
