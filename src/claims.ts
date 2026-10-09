@@ -90,7 +90,7 @@ function onlyInRefusals(text: string, kind: "money" | "percent", v: number): boo
 }
 
 /** Why a draft reply isn't backed by this session's tools or the operator's text, or undefined if it is. */
-export function unconfirmed(text: string, ctx: CheckContext): string | undefined {
+export function unconfirmed(text: string, ctx: CheckContext, kinds: readonly ClaimKind[] = []): string | undefined {
   const c = extractClaims(text);
   const toolValues = [...ctx.results.filter((r) => r.ok).map((r) => r.output), ...ctx.commitments.map((k) => k.values as Json)];
   const ok = confirmedValues(toolValues, ctx.operatorText);
@@ -105,11 +105,14 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   if (relative.length && confirmedValues(toolValues).dates.size === 0)
     return `Reply says "${relative[0]}" but no tool returned a date this session. Don't promise timing no tool confirmed.`;
   // Write outcomes: each write's latest call is done, pending, failed, or unknown until a later reconcile read.
-  const latest = ctx.tools.filter((t) => t.kind === "write").map((t) => ({ t, i: ctx.results.findLastIndex((r) => r.tool === t.name) }))
+  // A write parked for a person's approval is "approval": requested, not done.
+  const writes = ctx.tools.filter((t) => t.kind === "write");
+  const latest = [...writes.map((t) => ({ t, i: ctx.results.findLastIndex((r) => r.tool === t.name) }))
     .filter(({ i }) => i >= 0).map(({ t, i }) => {
       const r = ctx.results[i], settled = t.reconcileWith && ctx.results.slice(i + 1).some((x) => x.ok && x.tool === t.reconcileWith);
       return { name: t.name, reconcileWith: t.reconcileWith, state: r.outcome === "unknown" ? (settled ? "reconciled" : "unknown") : r.ok ? r.outcome ?? "done" : "failed" };
-    });
+    }), ...ctx.approvals.filter((a) => a.status === "pending" && writes.some((t) => t.name === a.tool))
+    .map((a) => ({ name: a.tool, reconcileWith: undefined, state: "approval" }))];
   const has = (s: string) => latest.find((w) => w.state === s);
   const failedSaid = text.match(FAILED_WORDS)?.[0], unknown = has("unknown");
   if (unknown)                                                       // unknown: no reply at all until a read settles it (a handoff isn't a reply)
@@ -117,13 +120,34 @@ export function unconfirmed(text: string, ctx: CheckContext): string | undefined
   if (failedSaid && !has("failed") && has("done"))
     return `Reply says "${failedSaid}", but nothing failed: the latest write succeeded. Say what actually happened.`;
   if (c.done.length) {
-    const failed = latest.filter((w) => w.state === "failed").map((w) => w.name), pending = has("pending");
+    const failed = latest.filter((w) => w.state === "failed").map((w) => w.name), pending = has("pending"), approval = has("approval");
     if (failed.length) return `Reply says "${c.done[0]}", but ${failed.join(", ")} failed and hasn't succeeded since. Say what actually happened.`;
     if (pending) return `Reply says "${c.done[0]}", but ${pending.name} is still pending. Say it's processing, not done.`;
+    if (approval) return `Reply says "${c.done[0]}", but ${approval.name} is waiting for a person's approval. Say it's been requested, not done.`;
     const pleasantry = c.done.every((d) => /all set/.test(d));        // a bare "you're all set!" with no action verb
     if (!pleasantry && !has("done") && !has("reconciled")) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
   }
+  for (const k of kinds) {                                           // operator-defined kinds, after the built-in ones
+    const find = finder(k), backs = k.confirms ?? ((v: Json) => texts(v).flatMap((t) => [t.toLowerCase(), ...find(t)]));
+    const ok = new Set([...toolValues, ...ctx.operatorText].flatMap((v) => backs(v ?? null)));
+    const bad = find(text).find((v) => !ok.has(v));
+    if (bad !== undefined) return `Reply states the ${k.name} "${bad}" but no tool returned it. Use a returned value or don't state it.`;
+  }
 }
+
+/**
+ * An operator-defined claim kind: what to look for in a draft, and what a source must contain to back it.
+ * Sources are successful tool outputs, commitment values and operator text, as for the built-in kinds.
+ */
+export interface ClaimKind {
+  name: string;                                   // in the block reason: Reply states the <name> "<value>"…
+  find: RegExp | ((text: string) => string[]);    // claims in a text; a RegExp yields its first group (else the match), lower-cased
+  confirms?: (source: Json) => string[];          // what one source backs; default: each string or number in it, whole and lower-cased, plus find() over it
+}
+const finder = ({ find }: ClaimKind) => typeof find === "function" ? find
+  : (text: string) => [...text.matchAll(new RegExp(find.source, find.flags.replace("g", "") + "g"))].map((m) => (m[1] ?? m[0]).toLowerCase());
+const texts = (v: Json): string[] => typeof v === "string" ? [v] : typeof v === "number" ? [String(v)]
+  : Array.isArray(v) ? v.flatMap(texts) : v && typeof v === "object" ? Object.values(v).flatMap(texts) : [];
 
 /** Mark open commitments whose values appear in a sent reply as shown on this turn. */
 export function markShown(commitments: Commitment[], reply: string, turn: number): Commitment[] {

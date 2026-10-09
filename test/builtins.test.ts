@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { builtinChecks, checkPipeline, isAffirmative, isProceed, verificationWarning } from "../src/builtins.js";
-import { allow, block, check, handoff, rewrite, runChecks, type CheckEvent } from "../src/checks.js";
-import { ctx, failed, quote, tools } from "./fixtures.js";
+import { allow, approve, block, check, handoff, rewrite, runChecks, type CheckEvent, type ToolInfo } from "../src/checks.js";
+import { ctx, failed, ok, quote, tools } from "./fixtures.js";
 
 const only = (name: string) => builtinChecks().filter((c) => c.name === name);
 const action = (name: string, input = {}): CheckEvent => ({ kind: "action", tool: tools.find((t) => t.name === name)!, input });
@@ -105,7 +105,7 @@ describe("pipeline", () => {
   it("runs built-ins, then guardrails, then custom checks", async () => {
     seen.length = 0;
     const chain = checkPipeline({}, [spy("guardrail")], [spy("custom")]);
-    expect(chain.map((c) => c.name)).toEqual(["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "guardrail", "custom"]);
+    expect(chain.map((c) => c.name)).toEqual(["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "no_invented_inputs", "guardrail", "custom"]);
     await runChecks(action("get_account"), ctx(), chain);
     expect(seen).toEqual(["guardrail", "custom"]);
   });
@@ -116,6 +116,11 @@ describe("pipeline", () => {
   });
   it("actions: a rewrite throws", async () => {
     await expect(runChecks(action("get_account"), ctx(), [spy("r", rewrite("x"))])).rejects.toThrow(/replies only/);
+  });
+  it("actions: approve is a non-allow result, named; replies: approve throws", async () => {
+    const { result, by } = await runChecks(action("change_plan"), ctx(), [spy("a"), spy("ask", approve("Over the limit.")), spy("c")]);
+    expect([result, by]).toEqual([{ approve: "Over the limit." }, "ask"]);
+    await expect(runChecks({ kind: "reply", text: "hi" }, ctx(), [spy("r", approve("x"))])).rejects.toThrow(/actions only/);
   });
   it("replies: rewrites chain, later checks see the new text, block stops", async () => {
     const texts: string[] = [];
@@ -180,5 +185,42 @@ describe("no retry of an unknown or pending write in the same turn (v4.1 fix 1)"
   it("tells the model the outcome is unknown and which read to call", async () => {
     expect((await go(W("change_plan"), [timeout("change_plan")])).result).toEqual({
       block: "change_plan's last call this turn has an unknown outcome and may already have applied. Don't retry it; call get_account to check what happened." });
+  });
+});
+
+describe("no_invented_inputs", () => {
+  const search: ToolInfo = { name: "search_records", kind: "read", fromCustomer: ["name", "city", "aliases"] };
+  const run = (input: Record<string, any>, say: string[], facts: Record<string, any> = { verified: true }) =>
+    runChecks({ kind: "action", tool: search, input }, ctx({ say, facts, tools: [...tools, search] }), only("no_invented_inputs"));
+  const said = ["c: Hi, I'm Dana Whitfield-Ortiz from Springfield.  I also go by D. Whitfield; I'm 34."];
+
+  it.each([
+    ["the exact words", { name: "Dana Whitfield-Ortiz", city: "Springfield" }],
+    ["any case and spacing", { name: "dana  whitfield-ortiz" }],
+    ["a number the customer gave, as a number", { aliases: [34] }],
+    ["every element of a list", { aliases: ["D. Whitfield", "Dana"] }],
+    ["a value from a session fact", { city: "Riverton" }],
+    ["an input the tool doesn't declare fromCustomer", { depth: "deep" }],
+  ])("allows %s", async (_n, input) => expect((await run(input, said, { verified: true, city: "Riverton" })).result).toEqual(allow()));
+
+  // Attacks: a model filling in what it guessed, found in a tool result, or lifted from its own earlier reply.
+  it.each([
+    ["an invented value", { name: "Dana Whitfield-Ortiz", city: "Shelbyville" }, "Shelbyville"],
+    ["a fragment of a longer word", { name: "Dana Whit" }, "Dana Whit"],
+    ["a name inside a longer one", { aliases: ["Ortiz-Smith"] }, "Ortiz-Smith"],
+    ["one bad element in a list", { aliases: ["Dana", "Danielle"] }, "Danielle"],
+    ["a value only the agent said", { city: "Capital City" }, "Capital City"],
+  ])("blocks %s", async (_n, input, bad) => {
+    const say = [...said, "a: Is that Capital City?", "c: no"];
+    expect((await run(input, say)).result).toEqual({ block: `The customer never said "${bad}" (${Object.keys(input).at(-1)} in search_records). Use only values the customer gave, or ask them.` });
+  });
+  it("never takes a value from a tool result", async () => {
+    const c = ctx({ say: said, results: [ok("get_account", { city: "Shelbyville" })], tools: [...tools, search] });
+    expect((await runChecks({ kind: "action", tool: search, input: { city: "Shelbyville" } }, c, only("no_invented_inputs"))).result).toHaveProperty("block");
+  });
+  it("ignores tools without fromCustomer, and can be turned off", async () => {
+    expect((await run({ name: "x" }, said)).result).toHaveProperty("block");
+    expect((await runChecks(action("get_account", { name: "x" }), ctx({ say: said }), only("no_invented_inputs"))).result).toEqual(allow());
+    expect(builtinChecks({ no_invented_inputs: false }).map((c) => c.name)).not.toContain("no_invented_inputs");
   });
 });

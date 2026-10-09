@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **`approve(reason)`**, a fifth check result for actions: the tool doesn't run and isn't refused; it is parked on the session as an `Approval` (`session.approvals[]`, also returned as `approvals` on the reply) for a person to decide. The model is told the action is requested, not done; `no_unconfirmed_claims` blocks "done" wording about that write until it runs; each later turn carries a note listing what is still pending, and an identical call isn't parked twice. **`agent.approve(session, id)`** runs the parked call with its recorded input (bind from current facts, no action checks) and **`agent.decline(session, id, reason?)`** records a failed call with code `declined`; either way the result is an ordinary ToolResult the model sees next turn. `rev` increases on each decision. Trace lines: `check` gains `approval` on a parked action; a new `approval` line records the decision.
+- **`agent.review(session | null, draft)`**: runs the reply checks on a message the app wrote itself (a rendered template, an outbound notice) and returns the verdict (`{ result, by?, text?, trail }`). No model call, no session change, one `review` trace line.
+- **Operator-defined claim kinds**: `builtins: { no_unconfirmed_claims: { kinds: [{ name, find, confirms? }] } }` extends the claim check to an app's own vocabulary (counts, status words, reference numbers). `find` is a RegExp or a function; by default any string or number in a tool output, commitment or operator text backs a claim, or `confirms(source)` decides. The simulator's grader applies the suite's kinds.
+- **`fromCustomer`** on a tool and the built-in check **`no_invented_inputs`**: listed input fields must hold values the customer gave (whole-word, case-insensitive, in a customer message) or a session fact. Tool output never counts, so a tool can't search for something it only discovered. A field can't be both bound and `fromCustomer`. Journeys may list the check; `builtins: { no_invented_inputs: false }` turns it off.
+- `loadSession(session)`: a copy of a stored session with `approvals` filled in for sessions saved before it existed. `respond()`, `review()`, `approve()` and `decline()` all load this way.
+- Exports: `approve`, `loadSession`, and the types `Approval`, `ClaimKind`, `Verdict`.
+
+### Changed
+
+- The `src/` logic-line cap is 1,400 (was 1,300); the four additions above are 93 lines.
+
 - v4.2: **code reconciles unknown outcomes before any reply.** When a write ends with an unknown outcome and declares `reconcileWith`, the agent runs that read itself before the model replies, if every input the read needs is bound or present in the failed call. Its visible result is added to the write's tool message as `reconcile: { tool, output }`, and the trace marks it `reconcile: true`. If the read can't be run (it needs inputs code doesn't have) or fails, every draft is blocked until a successful reconcile read; a handoff is still possible. In rehearsal, a reply implied failure ("our team will handle your switch… you should hear back soon") without any failure phrase; this closes that gap.
 - Demo toggles in examples/subscriptions/chat.js: `CHANGE_PLAN_OUTCOME=fail|timeout|pending` (`FAIL_CHANGE_PLAN=1` still means fail) and `AGENT_MODEL=sonnet|haiku`. The `chat()` view labels code's re-check `(auto re-check)`.
 

@@ -1,13 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { createSession, forget, read, z } from "../src/index.js";
+import { loadSession } from "../src/session.js";
 import { runTool } from "../src/tools.js";
 
 describe("session", () => {
   it("starts empty, versioned, with trusted facts from the app", () => {
     const s = createSession({ facts: { verified: true, accountId: "acc_1" } });
     expect(s).toMatchObject({ v: 1, rev: 0, status: "open", facts: { verified: true, accountId: "acc_1" },
-      commitments: [], results: [], messages: [], failures: 0 });
+      commitments: [], results: [], messages: [], approvals: [], failures: 0 });
     expect(s.id).toMatch(/^s_[0-9a-f]{12}$/);
+  });
+
+  it("loadSession copies a session and fills in approvals for one stored before they existed", () => {
+    const { approvals, ...old } = createSession();
+    const loaded = loadSession(old as any);
+    expect(loaded.approvals).toEqual([]);
+    expect(loaded).not.toBe(old);
+    expect(loadSession(createSession()).approvals).toEqual([]);
   });
 
   it("round-trips as plain JSON, including after a tool call", async () => {
