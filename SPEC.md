@@ -64,7 +64,7 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 
 **Visibility.** The ToolResult `output` (and everything the model or the claim checks see of a result) is the visible projection of the output:
 - `visible` given: a path is kept if it is listed or lies under a listed path (`p.` or `p[]` prefix). Path syntax: `plan.name`, `invoices[].amount`. Kept values are NOT masked. Objects/arrays whose children are all dropped are dropped; originally empty ones are kept.
-- `visible` omitted, `strictVisibility` off (default): every field whose own key matches `/e-?mail|phone|mobile|address|street|postcode|postal|zip|dob|birth|ssn|social_?security|card_?(number|num|no)|iban/i` (substring match) is removed with its subtree; every remaining string value is passed through the text masker (section 9).
+- `visible` omitted, `strictVisibility` off (default): every field whose own key, with camelCase split into words (`userPin` → `user_Pin`), matches `/e-?mail|phone|mobile|address|street|postcode|postal|zip|dob|birth|ssn|social_?security|card_?(number|num|no)|iban|(^|_)pin(_?code)?$|password|passcode|secret|token$|passport|tax_?id|national_?id|(driver_?)?licen[cs]e_?(number|num|no)|driver_?licen[cs]e|account_?(number|num|no)$|routing/i` is removed with its subtree (so `apiToken` and `userPin` are hidden; `tokens`, `maxTokens`, `licenses`, `accountNotes` are not); every remaining string value is passed through the text masker (section 9).
 - `visible` omitted, `strictVisibility: true`: the output is hidden entirely (`null`).
 - An output that projects to nothing becomes `null`.
 

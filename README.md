@@ -206,7 +206,7 @@ The four things you write, in detail, then the session and the stores. Extension
 
 Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `name`, a `description` and a zod `input`, which is validated before `run` and types `run`, `bind`, `fromUser` and `confirm.by`, so a misspelled field is a compile error. `records` and `outcome` are typed from `run`'s return value when `run` is declared before them.
 
-- **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data (email, phone, address, postcode, dob, ssn, card number, iban) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
+- **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data or secrets (email, phone, address, postcode, dob, ssn, card number, iban, pin, password, token, passport, tax id, driver licence, account number) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
 - **`bind`**: fills input fields from session facts, e.g. `{ accountId: "facts.accountId" }`.
 - **`records`**: what a successful call writes to the session: `facts` (e.g. `verified: true`) and `commitments` (e.g. a quote with its prices and expiry). A call that throws records nothing.
 - **`beforeVerification`** lets a tool run before verification; **`verifies`** marks the tool whose records can set `facts.verified`.
