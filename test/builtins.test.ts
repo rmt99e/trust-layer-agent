@@ -51,6 +51,9 @@ describe("yes_after_quote", () => {
       ("before the quote was shown, %s → not a yes", async (said) => expect((await notShown(said)).result).toHaveProperty("block"));
   });
 
+  it("a write with no yes yet is blocked with the exact reason the README quotes", async () => {
+    expect((await run(["c: switch me to Plus"])).result).toEqual({ block: "Before change_plan, tell the user exactly what will happen and wait for a clear yes." });
+  });
   it("counts a proceed-request as consent only after the quote was shown in an earlier reply", async () => {
     expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: Can you just switch me?"])).result).toEqual(allow());
     expect((await run(["c: switch me to Plus", "a: Let me check.", "c: Can you just switch me?"], [quote({ shownTurn: undefined })])).result).toHaveProperty("block");

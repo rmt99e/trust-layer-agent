@@ -57,7 +57,7 @@ describe("the procurement example, driven by a scripted model", () => {
   });
 
   it("over the threshold: the order is parked, 'ordered' is blocked until a person approves, then the supplier email is reviewed", async () => {
-    const { agent, store, session, lines, last } = await run([
+    const { agent, store, session, lines, last, model } = await run([
       { call: "identify_requester", input: { requesterId: "emp_102", teamId: "ops_1" } }, "Hi Lee.",
       { call: "search_catalog", input: { query: "standing desks" } }, { call: "quote_order", input: { itemId: "sku_desk", quantity: 10 } },
       "10 × Standing desk is $4200, delivery by 2026-10-15. Shall I place the order?",
@@ -72,7 +72,10 @@ describe("the procurement example, driven by a scripted model", () => {
     expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
       'Reply states the status "ordered" but no tool returned it. Use a returned value or don\'t state it.',
       'Reply states the status "placed" but no tool returned it. Use a returned value or don\'t state it.']);
-    expect(last.reply).toContain("nothing has been placed yet");
+    expect(last.reply).toBe("I've requested the order; purchasing has to approve anything over $500, so nothing has been placed yet.");
+    expect(model.requests.flatMap((q) => q.messages).find((m) => m.role === "tool" && m.content.includes("approval"))!.content).toBe(
+      "<system_note>Not run: place_order needs a person's approval (Order of $4200 is over the team's $500 limit for orders without approval.). Tell the user it's been requested, not done. " +
+      "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.</system_note>");
     const { session: after, result } = await agent.approve(session, "p_1");
     expect(result).toMatchObject({ ok: true, output: expect.objectContaining({ status: "placed", total: 4200 }) });
     expect(after.commitments[0]).toMatchObject({ id: "q_001", status: "used" });
