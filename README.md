@@ -9,41 +9,65 @@
 
 ## What it is
 
-trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things: they read and change records through tools, and they tell a person what they did. It sits between the model and your tools.
+### A layer between the model and your tools
 
-The model proposes a tool call; the library decides whether it may run. The model drafts a reply; the library decides whether it may be sent. Both decisions are made by code against the session (what tools returned, what the user said, what the user agreed to, what is waiting on a person) together with your tool definitions and your own instructions. A refused call is answered with the reason, and a refused draft goes back to the model with the reason, so the model corrects itself. After three refused drafts (`maxRetries`, default 2) the turn hands off to a person.
+trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things. The model talks to the user and proposes tool calls; your tools read and change records. The library sits between the two and sees every call and every reply before they happen.
 
-The rules are code rather than prompt text or a classifier, so they hold whether or not the model follows its instructions, and they can be tested without a model. Customer support is the use case it was built on and the fullest example in the repo; an internal purchasing desk with approvals is the second. Both use the same tools, checks, journeys and session.
+### Two decisions, made in code
+
+For each tool call: may this run? For each draft reply: may this be sent? Code answers both, from the record of the conversation and your tool definitions. A refused call is answered with the reason. A refused draft goes back to the model with the reason, and the model writes again; after `maxRetries` refusals (default 2) the turn hands off to a person.
+
+### One session, owned by your app
+
+Everything the decisions rely on is one JSON object, the session: trusted facts, quotes the user was shown, every tool result, the messages, actions parked for a person. Your app stores it between turns. A store contract and a Postgres adapter are included; a Map is the reference.
+
+### Rules, not prompt text
+
+The checks are functions, so they hold whether or not the model follows its instructions, and they run without a model in tests. Journeys describe what a good conversation looks like and go into the prompt; only their guardrails are enforced. The built-in checks cover consent, claims, inputs and failure handling; your own checks and claim kinds extend them.
+
+### Two journeys
+
+Customer support is the use case it was built on and the fullest example in the repo. An internal purchasing desk with approvals is the second. Both run on the same tools, checks, journeys and session.
 
 ## Why
 
-Four failures the checks catch. The block reasons below are the library's own strings, each pinned by an exact assertion in the test suite, which drives the agent with a scripted model so the same lines are reproduced on every CI run ([test/agent.test.ts](test/agent.test.ts), [test/examples.test.ts](test/examples.test.ts)). The drafts and replies around them are the scripted model's lines from the same tests. Each note the model receives ends with an instruction not to mention checks to the user, omitted here.
+You build an agent on a model. You give it tools that read an account, quote a change, place an order, refund an invoice. The model is good at the conversation. It is not a reliable source of truth about what those tools did, what the user said, or what the user agreed to, and a prompt can only ask it to be careful.
 
-**It acts before the user agreed.** The user wrote "Switch me to Plus." The model fetched a quote and called `change_plan` in the same turn, before replying at all. The call did not run; the model was told why:
+This library moves those facts out of the model's hands and into the session, and puts the rules that read them in code. What follows is what that gives you, in the order a conversation meets it.
+
+### Consent before a write
+
+A write tool runs only when the user's latest message is a clear yes. A write tied to a quote (`confirm: { commitment: "quote", by: "quoteId" }`) also needs that quote to exist in this session, to have been shown in an earlier reply, and to be unused and unexpired. A quote is recorded as a commitment by the tool that produced it, and is spent once. The model is told what is missing:
 
 > `Not run. Blocked: Before change_plan, tell the user exactly what will happen and wait for a clear yes.`
 
-**It says something happened that didn't.** `refund_order` failed. The model drafted a reply anyway:
+### Replies that match the record
 
-> draft: `Your refund has been processed.`
->
-> reason: `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
+Prices, percentages, dates, relative dates and "done" wording in a draft must appear in a tool result or commitment from this session, or in your own instructions and knowledge files. Values match by kind, so a 10% discount does not confirm "$10". A write's outcome is tracked: "done" needs a successful write, failure wording is blocked after a success, and while an outcome is unknown no reply goes out until the write's `reconcileWith` read settles it. Claim kinds extend this to your own vocabulary (counts, status words, reference numbers) with one object: a name, a way to find such claims, and what backs them.
 
-The draft was discarded. The reply that went out: `Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.`
+> `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
 
-**It searches for things nobody asked about.** The user wrote "We need some chairs." The model called the catalog search with a query of its own:
+### Inputs the user actually gave
+
+Two tool declarations control where inputs come from. `bind` fills a field from a session fact, removes it from the schema the model sees, and overwrites anything the model sends, so an account id is never the model's to choose. `fromUser` requires a field's values to appear in the user's own messages or a fact, so a search runs on what was asked for, not on what the model inferred or a tool returned.
 
 > `Not run. Blocked: The user never said "office seating" (query in search_catalog). Use only values the user gave, or ask them.`
 
-**It takes a decision that belongs to a person.** Ten standing desks come to $4,200, over the team's $500 limit. Instead of placing the order or refusing it, one custom check parks it for a person while the conversation continues. The model is told:
+### Decisions that belong to a person
 
-> `Not run: place_order needs a person's approval (Order of $4200 is over the team's $500 limit for orders without approval.). Tell the user it's been requested, not done.`
+A check can return `approve(reason)` instead of allowing or blocking. The call is parked on the session, the model is told it is requested rather than done, "done" wording about it stays blocked, and the conversation continues. Your app shows the parked action to a person and calls `agent.approve(session, id)` or `agent.decline(session, id, reason)`; either way the result lands in the session and the model sees it next turn. A check can also return `handoff(summary)` to end the turn and pass the whole conversation to a person, and journeys can hand off on a phrase, a fact, a tool result or a tool error before the model is called.
 
-Two drafts were then refused by a claim kind the example defines for order-status words, "Ordered: 10 standing desks for $4200." and then "I've placed the order for 10 standing desks.":
+### Messages your app writes
 
-> `Reply states the status "placed" but no tool returned it. Use a returned value or don't state it.`
+`agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. No model call, no change to the session, one trace line. The same claim rules apply, so a template with a wrong total is caught before it is sent.
 
-The reply that went out: `I've requested the order; purchasing has to approve anything over $500, so nothing has been placed yet.` The parked action is on the session; `agent.approve(session, "p_1")` runs it later with the recorded input, and the model sees the result next turn.
+### What the model can see
+
+A tool lists the output fields the model may see; without a list, fields named like personal data are hidden and personal data in other strings is masked. User messages and tool output reach the model fenced as data with angle brackets escaped, and anything a system note quotes from them is escaped too. Every trace line is masked before it reaches a sink.
+
+### Proof
+
+`test` runs simulated users against your agent, k times per task, grades each trial on final data state and on the claims in every sent reply, and reports pass^k. `snapshot` pins a passing version with fingerprints of the models, prompts, tools, checks and library code, and `test --against` diffs a run against it. The shipped suites are validated on every CI run without a model call.
 
 ## How a turn works
 
