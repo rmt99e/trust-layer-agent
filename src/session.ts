@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
+/** A stored session id is checked against this on load: ids become trace file names. */
+export const SESSION_ID = /^s_[0-9a-f]{12}$/;
+export const FACTS_PREFIX = "facts.";
+/** A successful write with this name ends the turn as a handoff. It needs no yes: confirm defaults to false. */
+export const HANDOFF_TOOL = "handoff_to_person";
+
 export interface Commitment {
   type: string;
   id: string;
@@ -10,7 +16,7 @@ export interface Commitment {
   turn: number;
   shownTurn?: number;
   acceptedTurn?: number;
-  status: "open" | "accepted" | "used" | "expired";
+  status: "open" | "accepted" | "used" | "expired";   // only open and used are set today; accepted and expired are reserved
   expiresAt?: string;
 }
 
@@ -24,6 +30,7 @@ export interface ToolResult {
   error?: { code: string; message: string };
   outcome?: "done" | "pending" | "unknown";   // writes; a failed call without one is a known failure
   outcomeError?: string;                      // the tool's outcome() threw; the outcome is treated as unknown
+  recordsError?: string;                      // the tool's records() threw; nothing was recorded, and a write's outcome is unknown
 }
 
 export interface Message { role: "user" | "agent"; text: string; turn: number }
@@ -44,7 +51,7 @@ export interface Session {
   v: 2;
   id: string;
   rev: number;
-  status: "open" | "handed_off" | "closed";
+  status: "open" | "handed_off" | "closed";   // closed is reserved; nothing sets it today
   facts: Record<string, Json>;
   commitments: Commitment[];
   results: ToolResult[];
@@ -52,6 +59,9 @@ export interface Session {
   approvals: Approval[];
   failures: number;
 }
+
+/** The v0.1 session: the user was the "customer" and there were no approvals. loadSession() upgrades it. */
+export type SessionV1 = Omit<Session, "v" | "messages" | "approvals"> & { v: 1; messages: { role: "customer" | "agent"; text: string; turn: number }[]; approvals?: Approval[] };
 
 export interface ForgottenSession { v: 2; id: string; forgotten: true }
 
@@ -61,11 +71,9 @@ export function createSession(opts: { facts?: Record<string, Json> } = {}): Sess
   return { v: 2, id, rev: 0, status: "open", facts: { ...opts.facts }, commitments: [], results: [], messages: [], approvals: [], failures: 0 };
 }
 
-/** The v0.1 session: the user was the "customer" and there were no approvals. loadSession() upgrades it. */
-export type SessionV1 = Omit<Session, "v" | "messages" | "approvals"> & { v: 1; messages: { role: "customer" | "agent"; text: string; turn: number }[]; approvals?: Approval[] };
-
 /** A copy of a stored session, upgraded to v2 (idempotent). Every agent method loads a given session this way. */
 export function loadSession(session: Session | SessionV1): Session {
+  if (!SESSION_ID.test(String(session.id))) throw new TypeError(`session id "${session.id}" isn't one this library minted`);
   const s = structuredClone(session);
   return { ...s, v: 2, approvals: s.approvals ?? [], messages: s.messages.map((m) => (m.role === "customer" ? { ...m, role: "user" as const } : m) as Message) };
 }
@@ -79,3 +87,18 @@ export function forget(session: Session): ForgottenSession {
 export function currentTurn(session: Session): number {
   return session.messages.filter((m) => m.role === "user").length;
 }
+
+/** The id the next ToolResult appended to this session gets. */
+export const nextResultId = (session: Session) => "c_" + (session.results.length + 1);
+
+/** Normalize a number token: strip commas and currency, compare to the cent. */
+export const normNumber = (s: string | number) => Math.round(parseFloat(String(s).replace(/[^\d.-]/g, "")) * 100) / 100;
+
+/** JSON with object keys sorted at every depth and numbers rounded to the cent, so equal data compares equal. */
+export const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) =>
+  typeof x === "number" ? normNumber(x)
+  : x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x);
+
+/** Every string and number inside a JSON value, in order. */
+export const leaves = (v: Json | undefined): (string | number)[] => typeof v === "string" || typeof v === "number" ? [v]
+  : Array.isArray(v) ? v.flatMap(leaves) : v && typeof v === "object" ? Object.values(v).flatMap(leaves) : [];

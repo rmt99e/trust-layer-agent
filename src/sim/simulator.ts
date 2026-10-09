@@ -1,9 +1,9 @@
 import { Agent, type AgentOptions, type Usage } from "../agent.js";
 import { claimKinds } from "../builtins.js";
-import { contextFrom } from "../checks.js";
+import { contextFrom, toolInfo } from "../checks.js";
 import { resolveModel } from "../models/resolve.js";
 import { ModelError, type Model, type ModelMessage } from "../models/types.js";
-import type { Session } from "../session.js";
+import { createSession, type Session } from "../session.js";
 import { ToolError, type Tool } from "../tools.js";
 import { applyExpected, grade, seedFor, type Grade, type StandIn } from "./grade.js";
 import { loadTasks, type Task } from "./task.js";
@@ -80,10 +80,7 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
     return suite.standIns[t.name](input, ctx, store) as any;
   } }));
   const events: Record<string, any>[] = [];
-  const warn = console.warn;
-  console.warn = () => {};                                          // startup notices once per trial would be noise
-  const agent = new Agent({ ...suite.agent, model: models.agent, tools, now, trace: { write: (l) => events.push(l) } });
-  console.warn = warn;
+  const agent = new Agent({ ...suite.agent, model: models.agent, tools, now, trace: { write: (l) => events.push(l) }, warn: () => {} });   // startup notices once per trial would be noise
 
   const tokens = { agent: { input: 0, output: 0 }, user: { input: 0, output: 0 } };
   const cost = (id: string, u?: Partial<Usage>, role: "agent" | "user" = id === models.agent.id ? "agent" : "user") => {
@@ -122,14 +119,16 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
   await applyExpected(task, gold, suite.standIns);
   for (const r of (session?.results ?? []).filter((x) => x.ok && task.expect.allowed_writes.includes(x.tool)))
     await suite.standIns[r.tool](r.input, { facts: {}, commitments: [] }, gold);     // allowed extras don't count against the state
-  const s = session ?? { messages: [], results: [], commitments: [], facts: {}, failures: 0 } as unknown as Session;
+  const s = session ?? createSession();
+  // The session as it was when the reply at message index i was sent: earlier messages, and everything from its turn or before.
+  const contextAt = (i: number) => contextFrom({ ...s, messages: s.messages.slice(0, i), results: s.results.filter((x) => x.turn <= s.messages[i].turn),
+    commitments: s.commitments.filter((k) => k.turn <= s.messages[i].turn), approvals: s.approvals.filter((a) => a.turn <= s.messages[i].turn) },
+    suite.tools.map(toolInfo), agent.operatorText, now());
   r.grade = grade(task, {
     live: await suite.state(store), gold: await suite.state(gold), results: s.results, handedOff,
     blocked: events.filter((l) => l.type === "check" && l.event === "action").map((l) => l.tool),
     sent: s.messages.filter((m) => m.role === "agent").map((m) => m.text),
-    sentCtx: s.messages.flatMap((m, i) => m.role !== "agent" ? [] : [contextFrom({ ...s, messages: s.messages.slice(0, i),
-      results: s.results.filter((x) => x.turn <= m.turn), commitments: s.commitments.filter((k) => k.turn <= m.turn),
-      approvals: (s.approvals ?? []).filter((a) => a.turn <= m.turn) }, suite.tools, agent.operatorText, now())]),
+    sentCtx: s.messages.flatMap((m, i) => (m.role === "agent" ? [contextAt(i)] : [])),
     writes: new Set(suite.tools.filter((t) => t.kind === "write").map((t) => t.name)), kinds: claimKinds(suite.agent.builtins),
   });
   r.status = r.grade.pass && r.ended !== "max_steps" ? "pass" : "fail";

@@ -1,6 +1,6 @@
 import { allow, block, check, handoff, type Check, type ToolInfo } from "./checks.js";
-import { unconfirmed, type ClaimKind } from "./claims.js";
-import type { Json } from "./session.js";
+import { escapeRegExp, unconfirmed, type ClaimKind } from "./claims.js";
+import { leaves, type Json } from "./session.js";
 
 // untrusted_text_is_data has no check here: bind injection (tools.ts) and fencing user and
 // tool text as data in the prompt (agent.ts) are structural, so there's nothing left to detect.
@@ -16,13 +16,12 @@ export interface BuiltinOptions {
 
 const YES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "confirm", "confirmed",
   "sounds good", "let's do it", "lets do it", "that works", "proceed", "absolutely", "correct", "agreed"];
-const NOT_YES = /\b(no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but)\b|n't\b|\?/i;
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const NOT_YES = /\b(no|not|nope|don't|dont|wait|hold on|hang on|cancel|stop|never|but)\b|n't\b|\?/i;   // any question mark is a hedge, not a yes
 
 /** A clear yes: an affirmative phrase, and no negation, hedge or question. */
 export function isAffirmative(text: string, phrases = YES): boolean {
   const t = text.toLowerCase().trim();
-  return !NOT_YES.test(t) && phrases.some((p) => new RegExp(String.raw`(^|\b)${escape(p.toLowerCase())}\b`).test(t));
+  return !NOT_YES.test(t) && phrases.some((p) => new RegExp(String.raw`(^|\b)${escapeRegExp(p.toLowerCase())}\b`).test(t));
 }
 
 // After a quote was shown in an earlier reply, a request to go ahead is consent too. Questions aren't.
@@ -44,6 +43,8 @@ const verifiedFirst = check("verified_first", (e, ctx) => {
   return block(`Verify the user before using ${e.tool.name}${verifiers.length ? ` (use ${verifiers.join(" or ")})` : ""}.`);
 });
 
+// One yes covers the turn: any unconfirmed write the model calls after it runs. A write with `confirm` is also tied to
+// its commitment, which must exist, be open and unexpired, and have been shown in an earlier reply.
 const yesAfterQuote = (phrases?: string[]) => check("yes_after_quote", (e, ctx) => {
   if (e.kind !== "action" || e.tool.kind !== "write" || e.tool.confirm === false) return allow();
   const lastAgent = ctx.messages.findLastIndex((m) => m.role === "agent");
@@ -70,13 +71,15 @@ const noUnconfirmedClaims = (kinds?: ClaimKind[]) => check("no_unconfirmed_claim
 // Inputs a tool declares fromUser must be values the user gave: each leaf (string or number) appears whole,
 // case-insensitively, in a user message, or equals a session fact. Tool output is never a source: data a tool
 // discovered is output, not something the user asked about.
-const leaves = (v: Json | undefined): (string | number)[] => typeof v === "string" || typeof v === "number" ? [v]
-  : Array.isArray(v) ? v.flatMap(leaves) : v && typeof v === "object" ? Object.values(v).flatMap(leaves) : [];
+const squash = (s: string) => s.trim().replace(/\s+/g, " ");
 const noInventedInputs = check("no_invented_inputs", (e, ctx) => {
   if (e.kind !== "action" || !e.tool.fromUser?.length) return allow();
-  const said = ctx.messages.filter((m) => m.role === "user").map((m) => m.text).join("\n").replace(/\s+/g, " "), known = leaves(ctx.facts as Json).map((f) => String(f).toLowerCase());
-  const gave = (v: string | number) => { const t = String(v).trim().replace(/\s+/g, " ");
-    return !t || known.includes(t.toLowerCase()) || new RegExp(String.raw`(?:^|[^\p{L}\p{N}])${escape(t)}(?=$|[^\p{L}\p{N}])`, "iu").test(said); };
+  const said = squash(ctx.messages.filter((m) => m.role === "user").map((m) => m.text).join("\n"));
+  const known = leaves(ctx.facts as Json).map((f) => String(f).toLowerCase());
+  const gave = (v: string | number) => {
+    const t = squash(String(v));
+    return !t || known.includes(t.toLowerCase()) || new RegExp(String.raw`(?:^|[^\p{L}\p{N}])${escapeRegExp(t)}(?=$|[^\p{L}\p{N}])`, "iu").test(said);
+  };
   for (const field of e.tool.fromUser) {
     const bad = leaves(e.input[field]).find((v) => !gave(v));
     if (bad !== undefined) return block(`The user never said "${bad}" (${field} in ${e.tool.name}). Use only values the user gave, or ask them.`);
@@ -91,9 +94,11 @@ const noRepeatedWrites = check("no_repeated_writes", (e, ctx) => {
   const prior = ctx.results.findLast((r) => r.tool === e.tool.name && r.turn === ctx.turn && (r.ok || r.outcome === "unknown"));
   const unsettled = prior && (prior.outcome === "unknown" || prior.outcome === "pending");
   if (!prior || (e.tool.repeatable && !unsettled)) return allow();
-  return block(unsettled ? `${e.tool.name}'s last call this turn has an ${prior.outcome} outcome and may already have applied. Don't retry it` +
-    `${e.tool.reconcileWith ? `; call ${e.tool.reconcileWith} to check what happened` : ""}.`
-    : `${e.tool.name} already succeeded this turn (result: ${JSON.stringify(prior.output)}). Don't call it again; use that result.`);
+  if (unsettled) {
+    const recheck = e.tool.reconcileWith ? `; call ${e.tool.reconcileWith} to check what happened` : "";
+    return block(`${e.tool.name}'s last call this turn has an ${prior.outcome} outcome and may already have applied. Don't retry it${recheck}.`);
+  }
+  return block(`${e.tool.name} already succeeded this turn (result: ${JSON.stringify(prior.output)}). Don't call it again; use that result.`);
 });
 
 const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e, ctx) => {
@@ -105,7 +110,7 @@ const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e,
 /** Built-in names a journey may list. untrusted_text_is_data is structural and always on. */
 export const BUILTIN_NAMES = ["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "no_invented_inputs", "untrusted_text_is_data"] as const;
 
-/** The operator-defined claim kinds in effect, for the grader. */
+/** The operator-defined claim kinds in effect, for the grader and the snapshot fingerprint. */
 export const claimKinds = (opts: BuiltinOptions = {}): ClaimKind[] => (opts.no_unconfirmed_claims && opts.no_unconfirmed_claims.kinds) || [];
 
 export function builtinChecks(opts: BuiltinOptions = {}): Check[] {

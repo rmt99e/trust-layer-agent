@@ -49,7 +49,7 @@ describe("no_unconfirmed_claims", () => {
   });
 
   it("doesn't treat digits inside ids as confirmed numbers", async () => {
-    expect(await verdict("That's $1.", ctx({ results: [ok("get_account", { id: "acc_1" })] }))).toHaveProperty("block");
+    expect(await verdict("That's $1.", ctx({ results: [ok("get_account", { id: "acc_1" })] }))).toEqual({ block: "Reply states the amount 1 but no tool returned that amount. Use a returned value or don't state it." });
   });
 
   it("extracts money, percentages, dates and done language", () => {
@@ -102,7 +102,7 @@ describe("negated done-language", () => {
   });
 });
 
-describe("negated subjects (fix 1)", () => {
+describe("negated subjects", () => {
   const afterFailure = () => ctx({ results: [failed("change_plan"), ok("open_case", { caseId: "4417" })] });
   it.each([
     ["Nothing has been changed.", "allow"],
@@ -116,7 +116,7 @@ describe("negated subjects (fix 1)", () => {
     ["No, it's done: you've been switched.", "block"],
     ["No problem! Your plan has been switched.", "block"],
     ["Nope, all good, it's done.", "block"],
-    ["It went through.", "block"],                                   // missing from the done list until v4
+    ["It went through.", "block"],                                   // "went through" is a done phrase
     ["Your change has gone through.", "block"],
   ])("%s → %s after a failed change_plan", async (reply, want) => {
     const result = await verdict(reply, afterFailure());
@@ -124,7 +124,7 @@ describe("negated subjects (fix 1)", () => {
   });
 });
 
-describe("status vs action (fix 2)", () => {
+describe("status vs action", () => {
   const sessions = {
     failed: () => ctx({ results: [failed("change_plan")] }),                       // a change failed and never succeeded
     nothing: () => ctx({ results: [ok("get_account", { plan: "Starter", monthlyPrice: 79 })] }),   // no writes at all
@@ -146,7 +146,7 @@ describe("status vs action (fix 2)", () => {
   });
 });
 
-describe("customer numbers inside refusals (fix 4)", () => {
+describe("user numbers inside refusals", () => {
   // The customer asked for "$10" and "50% off"; tools returned only 29, 26.10 and a 10% discount.
   const session = () => ctx({ say: ["c: I want Plus for $10 a month, or 50% off."],
     results: [ok("quote_plan_change", { monthlyPrice: 26.1, discountPercent: 10 })] });
@@ -181,7 +181,7 @@ describe("customer numbers inside refusals (fix 4)", () => {
   });
 });
 
-describe("write outcomes: done / pending / failed / unknown (v4 a)", () => {
+describe("write outcomes: done / pending / failed / unknown", () => {
   const W = [...tools.filter((t) => t.name !== "change_plan"), { ...tools.find((t) => t.name === "change_plan")!, reconcileWith: "get_account" }];
   const r = (tool: string, extra: object) => ({ id: `x${Math.random()}`, tool, turn: 1, input: {}, ...extra }) as any;
   const unknown = r("change_plan", { ok: false, outcome: "unknown", error: { code: "timeout", message: "outcome unknown" } });
@@ -215,7 +215,7 @@ describe("write outcomes: done / pending / failed / unknown (v4 a)", () => {
   });
 });
 
-describe("bare 'all set' as a pleasantry (v4 c)", () => {
+describe("bare 'all set' as a pleasantry", () => {
   const r = (tool: string, extra: object) => ({ id: "x", tool, turn: 1, input: {}, ...extra }) as any;
   const S = {
     "no writes": [r("get_account", { ok: true, output: { plan: "Pro" } })],
@@ -298,7 +298,7 @@ describe("done wording while an action awaits a person's approval", () => {
     expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [waiting("approved")] })).toEqual({ allow: true });
   });
   it("a bare 'all set' is blocked too while the approval is pending", async () => {
-    expect(await verdict("You're all set!", { ...ctx(), approvals: [waiting()] })).toHaveProperty("block");
+    expect(await verdict("You're all set!", { ...ctx(), approvals: [waiting()] })).toEqual({ block: "Reply says \"you're all set\", but change_plan is waiting for a person's approval. Say it's been requested, not done." });
   });
   it("a read awaiting approval doesn't count", async () => {
     expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [{ ...waiting(), tool: "get_account" }] })).toEqual({ allow: true });

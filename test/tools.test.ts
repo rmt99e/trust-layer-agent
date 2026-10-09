@@ -35,9 +35,9 @@ describe("bind", () => {
   });
 
   it("rejects bind and fromUser fields that aren't in the schema, or both on one field", () => {
-    expect(() => read({ ...getInvoice, bind: { customerId: "facts.customerId" } })).toThrow(/not in the input schema/);
-    expect(() => read({ ...getInvoice, fromUser: ["customerId"] })).toThrow(/fromUser field "customerId" is not in the input schema/);
-    expect(() => read({ ...getInvoice, fromUser: ["accountId"] })).toThrow(/can't be both bound and fromUser/);
+    expect(() => read({ ...getInvoice, bind: { customerId: "facts.customerId" } as any })).toThrow(/not in the input schema/);
+    expect(() => read({ ...getInvoice, fromUser: ["customerId"] as any })).toThrow(/fromUser field "customerId" is not in the input schema/);
+    expect(() => read({ ...getInvoice, fromUser: ["accountId"] as any })).toThrow(/can't be both bound and fromUser/);
     expect(read({ ...getInvoice, fromUser: ["invoiceId"] }).fromUser).toEqual(["invoiceId"]);
   });
 });

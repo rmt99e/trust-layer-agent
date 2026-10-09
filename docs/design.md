@@ -1,6 +1,7 @@
 # trust-layer-agent: API design (v0.1 draft)
 
 > This is the approved design from before v1. SPEC.md describes current behavior; where they differ, SPEC.md is right.
+> Renamed since this was written: the party the agent talks to is the `user` (role `user`, fence `<user_message>`, guardrail `user_says`, suite field `userModel`, task block `user:`), the config file `trust-layer.config.js` never shipped (suites are `suite.js`), and sessions are schema v2 with `approvals`.
 
 The model chooses the words; code decides what's allowed. This page defines the public API and becomes the seed of SPEC.md. Signatures are TypeScript; every example also runs as plain ES-module JavaScript.
 

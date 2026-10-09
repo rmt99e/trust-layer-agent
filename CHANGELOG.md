@@ -6,12 +6,37 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- From a full-codebase review:
+  - A tool's `records()` throwing crashed the turn after the tool had run. It is now caught: nothing is recorded, the message is stored as `recordsError`, and a write's outcome is `unknown`.
+  - A draft cut off by the model's output limit, or an empty draft, was sent. Both are now refused like any blocked draft (structural check `complete_reply`), so the retry and handoff path applies.
+  - Model requests had no timeout and honoured any `Retry-After`. Both adapters bound a request at `timeoutMs` (default 60 s) and cap the retry wait at 30 s.
+  - A stored session id was used as a trace file name unchecked. `loadSession` now requires the id shape this library mints, and the `jsonl` sink takes the basename.
+  - Tool output was stored as returned. It is normalized to JSON first, so sessions round-trip; a value that can't be serialized is a `not_json` failure (unknown outcome for a write).
+  - A bound field's value from the model (overwritten later) could reach the checks and an Approval record. Bound fields are stripped from the model's input first.
+  - `approve()` ran a confirmed write on a used or expired quote. It now records a `commitment_unusable` failure instead.
+  - The auto-reconcile read left the failures counter untouched; it now counts like any call.
+  - A decided approval's result was replayed before the reply that said "requested"; it is replayed after it.
+  - Approval dedupe compared JSON with top-level key order; it uses canonical JSON.
+  - `markShown` matched a commitment id as a substring ("q_10" showed "q_1"); whole tokens only.
+  - "29 a month" was not a price claim; it is.
+  - An OpenAI-compatible reply with `content` as an array of parts threw inside the claim check; the text parts are joined.
+  - `--k`/`--max-cost`/`--min-pass` with a missing or bad value became `NaN` and ran nothing; they error. An unknown command exits 2.
+  - Fields named `pin`, `password`, `token`, `secret`, `passport`, `tax_id`, `national_id`, `license`, `account_number`, `routing` are hidden under default visibility.
+  - `handoff_to_person` no longer needs `confirm: false` spelled out.
+  - The simulator no longer monkeypatches `console.warn`; `AgentOptions.warn` routes startup notices.
+  - Snapshots no longer record a path to a gitignored results file; the committed snapshots use the `userModel` key, so `test --against` stops reporting the rename as a config change.
+
 ### Changed
 
 - **The party the agent talks to is the `user`, not the `customer`.** The library is a trust layer for any LLM agent that acts on someone's behalf; customer support is one journey. Renamed, with no aliases: the message role `customer` → `user`; the prompt fence `<customer_message>` → `<user_message>` and the data rule's wording; the journey guardrail `customer_says` → `user_says`; the task file block `customer:` → `user:` and its `reason_for_call` → `reason`; the suite field `customerModel` → `userModel`; the tool declaration `fromCustomer` → `fromUser`; the `turn` trace field `customer` → `user`; trial `tokens.customer` and transcript roles → `user`; the default `handoff_to_person` summary → `User asked for a person.`; every block reason that said "the customer" now says "the user". **Session schema is v2**: `createSession` and `forget` write `v: 2`, and `loadSession` upgrades a v1 session (role rename, `approvals` filled in), so stored sessions keep working; every agent method loads through it. Journey and task files must be updated by hand (the loader reports the unknown key with file and line). `test --against` an older snapshot reports `userModel` as a config difference, since the key is new, so against the committed snapshots a real user-model change is no longer distinguishable from the rename. The fence, the data rule, the block reasons and the simulated user's prompt are model-facing text, so this is a behavior change in the CONTRIBUTING sense: a maintainer should run `test --against v4-sonnet` and take a fresh snapshot.
 
 ### Added
 
+- **Typed tool declarations.** `read()`/`write()` infer the input type from the zod schema: `run`, `records`, `bind`, `fromUser` and `confirm.by` are typed against it, so a misspelled field is a compile error. `ToolDef.output` (accepted, never used) is gone.
+- Both adapters take `timeoutMs` and `retryDelayMs` (`HttpOptions`). `AgentOptions.warn` routes startup notices (the simulator silences them). `teachingView` is exported: the terminal view `chat()` uses, for demos.
+- `npm run typecheck` (`tsconfig.test.json`) type-checks the tests and vitest config; CI runs it, plus Node 24 and `npm pack --dry-run`. `engines.node` is `>=20.12`.
 - **A second worked journey, `examples/procurement/`**: a company's purchasing desk. It uses four of the unreleased features together, outside customer support: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two operator-defined claim kinds, and `agent.review()` on the app-rendered supplier email. A 4-task simulation suite and a demo that walks through a person approving a parked order. `test/examples.test.ts` validates both shipped suites with `prepare()` and drives the procurement example with a scripted model on every CI run; `vitest.config.ts` aliases the package name to `src/` so examples run against source in tests. README, llms.txt, SPEC and AGENTS now describe the library as a trust layer for any agent that acts on someone's behalf, with support as one journey; `package.json` keywords add `trust`, `human-in-the-loop` and `operations`.
 - **Session stores.** `SessionStore` (`load`, `save(session, expectedRev)`) turns the session's `rev` into a real optimistic lock: a save against a stale rev throws `StaleSession`, so two requests for one conversation can't overwrite each other. `withStore(agent, store)` gives the agent's verbs by session id (`respond`, `approve`, `decline`, `review`, `forget`), each loading, acting and saving against the rev it loaded; `forget` deletes the trace and stores a tombstone that `load` returns. `memoryStore()` is the reference and the contract tests run against every store. `trust-layer-agent/postgres` is a Postgres store plus trace sink over the app's own query function (no database dependency), with `schema` to create the two tables.
 
@@ -25,7 +50,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
-- The `src/` logic-line cap is 1,500 (was 1,400); `src/` is at 1,490.
+- The `src/` logic-line cap is 1,600 (was 1,400 before these entries); `src/` is at 1,580. The hardening above and the typed tool declarations account for the growth; `files.ts` was split out of `journeys.ts`.
 
 - v4.2: **code reconciles unknown outcomes before any reply.** When a write ends with an unknown outcome and declares `reconcileWith`, the agent runs that read itself before the model replies, if every input the read needs is bound or present in the failed call. Its visible result is added to the write's tool message as `reconcile: { tool, output }`, and the trace marks it `reconcile: true`. If the read can't be run (it needs inputs code doesn't have) or fails, every draft is blocked until a successful reconcile read; a handoff is still possible. In rehearsal, a reply implied failure ("our team will handle your switch… you should hear back soon") without any failure phrase; this closes that gap.
 - Demo toggles in examples/subscriptions/chat.js: `CHANGE_PLAN_OUTCOME=fail|timeout|pending` (`FAIL_CHANGE_PLAN=1` still means fail) and `AGENT_MODEL=sonnet|haiku`. The `chat()` view labels code's re-check `(auto re-check)`.

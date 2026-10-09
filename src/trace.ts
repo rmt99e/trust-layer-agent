@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { maskText } from "./privacy.js";
 
 /**
@@ -16,7 +16,7 @@ export const maskTrace = (v: unknown): unknown =>
 
 /** One JSON line per event, one file per session (traces/<sessionId>.jsonl). Personal data is masked unless mask: false. */
 export function jsonl(opts: { dir?: string; mask?: boolean } = {}): TraceSink {
-  const dir = opts.dir ?? "traces", file = (id: string) => join(dir, `${id}.jsonl`);
+  const dir = opts.dir ?? "traces", file = (id: string) => join(dir, `${basename(id)}.jsonl`);   // basename: an id is never a path
   let ready = false;
   return {
     mask: opts.mask,

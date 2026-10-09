@@ -14,7 +14,7 @@ This document is language-neutral. The TypeScript package (`src/`) is the refere
 - Numbers are compared after normalization to the cent: `norm(x) = round(parseFloat(strip(x)) * 100) / 100`, where `strip` removes every character except digits, `.` and `-`.
 - "Turn" = the number of user messages in the session so far. The agent's reply to user message *n* has turn *n*.
 
-The surface: three nouns (**tools**, **checks**, **journeys**), one verb (**respond**), two commands (**test**, **snapshot**). Extension happens only through four points: tools, checks, journeys and model adapters.
+The surface: three nouns (**tools**, **checks**, **journeys**), the agent verbs (**respond**, **review**, **approve**, **decline**, **forget**, **chat**), two commands (**test**, **snapshot**). Extension happens only through five points: tools, checks, journeys, model adapters and session stores.
 
 ## 1. Tools
 
@@ -30,23 +30,23 @@ ToolDef {
   confirm?: false | { commitment: string; by: string };   // write tools only
   beforeVerification?: boolean;
   verifies?: boolean;
-  output?: <schema>;            // accepted, unused in v0.1
   records?: (output, input) => { facts?: {..}, commitments?: [{ type, id, values, expiresAt? }] };
   outcome?: (output) => "done" | "pending";   // write tools: how to read a successful result (default "done")
   reconcileWith?: string;       // write tools: name of the read tool that settles an unknown outcome
   repeatable?: boolean;         // write tools: may succeed more than once in one turn (see no_repeated_writes)
+  // In the reference implementation the input schema types run, records, bind, fromUser and confirm.by.
   fromUser?: string[];      // input fields whose values must come from the user's words or a fact (see no_invented_inputs)
   run(input, ctx: { facts, commitments }) => output | Promise<output>;   // ctx is a read-only copy
 }
 ```
 
-Definition-time errors (MUST throw): name not snake_case; empty description; input not an object schema; `run` not a function; `confirm` on a read tool; a `bind` key absent from the input schema; a `bind` value not starting with `facts.`; a `fromUser` field absent from the input schema; a field both in `bind` and in `fromUser`. Duplicate tool names MUST be rejected when the agent is constructed.
+Definition-time errors (MUST throw): name not snake_case; empty description; input not an object schema; `run` not a function; `confirm` on a read tool; a `bind` key absent from the input schema; a `bind` value not starting with `facts.`; a `fromUser` field absent from the input schema; a field both in `bind` and in `fromUser`. Duplicate tool names MUST be rejected when the agent is constructed. A tool named `handoff_to_person` whose `confirm` is unset gets `confirm: false`: the reserved handoff write needs no yes.
 
 **Model-facing spec.** The model sees `{ name, description, inputSchema }`, where `inputSchema` is the JSON Schema of `input` with every bound field removed from `properties` and `required` (no `$schema` key).
 
 **Bind.** For each `field -> "facts.K"`, the value is `session.facts[K]`. `K` is the whole remainder after `facts.` and is a flat key: `facts.a.b` reads `facts["a.b"]`. Before checks run, bound values are merged over the model's input; before `run`, they are written into the input, overwriting anything the model sent. If any bound fact is undefined, the call MUST NOT run and fails with `missing_fact` (see Errors).
 
-**Execution order** for a call that passed the action checks: inject bound fields, validate the input (unknown keys are dropped), call `run`, apply `records`, compute the visible output, append a ToolResult.
+**Execution order** for a call that passed the action checks: inject bound fields, validate the input (unknown keys are dropped), call `run`, normalize the output to JSON (`JSON.parse(JSON.stringify(x))`, `undefined` → `null`; a Date becomes its ISO string, functions vanish), apply `records`, compute the visible output, append a ToolResult. Before the checks, the agent drops every bound field from the model's input, so a value the model sent for a bound field reaches neither the checks nor an Approval record.
 
 **Errors.** A failed call is recorded with `ok: false` and `error: { code, message }`:
 
@@ -56,10 +56,11 @@ Definition-time errors (MUST throw): name not snake_case; empty description; inp
 | input fails the schema | `invalid_input` | issues joined by `; `, each `<dot.path or "input">: <issue>` |
 | `run` throws `ToolError(code, message[, { outcome: "unknown" }])` | the given code | the given message |
 | `run` throws anything else | `internal_error` | `The tool failed unexpectedly.` (the original message MUST NOT reach the model) |
+| the output can't be serialized (a cycle, a BigInt) | `not_json` | `The tool returned a value that isn't JSON.`; a write's outcome is `unknown`, since its effect may have applied |
 
 A failed call records nothing (no facts, no commitments). Its ToolResult `input` is the model's input with bound fields injected (unvalidated).
 
-**Records.** Applied only when `run` resolves. `facts` are shallow-merged into `session.facts`. Each commitment is appended as `{ ...c, by: <tool name>, turn: <current turn>, status: "open" }`. `records` receives the full output and the validated input, not the visible output.
+**Records.** Applied only when `run` resolves. If `records` throws, nothing is recorded, the error message is stored as `recordsError` on the ToolResult (and trace line), and a write's outcome is `unknown`; the turn does not crash. `facts` are shallow-merged into `session.facts`. Each commitment is appended as `{ ...c, by: <tool name>, turn: <current turn>, status: "open" }`. `records` receives the full output and the validated input, not the visible output.
 
 **Visibility.** The ToolResult `output` (and everything the model or the claim checks see of a result) is the visible projection of the output:
 - `visible` given: a path is kept if it is listed or lies under a listed path (`p.` or `p[]` prefix). Path syntax: `plan.name`, `invoices[].amount`. Kept values are NOT masked. Objects/arrays whose children are all dropped are dropped; originally empty ones are kept.
@@ -73,7 +74,7 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 
 **Reserved name.** If a tool named `handoff_to_person` succeeds, the turn MUST end in a handoff with summary `String(input.summary ?? "User asked for a person.")` and reason `handoff_to_person`.
 
-**Failures counter.** `session.failures` is set to `0` after any successful tool call and incremented after any failed tool call, including a call run by `approve()` (section 2.2). Blocked actions, parked actions, unknown tool names and `decline()` do not change it.
+**Failures counter.** `session.failures` is set to `0` after any successful tool call and incremented after any failed tool call, including a call run by `approve()` (section 2.2) and the auto-reconcile read (section 2). Blocked actions, parked actions, unknown tool names and `decline()` do not change it.
 
 **Write outcomes.** A ToolResult MAY carry `outcome`: `"done" | "pending" | "unknown"`.
 - A successful call of a **write** tool records `outcome = tool.outcome(output)` when `outcome` is given, else `"done"`. `outcome` receives the full output (not the visible one) and is called after `records`. A successful read records no `outcome`.
@@ -98,6 +99,7 @@ So a reconcile read made before the unknown call does not settle it, and a later
 3. Evaluate every journey `handoff_when` condition (section 6). If one matches, hand off (reason `journey`) without calling the model.
 4. Loop: call the model with `{ system, messages, tools }` (section 3).
    - `stop == "refusal"`: hand off, summary `The model declined to respond.`, reason `refusal`.
+   - **Incomplete draft** (text only, checked before the reply checks): `stop == "max_tokens"` is refused with `The draft was cut off by the model's output limit. Write a shorter reply.`; empty or whitespace text with `The draft was empty. Write a reply.` Both count as a blocked draft from the structural check `complete_reply` (retry, then handoff, as below) and are traced as one.
    - **Tool calls** (any present): the assistant text accompanying them is never sent or checked. For each call, in order: increment the per-turn call count; if it exceeds `maxToolCalls` (default 8), hand off (reason `max_tool_calls`). Unknown name: answer `<system_note>There is no tool named X.</system_note>` as an error and continue. Otherwise run the action checks (section 4) on `{ kind: "action", tool, input: model input + bound values }`. `handoff` → hand off (reason = check name). `block` → the tool MUST NOT run; answer `<system_note>Not run. Blocked: <reason> <NO_MECHANICS></system_note>` as an error tool result. `approve` → the tool MUST NOT run; it is parked (section 2.2) and answered `<system_note>Not run: <tool> needs a person's approval (<reason>). Tell the user it's been requested, not done. <NO_MECHANICS></system_note>` as an error tool result; if an identical call (same tool, same JSON input) is already pending, nothing new is parked and the note reads `… (<reason>), which is already requested. Tell the user …`. Otherwise run the tool (section 1) and answer with the fenced result. **Auto-reconcile:** if the result has `outcome: "unknown"` and the tool declares `reconcileWith`, the agent MUST run that read itself, before the next model call, when its input can be built without the model: start from the failed call's input, keep only the read's own input fields, and the read's input schema minus its `bind` fields must accept that. The read runs like any tool call (bind injection, visibility, recorded in `results`, so it settles the outcome), emits a `tool` trace line with `reconcile: true`, and on success its visible output is added to the failed write's tool message as `reconcile: { tool, output }`. No action checks run on it (code runs it, not the model). If the read can't be built or fails, nothing is added; the claim check (5.3) then blocks every draft until a successful reconcile read. Then loop.
    - **Text only**: run the reply checks on `{ kind: "reply", text }`. `handoff` → hand off. `block` → increment retries; if retries > `maxRetries` (default 2), increment `failures` and hand off with summary `Reply still blocked after <maxRetries> retries: <reason>` (reason = check name). Otherwise append the draft as an assistant message and a user message `<system_note>That draft was not sent. <reason> Write a new reply. <NO_MECHANICS></system_note>`, then loop. `allow`/`rewrite` → send the (possibly rewritten) text.
 5. **Finish** (also on every handoff, where the text is `handoffMessage`, default `I'm passing you to a person who can help. They'll pick this up from here.`): `rev += 1`; `status = "handed_off"` if handing off; append `{ role: "agent", text, turn: T }`; mark commitments shown (section 5.4); emit a `turn` trace line.
@@ -115,9 +117,9 @@ Approval { id: "p_<n>"; tool; input /* model input + bound values */; turn; reas
            status: "pending" | "approved" | "declined"; result?: "c_<n>" /* set once decided */ }
 ```
 
-`n` is the position in `session.approvals`, 1-based. A parked action runs nothing and records nothing else. Two calls are "identical" when the tool and the JSON of the input with keys sorted are equal. **While any approval is pending**, each `respond()` appends, after the fenced user message, one `user` message `<system_note>Waiting for a person's approval: <tool> <JSON(input without bound fields)>; … Don't request these again; if asked, say they're still pending.</system_note>`, and `no_unconfirmed_claims` treats the write as `approval` (5.3), so the agent can't say it's done.
+`n` is the position in `session.approvals`, 1-based. A parked action runs nothing and records nothing else. Two calls are "identical" when the tool and the canonical JSON of the input (keys sorted at every depth, numbers to the cent) are equal. **While any approval is pending**, each `respond()` appends, after the fenced user message, one `user` message `<system_note>Waiting for a person's approval: <tool> <JSON(input without bound fields)>; … Don't request these again; if asked, say they're still pending.</system_note>`, and `no_unconfirmed_claims` treats the write as `approval` (5.3), so the agent can't say it's done.
 
-`approve(session, id) -> { session, result }`: the tool runs now with the approval's input, exactly as in section 1 (bind injection from the current facts, validation, `records`, visibility, the failures counter, a ToolResult with `turn` = the current turn), **without action checks**: the person's decision is the check. A confirmed write that succeeds spends its commitment as in section 2. `decline(session, id, reason = "A person declined this action.") -> { session, result }` runs nothing and appends `{ id, tool, turn, ok: false, input, error: { code: "declined", message: reason } }`; `failures` is not changed. Both set the approval's `status` and `result`, `rev += 1`, emit an `approval` trace line (section 9) and return a new session; the input session MUST NOT be mutated. Both work on a `handed_off` session (a person finishing up). The model sees the result in the next turn's history like any other call of that turn. An `id` that is unknown or already decided MUST throw `no pending approval "<id>"`. If the approval's tool is no longer one of the agent's tools, `approve` MUST throw `tool "<tool>" is no longer one of this agent's tools; decline the approval instead` and `decline` still works (the waiting note then shows the input with no fields stripped, since the tool's `bind` is unknown).
+`approve(session, id) -> { session, result }`: the tool runs now with the approval's input, exactly as in section 1 (bind injection from the current facts, validation, `records`, visibility, the failures counter, a ToolResult with `turn` = the current turn), **without action checks**: the person's decision is the check. One thing is re-read: a write with `confirm` whose commitment is gone, already used, or expired by the agent's clock does not run and gets a failed ToolResult with code `commitment_unusable` and message `No <commitment> "<id>" exists in this conversation any more.` / `<commitment> "<id>" was already used.` / `<commitment> "<id>" expired before it was approved.` A confirmed write that succeeds spends its commitment as in section 2. `decline(session, id, reason = "A person declined this action.") -> { session, result }` runs nothing and appends `{ id, tool, turn, ok: false, input, error: { code: "declined", message: reason } }`; `failures` is not changed. Both set the approval's `status` and `result`, `rev += 1`, emit an `approval` trace line (section 9) and return a new session; the input session MUST NOT be mutated. Both work on a `handed_off` session (a person finishing up). The model sees the result in the next turn's history like any other call of that turn. An `id` that is unknown or already decided MUST throw `no pending approval "<id>"`. If the approval's tool is no longer one of the agent's tools, `approve` MUST throw `tool "<tool>" is no longer one of this agent's tools; decline the approval instead` and `decline` still works (the waiting note then shows the input with no fields stripped, since the tool's `bind` is unknown).
 
 `NO_MECHANICS` is exactly: `Never mention checks, blocks or internal reasons to the user; just give the corrected reply.` Every block reason given to the model MUST carry it, so the user never hears about checks.
 
@@ -134,7 +136,7 @@ Instructions, journey prose and knowledge files are the **operator text**. User 
 - Tool result: `<tool_result>` + esc(JSON(content)) + `</tool_result>` as a `tool` message, where content is the visible output, or `{"error":{"code":..,"message":..}}` with `isError: true`.
 - System notes: `<system_note>…</system_note>`, written only by the library. The library's own words are not escaped; anything a note interpolates that came from the model, the user or a tool (a tool name the model invented, a check's block reason, a parked action's input) is passed through `esc` first, so untrusted text can never close a note or open one.
 
-**History.** Each turn rebuilds earlier turns from the session: for each user message, the fenced user message, then for each ToolResult of that turn an `assistant` message with empty content and one tool call `{ id: result.id, name, input without bound fields }` followed by its fenced `tool` message; each agent message becomes an `assistant` message. Blocked actions, blocked drafts and notes from earlier turns are not replayed. `raw` provider blocks are echoed only within the current turn.
+**History.** Each turn rebuilds earlier turns from the session: for each user message, the fenced user message, then for each ToolResult of that turn an `assistant` message with empty content and one tool call `{ id: result.id, name, input without bound fields }` followed by its fenced `tool` message; each agent message becomes an `assistant` message, followed by the ToolResults of that turn that came from a decision on a parked action (an Approval's `result`), since those happened after the reply. Blocked actions, blocked drafts and notes from earlier turns are not replayed. `raw` provider blocks are echoed only within the current turn.
 
 untrusted_text_is_data has no runtime check: fencing plus bind injection are structural. Its name is reserved so journeys may list it.
 
@@ -164,6 +166,7 @@ Result  = { allow: true } | { block: reason } | { rewrite: text } | { handoff: s
 Allow if the tool has `beforeVerification`, or `facts.verified === true`. Otherwise, if no tool declares `verifies` and the key `verified` is absent from facts, the check is **off** (allow); unless verified_first is disabled, the agent constructor MUST warn: `verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified users. This doesn't apply to sessions your app creates with createSession({ facts: { verified } }); those are still checked.` Otherwise block: `Verify the user before using <tool> (use <v1 or v2>).` (the parenthetical lists `verifies` tools; omitted if none).
 
 ### 5.2 yes_after_quote (actions on write tools whose `confirm` is not `false`)
+Consent is per turn, not per action: once the user's latest message is a yes, every unconfirmed write the model calls in that turn passes this check. A write with `confirm` is additionally tied to its commitment. Tie consent to a specific action with `confirm`, or with a custom check.
 Let `last` = the last message, `c` = the tool's `confirm`, `id = input[c.by]`, `k` = the first commitment with `type == c.commitment` and `id == id`, `shownEarlier = k.shownTurn defined and < turn`.
 1. Consent = `last` is the user's AND (`isYes(last.text)` OR (`shownEarlier` AND `isProceed(last.text)`)). If there is no agent message yet, or no consent, block: `Before <tool>, tell the user exactly what will happen and wait for a clear yes.`
 2. No `confirm` object: allow.
@@ -224,7 +227,7 @@ Done claims are not tied to a particular write: any `done` or `reconciled` write
 
 ### 5.4 Claim extraction (shared by 5.3, markShown and the grader)
 With `NUM = \d[\d,]*(?:\.\d+)?`, all values normalized with `norm`:
-- **money:** `[$€£]\s?(NUM)` and `(NUM)\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b` (`/i`).
+- **money:** `[$€£]\s?(NUM)` and `(NUM)\s?(?:usd|eur|gbp|dollars?|euros?|pounds?|bucks|(?:a|per)\s+(?:month|year|week|day))\b` (`/i`), so "29 a month" states a price.
 - **percents:** `(NUM)\s?(?:%|percent\b)` (`/i`).
 - **dates** (`/i`), each yielding `YYYY-MM-DD` or `MM-DD`: `\b(\d{4})-(\d{2})-(\d{2})(?!\d)` (also inside timestamps); `Month D[st|nd|rd|th][,] [YYYY]`; `D[st|nd|rd|th] [of] Month[,] [YYYY]`; `M/D[/YYYY]` (US order, M 1–12, D 1–31). Month = `jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?` followed by `\b` and an optional `.`.
 - **relative:** `\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|monday|…|sunday)|this (?:week|weekend|month))\b`.
@@ -234,7 +237,7 @@ With `NUM = \d[\d,]*(?:\.\d+)?`, all values normalized with `norm`:
 
 Known v0.1 false positives are intentional and tabled (e.g. a conditional "if you switched" is blocked). Every relaxation above (refusal allowance, negated subjects, status phrases, extra consent phrases, bare "all set", reconcile reads, `repeatable`) is paired with attack rows in the test tables that MUST keep blocking.
 
-**markShown.** After a reply is sent, each commitment with `status == "open"` and no `shownTurn` gets `shownTurn = T` if the reply contains its `id` as a substring, or states a money or percent value (5.4) equal to one of the commitment's values of that kind.
+**markShown.** After a reply is sent, each commitment with `status == "open"` and no `shownTurn` gets `shownTurn = T` if the reply contains its `id` as a whole token (`(?<![\w])id(?![\w])`, so "q_10" does not show "q_1"), or states a money or percent value (5.4) equal to one of the commitment's values of that kind.
 
 ### 5.5 handoff_after_failures (all events)
 Options `{ after = 2 }`. If `failures >= after`, hand off with summary `<failures> consecutive failures (<tool>: <code>; …).`, listing the last `after` failed ToolResults (parenthetical omitted if none). It runs on every event, so the next action or reply after the `after`-th consecutive failure hands off.
@@ -367,7 +370,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 }
 ```
 
-`createSession({ facts? })` returns `{ v: 2, id, rev: 0, status: "open", facts, commitments: [], results: [], messages: [], approvals: [], failures: 0 }`. `loadSession(session)` returns a deep copy with `approvals` defaulted to `[]`; every agent method loads a given session this way. `forget(session)` returns exactly `{ "v": 2, "id": "<id>", "forgotten": true }`; the app overwrites or deletes its stored copy. `agent.forget(session)` returns the same tombstone and also deletes the session's trace: it calls the sink's `forget(session.id)` when the sink has one, and otherwise (if tracing is on) warns once per process: `⚠️  This trace sink has no forget(sessionId); delete this session's trace lines yourself.` Apps SHOULD use `agent.forget`.
+`createSession({ facts? })` returns `{ v: 2, id, rev: 0, status: "open", facts, commitments: [], results: [], messages: [], approvals: [], failures: 0 }`. `loadSession(session)` returns a deep copy upgraded to v2; every agent method loads a given session this way. It MUST throw `session id "<id>" isn't one this library minted` unless the id matches `^s_[0-9a-f]{12}$`: ids become trace file names, and a stored row is app data. `forget(session)` returns exactly `{ "v": 2, "id": "<id>", "forgotten": true }`; the app overwrites or deletes its stored copy. `agent.forget(session)` returns the same tombstone and also deletes the session's trace: it calls the sink's `forget(session.id)` when the sink has one, and otherwise (if tracing is on) warns once per process: `⚠️  This trace sink has no forget(sessionId); delete this session's trace lines yourself.` Apps SHOULD use `agent.forget`.
 
 ### 7.1 Session stores
 
@@ -392,7 +395,7 @@ ModelResponse { text; toolCalls: { id, name, input }[]; stop: "end"|"tool_calls"
                 usage?: { inputTokens, outputTokens }; raw? }
 ```
 
-An adapter translates this to one provider's HTTP API and maps stop reasons (including refusals). It SHOULD send no sampling parameters unless configured. It MUST retry once on HTTP 429, 5xx or a network error, then fail with a `ModelError` (which `test` scores as an infrastructure error). `raw` is the provider's own content, echoed back unchanged on the assistant message within the same turn. Strings `"anthropic:<model>"` and `"openai-compatible:<model>"` resolve to the two v0.1 adapters (keys from `ANTHROPIC_API_KEY`; `OPENAI_API_KEY` and `OPENAI_BASE_URL`, key optional for localhost); any object implementing `Model` is accepted. Any model may fill any role (agent, simulated user).
+An adapter translates this to one provider's HTTP API and maps stop reasons (including refusals). It SHOULD send no sampling parameters unless configured. It MUST bound one request (`timeoutMs`, default 60 000 ms), retry once on HTTP 429, 5xx, a timeout or a network error, waiting `Retry-After` capped at 30 s, then fail with a `ModelError` (which `test` scores as an infrastructure error). An OpenAI-compatible server may return `content` as an array of parts; the text is the text parts joined. `raw` is the provider's own content, echoed back unchanged on the assistant message within the same turn. Strings `"anthropic:<model>"` and `"openai-compatible:<model>"` resolve to the two v0.1 adapters (keys from `ANTHROPIC_API_KEY`; `OPENAI_API_KEY` and `OPENAI_BASE_URL`, key optional for localhost); any object implementing `Model` is accepted. Any model may fill any role (agent, simulated user).
 
 ## 9. Traces and privacy
 
@@ -402,7 +405,7 @@ TraceSink { write(line): void; forget?(sessionId): void; mask?: boolean }
 
 Agent option `trace`: a sink, `false` (no tracing), or omitted (default `jsonl()`). The agent emits one line per event; every line has `type`, `sessionId`, `turn`:
 - `turn`: `user`, `reply`, `retries`, `model` (model id), `usage`, `handoff?`.
-- `tool`: `tool`, `input` (as recorded), `ok`, `output` (visible), `error`, `outcome` and `outcomeError` (write outcomes, section 1); `reconcile: true` on a reconcile read the agent ran itself (section 2).
+- `tool`: `tool`, `input` (as recorded), `ok`, `output` (visible), `error`, `outcome`, `outcomeError` and `recordsError` (section 1); `reconcile: true` on a reconcile read the agent ran itself (section 2).
 - `check` (blocked or parked actions, blocked or rewritten drafts): `event` (`action`|`reply`), `check`, `result`; actions add `tool` and the model's `input`, and a parked action adds `approval` (its id); replies add `draft`. A rewritten reply's line names the check that rewrote it (section 4). Handoffs appear on the `turn` line.
 - `review` (section 2.1): `draft`, `check` (the deciding check, if any), `result`.
 - `approval` (section 2.2): `approval` (id), `decision` (`approved`|`declined`), `tool`, `input`, `ok`, `output`, `error`, `outcome`, as recorded on the ToolResult.
@@ -490,7 +493,7 @@ Grading is deterministic; there is no LLM judge. A trial passes iff all four com
 
 Both commands load `<dir>/suite.js` (default export) and read `.env` from the working directory if present.
 
-`test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against <name>]`, in order:
+`test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against <name>]`, in order (a numeric flag whose value is missing or not a number, or `--k` below 1, is an error before any model call; an unknown command is an error with the usage line; both exit 2):
 1. Resolve the snapshot to compare against: `snapshots/<name>.json` for `--against <name>`, else the newest `snapshots/*.json` by modification time, else none. A missing named snapshot MUST fail here, before any model call: `--against <name>: no snapshot at <path>`.
 2. Print `Estimated cost: ~$<total> (<n> tasks × <k> trials × ~$<per>); stops at $<max>.` `<per>` = the newest results file's token counts per trial, priced at the **current** suite prices for the current agent and user models (so switching models changes the estimate); if those trials have no token counts, their mean cost; with no results, 0.08.
 3. Validate (section 10), run every task k times, print each trial, then per-task trials, pass^k, pass^1, friction, cost and infra, and the overall pass^k.
@@ -516,7 +519,7 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 | `suite` | hash of the suite file's text |
 | `library` | hash of the list of contents of **every** compiled `.js` file of the package, recursively (including the simulator and model adapters), sorted by relative path |
 
-`snapshot --suite <dir> --name <name>` requires `--name` (`--name is required`) and an existing results file (`no results yet: run \`test\` first`); it MUST refuse with `the configuration changed since the last test run; run \`test\` again before snapshotting` if the newest results' `config` differs from the current fingerprint. It writes `snapshots/<name>.json` = `{ name, createdAt, k, config, tasks: [ids], summary, overall, cost, results: <results file path> }`.
+`snapshot --suite <dir> --name <name>` requires `--name` (`--name is required`) and an existing results file (`no results yet: run \`test\` first`); it MUST refuse with `the configuration changed since the last test run; run \`test\` again before snapshotting` if the newest results' `config` differs from the current fingerprint. It writes `snapshots/<name>.json` = `{ name, createdAt, k, config, tasks: [ids], summary, overall, cost }`.
 
 ## 13. Conformance
 

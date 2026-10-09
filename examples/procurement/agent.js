@@ -36,6 +36,7 @@ export const agentConfig = {
   checks: [bigOrders], builtins: { no_unconfirmed_claims: { kinds } },
 };
 
+/** @param {{ model?: string | import("trust-layer-agent").Model, store?: ReturnType<typeof createStore>, trace?: import("trust-layer-agent").TraceSink | false }} [opts] */
 export function makeAgent({ model = "anthropic:claude-sonnet-5-5", store = createStore(), trace } = {}) {
   return new Agent({ ...agentConfig, model, tools: makeTools(store), ...(trace !== undefined && { trace }) });
 }

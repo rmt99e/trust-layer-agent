@@ -104,7 +104,7 @@ describe("grader timing and async state", () => {
     task("cap", "expect: {}");
     const pricey = scripted(["hi", "###STOP###"], { id: "fake:user", usage: { inputTokens: 1_000_000, outputTokens: 0 } });   // $1 per call
     const run = await runSuite(suite(["ok"], [], { userModel: pricey }), { tasks: ["cap"] });
-    expect(run.stopped).toBe(false);                                  // $2 < $10 (the old default of $5 would also pass; see next)
+    expect(run.stopped).toBe(false);                                  // $2 < the $10 default cap
     const many = scripted(Array(12).fill("hi"), { id: "fake:user", usage: { inputTokens: 1_000_000, outputTokens: 0 } });
     const run2 = await runSuite(suite(Array(12).fill("ok"), [], { userModel: many }), { tasks: ["cap"] });
     expect(run2.cost).toBeGreaterThan(5);                             // would have stopped at $5 before

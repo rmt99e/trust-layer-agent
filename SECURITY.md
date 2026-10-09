@@ -4,7 +4,7 @@
 
 | Version | Supported |
 | --- | --- |
-| 0.1.x (once released) | Yes |
+| The `main` branch and the latest `v0.1.x` tag | Yes |
 | Pre-release (current main) | Best effort |
 
 ## Reporting a vulnerability

@@ -6,11 +6,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { listFiles } from "./journeys.js";
+import { listFiles } from "./files.js";
 import type { Model } from "./models/types.js";
 import { runSuite, type Suite, type Trial } from "./sim/simulator.js";
 import { loadTasks } from "./sim/task.js";
-import { toolSpec } from "./tools.js";
+import { toolSpec, type Tool } from "./tools.js";
+import type { ClaimKind } from "./claims.js";
 
 export interface TaskSummary { trials: string; passK: boolean; pass1: number; friction: number; cost: number; infra: number }
 export interface Run { config: Record<string, string>; summary: Record<string, TaskSummary>; overall: number; cost: number }
@@ -40,18 +41,22 @@ const read = (p?: string | string[], ext?: RegExp) => (p ? listFiles(p, ext).map
 
 /** Everything that can change a score, fingerprinted. */
 export function configOf(suite: Suite, suiteFile: string): Record<string, string> {
-  const a = suite.agent, id = (m: string | Model) => (typeof m === "string" ? m : m.id);
+  const a = suite.agent;
   return {
-    agentModel: id(suite.agentModel), userModel: id(suite.userModel),
+    agentModel: modelId(suite.agentModel), userModel: modelId(suite.userModel),
     instructions: hash(a.instructions), journeys: hash(read(a.journeys)), knowledge: hash(read(a.knowledge, /\.(md|txt)$/)),
-    tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
-      before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromUser: t.fromUser }))),
-    checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name),
-      kinds: claimKinds(a.builtins).map((k) => ({ name: k.name, find: String(k.find), confirms: k.confirms?.toString() })) }),   // JSON drops regexes and functions
+    tools: hash(suite.tools.map(toolFingerprint)),
+    checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name), kinds: claimKinds(a.builtins).map(kindFingerprint) }),
     suite: hash(readFileSync(suiteFile, "utf8")),
     library: hash(libraryFiles()),                  // this package's own code: checks, agent loop, simulator, adapters
   };
 }
+
+const modelId = (m: string | Model) => (typeof m === "string" ? m : m.id);
+// Every declaration that changes behavior, with function bodies as source text (JSON would drop them).
+const toolFingerprint = (t: Tool) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
+  before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromUser: t.fromUser });
+const kindFingerprint = (k: ClaimKind) => ({ name: k.name, find: String(k.find), confirms: k.confirms?.toString() });
 
 // Every compiled .js file in this package, recursively (sim/, models/ too), in a stable order.
 export const libraryFiles = (dir = fileURLToPath(new URL(".", import.meta.url))) => readdirSync(dir, { recursive: true }).map(String)
@@ -81,10 +86,10 @@ export function compare(prev: Run & { name: string }, cur: Run): string[] {
 
 /** Cost per trial: the last run's tokens per trial, priced at the CURRENT models' prices. */
 export function estimatePerTrial(trials: Trial[], suite: Suite): number {
-  const id = (m: string | Model) => (typeof m === "string" ? m : m.id), withTokens = trials.filter((t) => t.tokens?.agent && t.tokens.user);   // results written before the user role are priced by mean cost
+  const withTokens = trials.filter((t) => t.tokens?.agent && t.tokens.user);   // results written before the user role are priced by mean cost
   if (!withTokens.length) return trials.length ? trials.reduce((a, t) => a + t.cost, 0) / trials.length : 0.08;
   const price = (role: "agent" | "user", m: string | Model) => {
-    const p = suite.prices[id(m)] ?? { input: 0, output: 0 };
+    const p = suite.prices[modelId(m)] ?? { input: 0, output: 0 };
     return withTokens.reduce((a, t) => a + t.tokens![role].input * p.input + t.tokens![role].output * p.output, 0) / 1e6 / withTokens.length;
   };
   return price("agent", suite.agentModel) + price("user", suite.userModel);
@@ -105,7 +110,8 @@ export function pickSnapshot(dir: string, name?: string): string | undefined {
 export async function main([cmd, ...args]: string[]) {
   const flag = (n: string, d?: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
   try { process.loadEnvFile(); } catch { /* no .env: keys come from the environment */ }
-  if (cmd !== "test" && cmd !== "snapshot") return console.log("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--against v1] [--name v1]");
+  if (cmd !== "test" && cmd !== "snapshot") throw new Error("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--against v1] [--name v1]");
+  const num = (n: string, d: string) => { const v = Number(flag(n, d)); if (!Number.isFinite(v) || v < 0) throw new Error(`--${n} needs a number (got "${flag(n, d)}")`); return v; };
   const suiteFile = join(resolve(flag("suite", ".")!), "suite.js");
   const suite: Suite = (await import(pathToFileURL(suiteFile).href)).default;
   if (flag("agent-model")) suite.agentModel = flag("agent-model")!;
@@ -117,12 +123,13 @@ export async function main([cmd, ...args]: string[]) {
     if (hash(r.config) !== hash(config)) throw new Error("the configuration changed since the last test run; run `test` again before snapshotting");
     mkdirSync("snapshots", { recursive: true });
     writeFileSync(`snapshots/${name}.json`, JSON.stringify({ name, createdAt: new Date().toISOString(), k: r.k, config,
-      tasks: Object.keys(r.summary), summary: r.summary, overall: r.overall, cost: r.cost, results: last }, null, 2) + "\n");
+      tasks: Object.keys(r.summary), summary: r.summary, overall: r.overall, cost: r.cost }, null, 2) + "\n");
     return console.log(`snapshots/${name}.json: pass^${r.k} ${pct(r.overall)} over ${Object.keys(r.summary).length} tasks`);
   }
 
   const snap = pickSnapshot("snapshots", flag("against"));          // resolve first: a bad name must fail before any model call
-  const k = Number(flag("k", "4")), maxCost = Number(flag("max-cost", "10")), minPass = Number(flag("min-pass", "1")), only = flag("tasks")?.split(",");
+  const k = num("k", "4"), maxCost = num("max-cost", "10"), minPass = num("min-pass", "1"), only = flag("tasks")?.split(",");
+  if (!Number.isInteger(k) || k < 1) throw new Error(`--k needs a whole number of trials (got ${k})`);
   const n = loadTasks(suite.tasks).filter((t) => !only || only.includes(t.id)).length, prev = newest("results");
   const perTrial = estimatePerTrial(prev ? json(prev).trials : [], suite);
   console.log(`Estimated cost: ~$${(n * k * perTrial).toFixed(2)} (${n} tasks × ${k} trials × ~$${perTrial.toFixed(3)}); stops at $${maxCost}.`);

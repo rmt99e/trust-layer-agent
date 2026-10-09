@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Agent, allow, approve, check, createSession, jsonl, read, rewrite, ToolError, write, z, type Session } from "../src/index.js";
+import { Agent, allow, approve, check, createSession, jsonl, read, rewrite, ToolError, write, z, type Session, type Tool } from "../src/index.js";
 import { scripted, type Step } from "./fake-model.js";
 
 let dir: string;
@@ -31,7 +31,7 @@ const tools = {
     run: () => ({ status: "active", effectiveDate: "2026-11-01" }) }),
 };
 
-const agentWith = (steps: Step[], toolList = Object.values(tools), extra = {}) => {
+const agentWith = (steps: Step[], toolList: Tool[] = Object.values(tools), extra = {}) => {
   const model = scripted(steps);
   return { model, agent: new Agent({ model, instructions: "You help customers with their plans.", tools: toolList, trace: jsonl({ dir }), ...extra }) };
 };
@@ -228,7 +228,7 @@ describe("Agent", () => {
     const both = { ...loggedIn(), messages: [{ role: "user" as const, text: "switch me", turn: 1 }, { role: "agent" as const, text: "It's $29. OK?", turn: 1 }],
       commitments: [
         { type: "quote", id: "q_1", by: "quote_plan_change", values: { monthlyPrice: 29 }, turn: 1, shownTurn: 1, status: "open" as const },
-        { type: "hold", id: "q_1", by: "other_tool", values: {}, turn: 1, shownTurn: 1, status: "open" as const },
+        { type: "hold", id: "q_1", by: "other_tool", values: {} as Record<string, never>, turn: 1, shownTurn: 1, status: "open" as const },
       ] };
     const { agent } = agentWith([{ call: "change_plan", input: { quoteId: "q_1" } }, "Done, you're on Plus at $29."]);
     const r = await agent.respond(both, "yes");
@@ -258,7 +258,7 @@ describe("Agent", () => {
     expect(r.reply).toBe("I've opened case case_001 so the team can follow up.");
   });
 
-  describe("reconcileWith is validated at construction (v4.1 fix 2)", () => {
+  describe("reconcileWith is validated at construction", () => {
     const change = (reconcileWith: string) => write({ name: "change_plan", description: "x", input: z.object({}), confirm: false, reconcileWith, run: () => ({}) });
     const refund = write({ name: "refund_invoice", description: "x", input: z.object({}), confirm: false, run: () => ({}) });
     const make = (reconcileWith: string) => () => new Agent({ model: scripted([]), instructions: "x", trace: false, tools: [tools.account, refund, change(reconcileWith)] });
@@ -273,7 +273,7 @@ describe("Agent", () => {
     it("an existing read tool → constructs", () => expect(make("get_account")).not.toThrow());
   });
 
-  describe("a throwing outcome() is treated as unknown (v4.1 fix 3)", () => {
+  describe("a throwing outcome() is treated as unknown", () => {
     const lines: any[] = [];
     // check_change needs a ticket id that code doesn't have, so it can't be auto-run: the model has to call it.
     const checkChange = read({ name: "check_change", description: "Check a change by ticket.", input: z.object({ ticket: z.string() }), run: () => ({ plan: "plus" }) });
@@ -296,7 +296,7 @@ describe("Agent", () => {
     });
   });
 
-  describe("code reconciles unknown outcomes before any reply (v4.2)", () => {
+  describe("code reconciles unknown outcomes before any reply", () => {
     const lines: any[] = [];
     const timeout = (reconcileWith: string) => write({ name: "change_plan", description: "Change plan.", input: z.object({ accountId: z.string() }),
       bind: { accountId: "facts.accountId" }, confirm: false, reconcileWith, run: () => { throw new ToolError("timeout", "No response.", { outcome: "unknown" }); } });

@@ -1,12 +1,17 @@
 // Deterministic claim extraction and matching. Shared by the no_unconfirmed_claims check and the grader.
-import type { CheckContext } from "./checks.js";
-import type { Commitment, Json } from "./session.js";
+import type { CheckContext, ToolInfo } from "./checks.js";
+import { leaves, normNumber, type Commitment, type Json, type ToolResult } from "./session.js";
 
 export interface Claims { money: number[]; percents: number[]; dates: string[]; relative: string[]; done: string[] }
+
+/** Escape a string for use inside a RegExp. */
+export const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const NUM = String.raw`\d[\d,]*(?:\.\d+)?`;
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const MONTH = String.raw`(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?`;
+const MONEY_WRITTEN = String.raw`[$€£]\s?(${NUM})`;
+const MONEY_WORDED = String.raw`(${NUM})\s?(?:usd|eur|gbp|dollars?|euros?|pounds?|bucks|(?:a|per)\s+(?:month|year|week|day))\b`;   // "29 a month" is a price
 const RELATIVE = /\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|this (?:week|weekend|month))\b/gi;
 // A done phrase is negated when its own clause negates it: "haven't switched", "not yet", "nothing was switched",
 // "none of your settings have been changed". Clauses split on punctuation and "but", so "No, it's done" and
@@ -18,19 +23,18 @@ const clauseOf = (text: string, i: number) => (text.slice(0, i).split(/[.!?;:,\n
 // Failure wording is only honest after a known failure; after a success it's a false "it failed".
 const FAILED_WORDS = /\b(?:didn't go through|did not go through|failed|wasn't applied|was not applied|nothing has changed|nothing has been changed|nothing was changed|no changes were made)\b/i;
 const STATUS_AFTER = /^\s+(?:staying|to stay|on your (?:current|existing)|with your (?:current|existing))\b/i;
-const DONE = /\b(?:(?:has|have) been (?:processed|cancell?ed|refunded|switched|changed|updated|applied|added|completed)|i(?:'ve| have) (?:cancell?ed|refunded|switched|changed|updated|processed|applied|added)|you're all set|you are all set|(?:it's|it is|that's) done|switched|successfully|went through|(?:has|have) gone through)\b/gi;
+// "Done" wording: a past-participle verb after "has/have been" or "I've", or one of the phrases. One list, so the
+// test tables and the regex can't drift apart.
+export const DONE_VERBS = ["processed", "cancelled", "canceled", "refunded", "switched", "changed", "updated", "applied", "added", "completed"];
+const DONE_PHRASES = ["you're all set", "you are all set", "it's done", "it is done", "that's done", "switched", "successfully", "went through", "has gone through", "have gone through"];
+const DONE = new RegExp(String.raw`\b(?:(?:has|have) been (?:${DONE_VERBS.join("|")})|i(?:'ve| have) (?:${DONE_VERBS.join("|")})|${DONE_PHRASES.map(escapeRegExp).join("|")})\b`, "gi");
 
-/** Normalize a number token: strip commas and currency, compare to the cent. */
-export const normNumber = (s: string | number) => Math.round(parseFloat(String(s).replace(/[^\d.-]/g, "")) * 100) / 100;
 const pad = (n: string | number) => String(n).padStart(2, "0");
 const md = (m: number, d: string | number) => `${pad(m)}-${pad(d)}`;
 
 export function extractClaims(text: string): Claims {
   const all = (re: RegExp) => [...text.matchAll(re)];
-  const money = [
-    ...all(new RegExp(String.raw`[$€£]\s?(${NUM})`, "g")).map((m) => m[1]),
-    ...all(new RegExp(String.raw`(${NUM})\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b`, "gi")).map((m) => m[1]),
-  ].map(normNumber);
+  const money = [...all(new RegExp(MONEY_WRITTEN, "g")), ...all(new RegExp(MONEY_WORDED, "gi"))].map((m) => normNumber(m[1]));
   const percents = all(new RegExp(String.raw`(${NUM})\s?(?:%|percent\b)`, "gi")).map((m) => normNumber(m[1]));
   const dates = [
     ...all(/\b(\d{4})-(\d{2})-(\d{2})(?!\d)/g).map((m) => `${m[1]}-${m[2]}-${m[3]}`),     // also inside ISO timestamps
@@ -41,9 +45,8 @@ export function extractClaims(text: string): Claims {
     ...all(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/g).filter((m) => +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31)
       .map((m) => (m[3] ? `${m[3]}-` : "") + md(+m[1], m[2])),
   ];
-  const clauseBefore = (i: number) => clauseOf(text, i);
   const isStatus = (m: RegExpMatchArray) => /all set/i.test(m[0]) && STATUS_AFTER.test(text.slice(m.index! + m[0].length));
-  const done = all(DONE).filter((m) => !NEGATED.test(clauseBefore(m.index!)) && !isStatus(m)).map((m) => m[0].toLowerCase());
+  const done = all(DONE).filter((m) => !NEGATED.test(clauseOf(text, m.index!)) && !isStatus(m)).map((m) => m[0].toLowerCase());
   return { money, percents, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done };
 }
 
@@ -81,13 +84,22 @@ const REFUSAL = /\b(?:i|we)(?:'m|'re|\s+am|\s+are)?\s+(?:can't|cannot|can not|wo
 const COMPARATIVE = /\b(?:than|below|under|above|over|less|more|at least|at most|lowest|best|cheapest|minimum|maximum)\b/i;
 const CLAUSE_BREAK = /[.!?;:,\n]|\b(?:but|because|and|so|although|though)\b/i;
 function onlyInRefusals(text: string, kind: "money" | "percent", v: number): boolean {
-  const re = kind === "money" ? new RegExp(String.raw`[$€£]\s?(${NUM})|(${NUM})\s?(?:usd|eur|gbp|dollars?|euros?|pounds?)\b`, "gi")
-    : new RegExp(String.raw`(${NUM})\s?(?:%|percent\b)`, "gi");
+  const re = kind === "money" ? new RegExp(`${MONEY_WRITTEN}|${MONEY_WORDED}`, "gi") : new RegExp(String.raw`(${NUM})\s?(?:%|percent\b)`, "gi");
   const hits = [...text.matchAll(re)].filter((m) => normNumber(m[1] ?? m[2]) === v);
   return hits.length > 0 && hits.every((m) => {
     const before = text.slice(0, m.index).split(CLAUSE_BREAK).pop() ?? "", after = text.slice(m.index).split(CLAUSE_BREAK)[0];
     return REFUSAL.test(before) && !COMPARATIVE.test(before + after);   // "I can't go lower than $10" sets a floor: not a refusal
   });
+}
+
+/** A write's state from its latest call: done, pending, failed, or unknown until a later reconcile read settles it. */
+export type WriteState = "done" | "pending" | "failed" | "unknown" | "reconciled";
+export function writeState(tool: ToolInfo, results: readonly ToolResult[]): WriteState | undefined {
+  const i = results.findLastIndex((r) => r.tool === tool.name);
+  if (i < 0) return undefined;
+  const r = results[i];
+  if (r.outcome === "unknown") return tool.reconcileWith && results.slice(i + 1).some((x) => x.ok && x.tool === tool.reconcileWith) ? "reconciled" : "unknown";
+  return r.ok ? r.outcome ?? "done" : "failed";
 }
 
 /** Why a draft reply isn't backed by this session's tools or the operator's text, or undefined if it is. */
@@ -105,15 +117,12 @@ export function unconfirmed(text: string, ctx: CheckContext, kinds: readonly Cla
   const relative = c.relative.filter((r) => r !== "today");       // "today" is confirmed by the agent's clock (ctx.now)
   if (relative.length && confirmedValues(toolValues).dates.size === 0)
     return `Reply says "${relative[0]}" but no tool returned a date this session. Don't promise timing no tool confirmed.`;
-  // Write outcomes: each write's latest call is done, pending, failed, or unknown until a later reconcile read.
-  // A write parked for a person's approval is "approval": requested, not done.
+  // Write outcomes. A write parked for a person's approval is "approval": requested, not done.
   const writes = ctx.tools.filter((t) => t.kind === "write");
-  const latest = [...writes.map((t) => ({ t, i: ctx.results.findLastIndex((r) => r.tool === t.name) }))
-    .filter(({ i }) => i >= 0).map(({ t, i }) => {
-      const r = ctx.results[i], settled = t.reconcileWith && ctx.results.slice(i + 1).some((x) => x.ok && x.tool === t.reconcileWith);
-      return { name: t.name, reconcileWith: t.reconcileWith, state: r.outcome === "unknown" ? (settled ? "reconciled" : "unknown") : r.ok ? r.outcome ?? "done" : "failed" };
-    }), ...ctx.approvals.filter((a) => a.status === "pending" && writes.some((t) => t.name === a.tool))
-    .map((a) => ({ name: a.tool, reconcileWith: undefined, state: "approval" }))];
+  const latest = [
+    ...writes.map((t) => ({ name: t.name, reconcileWith: t.reconcileWith, state: writeState(t, ctx.results) as string | undefined })).filter((w) => w.state),
+    ...ctx.approvals.filter((a) => a.status === "pending" && writes.some((t) => t.name === a.tool)).map((a) => ({ name: a.tool, reconcileWith: undefined, state: "approval" })),
+  ];
   const has = (s: string) => latest.find((w) => w.state === s);
   const failedSaid = text.match(FAILED_WORDS)?.[0], unknown = has("unknown");
   if (unknown)                                                       // unknown: no reply at all until a read settles it (a handoff isn't a reply)
@@ -129,7 +138,7 @@ export function unconfirmed(text: string, ctx: CheckContext, kinds: readonly Cla
     if (!pleasantry && !has("done") && !has("reconciled")) return `Reply says "${c.done[0]}", but no write succeeded this session. Say what actually happened.`;
   }
   for (const k of kinds) {                                           // operator-defined kinds, after the built-in ones
-    const find = finder(k), backs = k.confirms ?? ((v: Json) => texts(v).flatMap((t) => [t.toLowerCase(), ...find(t)]));
+    const find = finder(k), backs = k.confirms ?? ((v: Json) => leaves(v).map(String).flatMap((t) => [t.toLowerCase(), ...find(t)]));
     const ok = new Set([...toolValues, ...ctx.operatorText].flatMap((v) => backs(v ?? null)));
     const bad = find(text).find((v) => !ok.has(v));
     if (bad !== undefined) return `Reply states the ${k.name} "${bad}" but no tool returned it. Use a returned value or don't state it.`;
@@ -149,15 +158,14 @@ export interface ClaimKind {
 const finder = ({ find }: ClaimKind) => typeof find === "function" ? find
   : (text: string) => [...text.matchAll(new RegExp(find.source, find.flags.replace("g", "") + "g"))]
     .filter((m) => !NEGATED.test(clauseOf(text, m.index!))).map((m) => (m[1] ?? m[0]).toLowerCase());
-const texts = (v: Json): string[] => typeof v === "string" ? [v] : typeof v === "number" ? [String(v)]
-  : Array.isArray(v) ? v.flatMap(texts) : v && typeof v === "object" ? Object.values(v).flatMap(texts) : [];
 
-/** Mark open commitments whose values appear in a sent reply as shown on this turn. */
+/** Mark open commitments whose id or values appear in a sent reply as shown on this turn. */
 export function markShown(commitments: Commitment[], reply: string, turn: number): Commitment[] {
   const c = extractClaims(reply);
   return commitments.map((k) => {
     const v = confirmedValues([k.values as Json]);
-    const shown = reply.includes(k.id) || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n));
+    const named = new RegExp(String.raw`(?<![\w])${escapeRegExp(k.id)}(?![\w])`).test(reply);   // q_1 isn't shown by "q_10"
+    const shown = named || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n));
     return k.shownTurn === undefined && k.status === "open" && shown ? { ...k, shownTurn: turn } : k;
   });
 }
