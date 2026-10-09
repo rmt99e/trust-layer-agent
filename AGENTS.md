@@ -60,7 +60,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,600 (non-blank, non-comment; 1,580 today). Count with:
+- Logic lines in `src/` stay under 1,600 (non-blank, non-comment; 1,586 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 

@@ -58,7 +58,7 @@ describe("yes_after_quote", () => {
     expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: Can you just switch me?"])).result).toEqual(allow());
     expect((await run(["c: switch me to Plus", "a: Let me check.", "c: Can you just switch me?"], [quote({ shownTurn: undefined })])).result).toHaveProperty("block");
     expect((await run(["c: Can you just switch me?"], [])).result).toEqual({ block: "Before change_plan, tell the user exactly what will happen and wait for a clear yes." });
-    expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: what would it cost?"])).result).toHaveProperty("block");
+    expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: what would it cost?"])).result).toEqual({ block: "Before change_plan, tell the user exactly what will happen and wait for a clear yes." });
   });
 
   const run = (say: string[], commitments = [quote()], now?: Date) =>
@@ -221,10 +221,10 @@ describe("no_invented_inputs", () => {
   });
   it("never takes a value from a tool result", async () => {
     const c = ctx({ say: said, results: [ok("get_account", { city: "Shelbyville" })], tools: [...tools, search] });
-    expect((await runChecks({ kind: "action", tool: search, input: { city: "Shelbyville" } }, c, only("no_invented_inputs"))).result).toHaveProperty("block");
+    expect((await runChecks({ kind: "action", tool: search, input: { city: "Shelbyville" } }, c, only("no_invented_inputs"))).result).toEqual({ block: 'The user never said "Shelbyville" (city in search_records). Use only values the user gave, or ask them.' });
   });
   it("ignores tools without fromUser, and can be turned off", async () => {
-    expect((await run({ name: "x" }, said)).result).toHaveProperty("block");
+    expect((await run({ name: "x" }, said)).result).toEqual({ block: 'The user never said "x" (name in search_records). Use only values the user gave, or ask them.' });
     expect((await runChecks(action("get_account", { name: "x" }), ctx({ say: said }), only("no_invented_inputs"))).result).toEqual(allow());
     expect(builtinChecks({ no_invented_inputs: false }).map((c) => c.name)).not.toContain("no_invented_inputs");
   });

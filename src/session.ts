@@ -94,10 +94,11 @@ export const nextResultId = (session: Session) => "c_" + (session.results.length
 /** Normalize a number token: strip commas and currency, compare to the cent. */
 export const normNumber = (s: string | number) => Math.round(parseFloat(String(s).replace(/[^\d.-]/g, "")) * 100) / 100;
 
-/** JSON with object keys sorted at every depth and numbers rounded to the cent, so equal data compares equal. */
-export const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) =>
-  typeof x === "number" ? normNumber(x)
-  : x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x);
+const sortKeys = (x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, (x as Record<string, unknown>)[k]])) : x);
+/** JSON with object keys sorted at every depth, so the same data in any key order compares equal. Numbers are kept exactly. */
+export const stableJson = (v: unknown): string => JSON.stringify(v, (_k, x) => sortKeys(x));
+/** stableJson with numbers rounded to the cent: the grader's view of equal data. */
+export const canonical = (v: unknown): string => JSON.stringify(v, (_k, x) => (typeof x === "number" ? normNumber(x) : sortKeys(x)));
 
 /** Every string and number inside a JSON value, in order. */
 export const leaves = (v: Json | undefined): (string | number)[] => typeof v === "string" || typeof v === "number" ? [v]

@@ -204,7 +204,7 @@ The four things you write, in detail, then the session and the stores. Extension
 
 ### Tools
 
-Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `name`, a `description` and a zod `input`, which is validated before `run` and types `run`, `records`, `bind`, `fromUser` and `confirm.by`, so a misspelled field is a compile error.
+Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `name`, a `description` and a zod `input`, which is validated before `run` and types `run`, `bind`, `fromUser` and `confirm.by`, so a misspelled field is a compile error. `records` and `outcome` are typed from `run`'s return value when `run` is declared before them.
 
 - **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data (email, phone, address, postcode, dob, ssn, card number, iban) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
 - **`bind`**: fills input fields from session facts, e.g. `{ accountId: "facts.accountId" }`.

@@ -26,8 +26,9 @@ const STATUS_AFTER = /^\s+(?:staying|to stay|on your (?:current|existing)|with y
 // "Done" wording: a past-participle verb after "has/have been" or "I've", or one of the phrases. One list, so the
 // test tables and the regex can't drift apart.
 export const DONE_VERBS = ["processed", "cancelled", "canceled", "refunded", "switched", "changed", "updated", "applied", "added", "completed"];
+const FIRST_PERSON_VERBS = DONE_VERBS.filter((v) => v !== "completed");            // "I've completed my review" describes the agent's own work, not a write
 const DONE_PHRASES = ["you're all set", "you are all set", "it's done", "it is done", "that's done", "switched", "successfully", "went through", "has gone through", "have gone through"];
-const DONE = new RegExp(String.raw`\b(?:(?:has|have) been (?:${DONE_VERBS.join("|")})|i(?:'ve| have) (?:${DONE_VERBS.join("|")})|${DONE_PHRASES.map(escapeRegExp).join("|")})\b`, "gi");
+const DONE = new RegExp(String.raw`\b(?:(?:has|have) been (?:${DONE_VERBS.join("|")})|i(?:'ve| have) (?:${FIRST_PERSON_VERBS.join("|")})|${DONE_PHRASES.map(escapeRegExp).join("|")})\b`, "gi");
 
 const pad = (n: string | number) => String(n).padStart(2, "0");
 const md = (m: number, d: string | number) => `${pad(m)}-${pad(d)}`;

@@ -1,10 +1,11 @@
 // Personal-data patterns, shared by tool visibility and trace masking. Best-effort by design:
 // the real guarantee is that the model only sees fields a tool makes visible.
 
-const PERSONAL_NAME = /e-?mail|phone|mobile|address|street|postcode|postal|zip|dob|birth|ssn|social_?security|card_?(number|num|no)|iban|pin\b|password|passcode|secret|token|passport|tax_?id|national_?id|licen[cs]e|account_?(number|num|no)|routing/i;
+// Anchored where a prefix would catch unrelated fields: "token" not "tokens"/"maxTokens", "pin" not "pinned"/"shipping", "licence number" not "licenses".
+const PERSONAL_NAME = /e-?mail|phone|mobile|address|street|postcode|postal|zip|dob|birth|ssn|social_?security|card_?(number|num|no)|iban|(^|_)pin(_?code)?$|password|passcode|secret|token$|passport|tax_?id|national_?id|licen[cs]e_?(number|num|no)|account_?(number|num|no)$|routing/i;
 
-/** True when a field's name says it holds personal data or a secret (e.g. email, homeAddress, dob, cardNumber, pin, apiToken). */
-export const isPersonalName = (key: string) => PERSONAL_NAME.test(key);
+/** True when a field's name says it holds personal data or a secret (e.g. email, homeAddress, dob, cardNumber, userPin, apiToken). camelCase is read as words. */
+export const isPersonalName = (key: string) => PERSONAL_NAME.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 
 const luhn = (d: string) => [...d].reverse().reduce((s, c, i) => s + (i % 2 ? [0, 2, 4, 6, 8, 1, 3, 5, 7, 9][+c] : +c), 0) % 10 === 0;
 

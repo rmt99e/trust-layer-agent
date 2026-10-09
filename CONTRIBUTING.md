@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent has a 1,600-line cap on logic in `src/` (checks, the agent loop, two model adapters, the store contract with its Postgres adapter, and the simulator), and it is at 1,580. A change that adds a feature needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent has a 1,600-line cap on logic in `src/` (checks, the agent loop, two model adapters, the store contract with its Postgres adapter, and the simulator), and it is at 1,586. A change that adds a feature needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
@@ -19,7 +19,7 @@ npm run typecheck   # the tests and vitest config under the strict compiler
 
 ## What CI runs
 
-Every push and pull request runs `npm ci`, `npm test` and `npm run build` on Node 20 and 22 ([.github/workflows/ci.yml](.github/workflows/ci.yml)). CI uses no secrets and makes no model calls.
+Every push and pull request runs `npm ci`, `npm test`, `npm run typecheck` (the tests under the strict compiler), `npm run build` and `npm pack --dry-run` on Node 20, 22 and 24 ([.github/workflows/ci.yml](.github/workflows/ci.yml)). CI uses no secrets and makes no model calls.
 
 ## Simulations (paid, optional, never in CI)
 

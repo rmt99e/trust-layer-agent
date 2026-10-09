@@ -20,7 +20,7 @@ const ident = (name: string) => {
 /** Sessions and trace lines in two tables, through the app's own query function. Run `schema` once to create them. */
 export function postgres(o: PostgresOptions): { store: SessionStore; trace: TraceSink; schema: string } {
   const S = ident(o.sessions ?? "tla_sessions"), T = ident(o.traces ?? "tla_traces");
-  const report = o.onError ?? ((e: unknown) => console.warn(`⚠️  postgres trace: ${e instanceof Error ? e.message : String(e)}`));
+  const report = o.onError ?? ((e: unknown) => console.warn(`⚠️  postgres trace: ${String((e as { message?: unknown } | null)?.message ?? e)}`));
   const warn = (e: unknown) => { try { report(e); } catch { /* a throwing handler never escapes the sink */ } };
   const store: SessionStore = {
     async load(id) { const x = (await o.query(`SELECT session FROM ${S} WHERE id = $1`, [id])).rows[0]?.session; return typeof x === "string" ? JSON.parse(x) : x; },

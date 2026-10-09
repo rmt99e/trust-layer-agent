@@ -111,7 +111,11 @@ export async function main([cmd, ...args]: string[]) {
   const flag = (n: string, d?: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
   try { process.loadEnvFile(); } catch { /* no .env: keys come from the environment */ }
   if (cmd !== "test" && cmd !== "snapshot") throw new Error("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--against v1] [--name v1]");
-  const num = (n: string, d: string) => { const v = Number(flag(n, d)); if (!Number.isFinite(v) || v < 0) throw new Error(`--${n} needs a number (got "${flag(n, d)}")`); return v; };
+  const num = (n: string, d: string, max = Infinity) => {
+    const raw = flag(n, d), v = Number(raw);
+    if (raw === undefined || !Number.isFinite(v) || v < 0 || v > max) throw new Error(`--${n} needs a number${max < Infinity ? ` from 0 to ${max}` : ""} (got ${raw === undefined ? "nothing" : `"${raw}"`})`);
+    return v;
+  };
   const suiteFile = join(resolve(flag("suite", ".")!), "suite.js");
   const suite: Suite = (await import(pathToFileURL(suiteFile).href)).default;
   if (flag("agent-model")) suite.agentModel = flag("agent-model")!;
@@ -128,8 +132,8 @@ export async function main([cmd, ...args]: string[]) {
   }
 
   const snap = pickSnapshot("snapshots", flag("against"));          // resolve first: a bad name must fail before any model call
-  const k = num("k", "4"), maxCost = num("max-cost", "10"), minPass = num("min-pass", "1"), only = flag("tasks")?.split(",");
-  if (!Number.isInteger(k) || k < 1) throw new Error(`--k needs a whole number of trials (got ${k})`);
+  const k = num("k", "4"), maxCost = num("max-cost", "10"), minPass = num("min-pass", "1", 1), only = flag("tasks")?.split(",");
+  if (!Number.isInteger(k) || k < 1) throw new Error(`--k needs a whole number of trials, at least 1 (got ${k})`);
   const n = loadTasks(suite.tasks).filter((t) => !only || only.includes(t.id)).length, prev = newest("results");
   const perTrial = estimatePerTrial(prev ? json(prev).trials : [], suite);
   console.log(`Estimated cost: ~$${(n * k * perTrial).toFixed(2)} (${n} tasks × ${k} trials × ~$${perTrial.toFixed(3)}); stops at $${maxCost}.`);

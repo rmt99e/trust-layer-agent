@@ -28,6 +28,7 @@ const req: ModelRequest = {
 describe("http: timeouts and retry waits", () => {
   it("bounds every request with an abort signal and caps the retry wait at 30 s", async () => {
     vi.useFakeTimers();
+    try {
     const slow = new Response(JSON.stringify({ error: { message: "busy" } }), { status: 429, headers: { "retry-after": "3600" } });
     const fn = mockFetch(slow, reply(200, { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" }));
     const p = anthropic({ model: "m", apiKey: "k", timeoutMs: 5000 }).generate(req);
@@ -36,7 +37,7 @@ describe("http: timeouts and retry waits", () => {
     expect(fn).toHaveBeenCalledTimes(2);
     const [, init] = fn.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.signal).toBeInstanceOf(AbortSignal);
-    vi.useRealTimers();
+    } finally { vi.useRealTimers(); }
   });
   it("reports a timeout as a ModelError naming the limit", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { const e = new Error("aborted"); e.name = "TimeoutError"; throw e; }));

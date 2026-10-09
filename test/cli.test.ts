@@ -5,10 +5,9 @@ import { join } from "node:path";
 import { compare, configOf, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
 import { read, write, z } from "../src/index.js";
 import type { Suite } from "../src/sim/simulator.js";
-import { asserted, claimsDone, insideRefusal, says } from "../src/sim/grade.js";
+import { asserted, claimsDone, insideRefusal, MONEY, PERCENT, says } from "../src/sim/grade.js";
 import type { Trial } from "../src/sim/simulator.js";
 
-const MONEY = /[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b/gi, PERCENT = /(\d+(?:\.\d+)?)\s*(?:%|percent\b)/gi;
 const trial = (task: string, status: Trial["status"], friction = 0, cost = 0.1): Trial =>
   ({ task, trial: 1, status, friction, cost, turns: 1, transcript: [], events: [] });
 

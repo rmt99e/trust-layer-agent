@@ -1,5 +1,5 @@
 // Edge-of-pipeline behaviour: what happens when a tool, the model or the stored data misbehaves.
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -63,13 +63,15 @@ describe("a model whose reply is incomplete", () => {
   it.each([
     ["cut off by the output limit", { text: "Your order has", stop: "max_tokens" as const }, "The draft was cut off by the model's output limit. Write a shorter reply."],
     ["empty", { text: "  \n", stop: "end" as const }, "The draft was empty. Write a reply."],
-  ])("a draft %s is refused and the model writes again", async (_n, step, reason) => {
+  ])("a draft %s is refused and the model writes again, without the bad draft being replayed", async (_n, step, reason) => {
     lines.length = 0;
     const model = raw([step, "Your order has shipped."]);
     const r = await agent(model, [order]).respond(session(), "where is it?");
     expect(r.reply).toBe("Your order has shipped.");
     expect(lines.find((l) => l.type === "check" && l.event === "reply")).toMatchObject({ check: "complete_reply", result: { block: reason } });
-    expect(model.requests[1].messages.at(-1)!.content).toContain(`That draft was not sent. ${reason}`);
+    const msgs = model.requests[1].messages;
+    expect(msgs.at(-1)!.content).toContain(`That draft was not sent. ${reason}`);
+    expect(msgs.at(-2)!.role).toBe("user");                                                 // the cut-off text itself is not sent back as an assistant turn
   });
   it("a refusal hands off, and so does exceeding maxToolCalls", async () => {
     const r = await agent(raw([{ text: "", stop: "refusal" }]), [order]).respond(session(), "hi");
@@ -102,8 +104,11 @@ describe("stored data the library didn't write", () => {
     expect(() => loadSession(bad)).toThrow('session id "../escaped" isn\'t one this library minted');
     const dir = mkdtempSync(join(tmpdir(), "tla-sink-")), s = jsonl({ dir });
     s.write({ type: "turn", sessionId: "../escaped", turn: 1 });
-    expect(() => s.forget!("../escaped")).not.toThrow();
-    expect(require("node:fs").existsSync(join(dir, "..", "escaped.jsonl"))).toBe(false);
+    expect(existsSync(join(dir, "escaped.jsonl"))).toBe(true);
+    expect(existsSync(join(dir, "..", "escaped.jsonl"))).toBe(false);
+    s.forget!("../escaped");
+    expect(existsSync(join(dir, "escaped.jsonl"))).toBe(false);
+    expect(() => agent(scripted([]), []).forget(bad)).toThrow('session id "../escaped" isn\'t one this library minted');
   });
   it("the model can't smuggle a bound field: it never reaches the checks or an approval record", async () => {
     const account = read({ name: "get_account", description: "Account.", input: z.object({ accountId: z.string() }), bind: { accountId: "facts.accountId" }, run: ({ accountId }) => ({ accountId }) });
@@ -129,13 +134,21 @@ describe("approvals meet commitments and history", () => {
     const t2 = await a.respond((await a.respond(session(), "switch me")).session, "yes");
     return { a, t2 };
   };
-  it("approve() refuses a quote that expired while parked, as a commitment_unusable failure", async () => {
+  it("approve() refuses a quote that expired while parked, as a commitment_unusable failure that isn't a tool failure", async () => {
     let clock = new Date("2026-10-03T12:00:00Z");
     const { a, t2 } = await parkIt(() => clock);
     clock = new Date("2026-10-03T14:00:00Z");
     const { result, session: after } = await a.approve(t2.session, "p_1");
     expect(result).toMatchObject({ ok: false, error: { code: "commitment_unusable", message: 'quote "q_1" expired before it was approved.' } });
-    expect(after.commitments[0].status).toBe("open");
+    expect([after.commitments[0].status, after.failures]).toEqual(["open", 0]);
+  });
+  it("the same call in a different key order is parked once; a different amount is parked again", async () => {
+    const pay = write({ name: "pay", description: "Pay.", input: z.object({ to: z.object({ id: z.string(), bank: z.string() }), amount: z.number() }), confirm: false, run: () => ({ ok: true }) });
+    const park = check("park", (e) => (e.kind === "action" ? approve("All payments.") : allow()));
+    const a = agent(scripted(["Shall I?", { calls: [
+      { call: "pay", input: { to: { id: "x", bank: "b" }, amount: 10.001 } }, { call: "pay", input: { amount: 10.001, to: { bank: "b", id: "x" } } }, { call: "pay", input: { to: { id: "x", bank: "b" }, amount: 10.004 } }] }, "Requested."]), [pay], { checks: [park] });
+    const t = await a.respond((await a.respond(session(), "pay x")).session, "yes");
+    expect(t.session.approvals.map((p) => p.input.amount)).toEqual([10.001, 10.004]);
   });
   it("after approve(), the model sees the result after the reply that said 'requested', not before it", async () => {
     const { a, t2 } = await parkIt(() => new Date("2026-10-03T12:00:00Z"));
@@ -156,8 +169,13 @@ describe("claims: ids and worded prices", () => {
     const k = (id: string) => ({ type: "quote", id, by: "q", values: { monthlyPrice: 99 }, turn: 1, status: "open" as const });
     expect(markShown([k("q_1"), k("q_10")], "Your quote is q_10.", 1).map((x) => x.shownTurn)).toEqual([undefined, 1]);
   });
-  it('"29 a month" is a price claim', () => {
+  it('"29 a month" is a price claim; so, as an accepted false positive, is "2 per day"', () => {
     expect(extractClaims("Plus is 29 a month, or 290 per year.").money).toEqual([29, 290]);
+    expect(extractClaims("You can change plans 2 per day.").money).toEqual([2]);          // tabled: a rate, not a price, but blocked unless a tool returned 2
+  });
+  it("first-person done wording never included 'completed', and still doesn't", () => {
+    expect(extractClaims("I've completed my review of your account.").done).toEqual([]);
+    expect(extractClaims("Your request has been completed.").done).toEqual(["has been completed"]);
   });
 });
 
@@ -166,7 +184,9 @@ describe("the CLI refuses bad numbers and unknown commands", () => {
     const dir = mkdtempSync(join(tmpdir(), "tla-cli-"));
     writeFileSync(join(dir, "suite.js"), "export default {};");
     await expect(main(["test", "--suite", dir, "--k", "abc"])).rejects.toThrow('--k needs a number (got "abc")');
-    await expect(main(["test", "--suite", dir, "--k", "0"])).rejects.toThrow("--k needs a whole number of trials (got 0)");
+    await expect(main(["test", "--suite", dir, "--k"])).rejects.toThrow("--k needs a number (got nothing)");
+    await expect(main(["test", "--suite", dir, "--k", "0"])).rejects.toThrow("--k needs a whole number of trials, at least 1 (got 0)");
+    await expect(main(["test", "--suite", dir, "--min-pass", "2"])).rejects.toThrow('--min-pass needs a number from 0 to 1 (got "2")');
     await expect(main(["bogus"])).rejects.toThrow(/^usage: trust-layer-agent test\|snapshot/);
   });
 });

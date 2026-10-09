@@ -8,7 +8,7 @@ import { resolveModel } from "./models/resolve.js";
 import type { Model, ModelMessage, ModelResponse } from "./models/types.js";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { canonical, createSession, currentTurn, FACTS_PREFIX, forget, HANDOFF_TOOL, loadSession, nextResultId,
+import { createSession, currentTurn, FACTS_PREFIX, forget, HANDOFF_TOOL, loadSession, nextResultId, SESSION_ID, stableJson,
   type Approval, type ForgottenSession, type Json, type Session, type ToolResult } from "./session.js";
 import { runTool, toolSpec, unboundInput, unboundSchema, type Tool } from "./tools.js";
 import { jsonl, maskTrace, type TraceSink } from "./trace.js";
@@ -86,13 +86,14 @@ export class Agent {
     if (warning) warn(`⚠️  ${warning}`);
     const unlisted = opts.tools.filter((t) => !t.visible).map((t) => t.name);
     if (unlisted.length) warn(`ℹ️  No visible list on ${unlisted.join(", ")}: ${opts.strictVisibility
-      ? "strictVisibility hides all their fields" : "fields named like personal data (email, phone, address, dob, ssn, card) are hidden; personal data in other text is masked"}.`);
+      ? "strictVisibility hides all their fields" : "fields named like personal data or secrets (email, phone, address, dob, ssn, card, pin, password, token) are hidden; personal data in other text is masked"}.`);
   }
 
   respond(session: Session | null, message: string): Promise<Reply> { return this.turn(session, message); }
 
   /** Forget a session: returns the tombstone to store, and deletes its trace when the sink supports it. */
   forget(session: Session): ForgottenSession {
+    if (!SESSION_ID.test(String(session.id))) throw new TypeError(`session id "${session.id}" isn't one this library minted`);
     if (this.trace?.forget) this.trace.forget(session.id);
     else if (this.trace && !Agent.warnedForget) {
       Agent.warnedForget = true;
@@ -129,11 +130,11 @@ export class Agent {
     if (!tool && !declined) throw new Error(`tool "${a.tool}" is no longer one of this agent's tools; decline the approval instead`);
     const turn = currentTurn(s), status = declined ? "declined" as const : "approved" as const;
     // Approval doesn't re-run the checks, but a confirmed write still needs its commitment to be usable now.
-    const stale = !declined && tool?.confirm ? this.staleCommitment(s, tool, a.input) : undefined;
+    const stale = !declined && tool?.confirm && this.opts.builtins?.yes_after_quote !== false ? this.staleCommitment(s, tool, a.input) : undefined;
     const ran: Ran = declined ? this.failedResult(s, a, "declined", declined) : stale ? this.failedResult(s, a, "commitment_unusable", stale)
       : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
     s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
-    if (!declined) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };                      // a run is a run; a decline isn't a tool failure
+    if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
     s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id } : x) };
     this.log(s, turn, "approval", { approval: id, decision: status, ...this.toolLine(ran.result) });
     return { session: s, result: ran.result };
@@ -253,7 +254,7 @@ export class Agent {
             continue;
           }
           if ("approve" in v.result) {                    // parked for a person; the same call isn't parked twice
-            const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && canonical(a.input) === canonical(input));
+            const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && stableJson(a.input) === stableJson(input));
             const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, turn, reason: v.result.approve, by: v.by!, status: "pending" };
             if (!same) {
               s = { ...s, approvals: [...s.approvals, a] }; parked.push(a);
@@ -287,8 +288,8 @@ export class Agent {
           s = { ...s, failures: s.failures + 1 };
           return handoffNow(`Reply still blocked after ${this.opts.maxRetries} retries: ${v.result.block}`, v.by!);
         }
-        msgs.push({ role: "assistant", content: res.text, raw: res.raw },
-          { role: "user", content: note(`That draft was not sent. ${escapeTags(v.result.block)} Write a new reply. ${NO_MECHANICS}`) });
+        if (!cut) msgs.push({ role: "assistant", content: res.text, raw: res.raw });                     // an empty or cut-off draft isn't worth replaying
+        msgs.push({ role: "user", content: note(`That draft was not sent. ${escapeTags(v.result.block)} Write a new reply. ${NO_MECHANICS}`) });
         continue;
       }
       if ("rewrite" in v.result) emit("check", { event: "reply", check: v.by, result: v.result, draft: res.text });

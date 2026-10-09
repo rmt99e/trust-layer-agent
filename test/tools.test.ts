@@ -59,6 +59,9 @@ describe("visibility", () => {
     expect(value).toEqual({ id: "acc_1", plan: { name: "Basic", price: 9 }, note: "reach me at [email]",
       invoices: [{ id: "inv_1", amount: 9 }] });
     expect(hidden.sort()).toEqual(["dob", "email", "homeAddress", "invoices[].cardNumber", "phone", "ssn"]);
+    const secrets = visibleOutput({ pin: "4417", userPin: "1", pin_code: "2", apiToken: "t", tokens: 3, maxTokens: 4, password: "p", passport: "x", taxId: "9", licenceNumber: "L", licenses: 5, accountNumber: "1", accountNotes: "n", routing: "r", shipping: "s", pinned: true });
+    expect(secrets.hidden.sort()).toEqual(["accountNumber", "apiToken", "licenceNumber", "passport", "password", "pin", "pin_code", "routing", "taxId", "userPin"]);
+    expect(secrets.value).toEqual({ tokens: 3, maxTokens: 4, licenses: 5, accountNotes: "n", shipping: "s", pinned: true });
   });
 
   it("masks phone, card, ssn and address inside free text, keeping dates and prices", () => {
