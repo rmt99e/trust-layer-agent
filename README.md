@@ -9,15 +9,15 @@
 
 ## What it is
 
-### A layer between the model and your tools
+### It sits between the model and your tools
 
 trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things. The model talks to the user and proposes tool calls; your tools read and change records. The library sits between the two and sees every call and every reply before either goes out.
 
-### Two decisions, made in code
+### Code makes two decisions
 
 For each tool call, whether it may run. For each draft reply, whether it may be sent. Code answers both from the session, your tool definitions and your own instructions. A refused call is answered with the reason. A refused draft goes back to the model with the reason and the model writes again, up to `maxRetries` times (default 2); the next refusal hands the turn to a person.
 
-### One session, owned by your app
+### Your app owns the session
 
 The record the decisions read is one JSON object, the session: trusted facts, quotes with when each was shown and whether it was used, every tool result, the messages, actions parked for a person. Your app stores it between turns. A store contract and a Postgres adapter are included; a Map is the reference.
 
@@ -47,17 +47,17 @@ Prices, percentages, dates and "done" wording in a draft must appear in a succes
 
 > `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
 
-### Inputs the user actually gave
+### Inputs come from the user
 
 `bind` fills a tool field from a session fact and overwrites whatever the model sent, so an account id is never the model's to choose. `fromUser` requires a field's values to appear in the user's own messages or a fact, so a search runs on what was asked for. See [Tools](#tools).
 
 > `The user never said "office seating" (query in search_catalog). Use only values the user gave, or ask them.`
 
-### Decisions that belong to a person
+### A person can take the decision
 
 A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. Your app shows the parked action to a person and calls `agent.approve()` or `agent.decline()`; the result lands in the session for the next turn. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it lands. See [Checks](#checks).
 
-### Messages your app writes
+### Your own messages are checked too
 
 `agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. It makes no model call and leaves the session unchanged. See [Checks](#checks).
 
@@ -286,7 +286,7 @@ guardrails:
 
 The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `require_fact` and `handoff_when` (on a tool result, a tool error code, user phrases or a fact). `handoff_when` is evaluated as soon as a message arrives, so it hands off without a model call. A guardrail can also name a check, which fails loading if that check is disabled. Files are validated when the Agent is built, and errors name the file and line. All loaded journeys are active at once; there is no router.
 
-### Session, respond, chat and forget
+### The session and the agent verbs
 
 The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases every turn and on every approval decision, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
@@ -316,7 +316,7 @@ A second call that loses the race rejects with `StaleSession`; retry it from a f
 
 Two fictional apps, one journey each. Both run the full library: tools with bound ids and field visibility, journeys with guardrails, every built-in check, a simulation suite the grader can score.
 
-### Subscriptions: customer support
+### A support desk for a subscription app
 
 [examples/subscriptions/](examples/subscriptions/) is a fictional subscription app with plans, usage credits, invoices and seeded customers. The agent verifies the customer, reviews usage, recommends a plan, quotes it, and changes it only after a yes.
 
@@ -333,7 +333,7 @@ CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subs
 
 `chat.js` takes `CHANGE_PLAN_OUTCOME=fail|timeout|pending` and `AGENT_MODEL=sonnet|haiku`; see [examples/README.md](examples/README.md). The same data, tools and policy back the simulator suite in [sim/](examples/subscriptions/sim/), which has 22 tasks. `TRUST_LAYER_CHECKS=off` runs the example agent with every built-in check off and journey guardrails removed, keeping all prompt text.
 
-### Procurement: internal operations with approvals
+### A purchasing desk with approvals
 
 [examples/procurement/](examples/procurement/) is a company's purchasing desk. Staff identify themselves and their team, search a catalog, get a quote and place orders against the team's quarterly budget. It is the same shape as support with three differences the library handles for it:
 
