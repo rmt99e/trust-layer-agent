@@ -15,5 +15,7 @@ export { openaiCompatible } from "./models/openai-compatible.js";
 export type { AnthropicOptions } from "./models/anthropic.js";
 export type { OpenAICompatibleOptions } from "./models/openai-compatible.js";
 export type { Model, ModelRequest, ModelResponse, ModelMessage, ToolSpec, ToolCall } from "./models/types.js";
+export { memoryStore, withStore, StaleSession } from "./store.js";
+export type { SessionStore } from "./store.js";
 export { jsonl, maskTrace } from "./trace.js";
 export type { TraceSink } from "./trace.js";

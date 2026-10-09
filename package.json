@@ -30,6 +30,10 @@
     "./sim": {
       "types": "./dist/sim/simulator.d.ts",
       "import": "./dist/sim/simulator.js"
+    },
+    "./postgres": {
+      "types": "./dist/stores/postgres.d.ts",
+      "import": "./dist/stores/postgres.js"
     }
   },
   "bin": {
