@@ -1,6 +1,7 @@
 // A scripted requester through respond(), then the two things a chat can't show: a person approving a parked
 // order, and the app's own purchase-order email going through review() before it is sent.
 //   node --env-file=.env examples/procurement/demo.js
+import { teachingView } from "trust-layer-agent";
 import { makeAgent } from "./agent.js";
 import { createStore, renderPurchaseOrder, SEED } from "./store.js";
 
@@ -10,14 +11,7 @@ const SCRIPT = [
   "yes",
 ];
 
-const show = { write(l) {
-  if (l.type === "tool") console.log(`   · ${l.tool}${l.reconcile ? " (auto re-check)" : ""} → ${l.ok ? "ok" : `failed (${l.error?.code}: ${l.error?.message})`}`);
-  if (l.type === "check" && l.event === "action") console.log(`   ${"approve" in l.result ? "⏸ parked " : "✗ blocked "}${l.tool}  [${l.check}]  ${l.result.block ?? l.result.approve}`);
-  if (l.type === "check" && l.event === "reply" && l.result.block)
-    console.log(`   ✗ draft not sent  [${l.check}]\n     draft:  ${JSON.stringify(l.draft)}\n     reason: ${l.result.block}`);
-  if (l.type === "approval") console.log(`   ✓ ${l.decision} ${l.tool} → ${l.ok ? "ok" : `failed (${l.error?.code})`}`);
-  if (l.type === "review") console.log(`   review → ${"block" in l.result ? `blocked: ${l.result.block}` : "ok"}`);
-} };
+const show = { write: teachingView };
 
 console.log("=== procurement demo ===\n");
 const store = createStore(), agent = makeAgent({ store, trace: show });

@@ -1,22 +1,25 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent has a 1,500-line cap on logic in `src/` (checks, the agent loop, two model adapters, the store contract with its Postgres adapter, and the simulator), and it is at 1,490. A change that adds a feature needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent has a 1,600-line cap on logic in `src/` (checks, the agent loop, two model adapters, the store contract with its Postgres adapter, and the simulator), and it is at 1,586. A change that adds a feature needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
 ## Setup
 
-Node 20 or later. Fork the repository on GitHub and clone your fork, then:
+Node 20.12 or later. Fork the repository on GitHub and clone your fork, then:
 
 ```sh
 npm install
 npm run build    # tsc -> dist/ (needed before the CLI and the examples)
 npm test         # vitest unit tests: no network, no API keys
+npm run typecheck   # the tests and vitest config under the strict compiler
 ```
+
+`npm install` runs the `prepare` script, which builds `dist/`. That is what lets `npm install github:…` ship compiled JavaScript, and it means a compile error in `src/` makes a fresh install fail; run `npm run build` to see the error.
 
 ## What CI runs
 
-Every push and pull request runs `npm ci`, `npm test` and `npm run build` on Node 20 and 22 ([.github/workflows/ci.yml](.github/workflows/ci.yml)). CI uses no secrets and makes no model calls.
+Every push and pull request runs `npm ci`, `npm test`, `npm run typecheck` (the tests under the strict compiler), `npm run build` and `npm pack --dry-run` on Node 20, 22 and 24 ([.github/workflows/ci.yml](.github/workflows/ci.yml)). CI uses no secrets and makes no model calls.
 
 ## Simulations (paid, optional, never in CI)
 
@@ -45,7 +48,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - **No prices or business values in `src/`.** They come from tools.
 - **Vendor-neutral names.** No real company or product names in code, examples or sample data.
 - **Extension only through tools, checks, journeys, model adapters and session stores.** If a use case needs a core change, the interface is wrong; open an issue first. Things that don't fit go in docs/roadmap.md.
-- **Logic-line cap.** `src/` stays under 1,500 non-blank, non-comment lines. Count with:
+- **Logic-line cap.** `src/` stays under 1,600 non-blank, non-comment lines. Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Runtime dependencies stay `zod` and `yaml` only. Adapters use `fetch`, no provider SDKs.
 
@@ -56,7 +59,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - [ ] Behavior changes include a `test --against <snapshot>` diff with trial counts (or say a maintainer should run it).
 - [ ] SPEC.md updated if behavior in the spec changed.
 - [ ] A `CHANGELOG.md` entry under `[Unreleased]`.
-- [ ] Logic-line count still under 1,500.
+- [ ] Logic-line count still under 1,600.
 - [ ] No secrets, personal data or real company names in code, fixtures or traces.
 
 ## Where docs live

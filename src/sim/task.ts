@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fromZod, listFiles, readYaml, where } from "../journeys.js";
+import { fromZod, listFiles, readYaml, where } from "../files.js";
 
 const str = z.string().min(1);
 const record = z.record(z.string(), z.any());

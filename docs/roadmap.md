@@ -9,3 +9,7 @@ What is planned, in rough order. Items move here from issues and pull-request di
 4. More model adapters.
 5. Optional small-model reply review, off by default, on top of the deterministic checks.
 6. A cross-check on an external benchmark.
+
+## Pre-1.0 naming decision
+
+- The check result `approve(reason)` means "this needs a person's approval", while `agent.approve(session, id)` means "a person approved it". Same word, two directions. Rename the check helper (candidates: `needsApproval`, `park`) before the first npm release, since the wire key `approve` on `CheckResult` and in trace lines would change with it.

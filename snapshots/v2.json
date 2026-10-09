@@ -4,7 +4,7 @@
   "k": 4,
   "config": {
     "agentModel": "anthropic:claude-sonnet-5-5",
-    "customerModel": "anthropic:claude-sonnet-5-5",
+    "userModel": "anthropic:claude-sonnet-5-5",
     "instructions": "46906eba07f2",
     "journeys": "6e56ec6ac799",
     "knowledge": "9d585b63c16d",
@@ -180,6 +180,5 @@
     }
   },
   "overall": 1,
-  "cost": 4.116054000000008,
-  "results": "results/2026-10-03T02-48-14-737Z.json"
+  "cost": 4.116054000000008
 }

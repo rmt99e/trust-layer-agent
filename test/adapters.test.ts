@@ -25,6 +25,33 @@ const req: ModelRequest = {
   ],
 };
 
+describe("http: timeouts and retry waits", () => {
+  it("bounds every request with an abort signal and caps the retry wait at 30 s", async () => {
+    vi.useFakeTimers();
+    try {
+    const slow = new Response(JSON.stringify({ error: { message: "busy" } }), { status: 429, headers: { "retry-after": "3600" } });
+    const fn = mockFetch(slow, reply(200, { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" }));
+    const p = anthropic({ model: "m", apiKey: "k", timeoutMs: 5000 }).generate(req);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await p).text).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(2);
+    const [, init] = fn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    } finally { vi.useRealTimers(); }
+  });
+  it("reports a timeout as a ModelError naming the limit", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { const e = new Error("aborted"); e.name = "TimeoutError"; throw e; }));
+    await expect(openaiCompatible({ model: "m", apiKey: "k", timeoutMs: 10, retryDelayMs: 0 }).generate(req)).rejects.toThrow("openai-compatible: no response within 10 ms");
+  });
+});
+
+describe("openai-compatible content parts", () => {
+  it("joins the text parts when content is an array", async () => {
+    mockFetch(reply(200, { choices: [{ message: { content: [{ type: "text", text: "Hel" }, { type: "text", text: "lo" }, { type: "image" }] }, finish_reason: "stop" }] }));
+    expect((await openaiCompatible({ model: "m", apiKey: "k" }).generate(req)).text).toBe("Hello");
+  });
+});
+
 describe("anthropic adapter", () => {
   it("sends the Messages API shape with no sampling params, and merges tool results into one user turn", async () => {
     const fn = mockFetch(reply(200, { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 2 } }));

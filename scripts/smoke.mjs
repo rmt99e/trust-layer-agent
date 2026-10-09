@@ -7,10 +7,7 @@ const getPlan = read({
   visible: ["plan", "monthlyPrice", "renewsOn"],
   run: () => ({ plan: "Basic", monthlyPrice: 9, renewsOn: "2026-11-01" }),
 });
-const show = { write: (l) => {
-  if (l.type === "tool") console.log(`   · tool ${l.tool}(${JSON.stringify(l.input)}) → ${l.ok ? JSON.stringify(l.output) : l.error?.code}`);
-  if (l.type === "check") console.log(`   ✗ ${l.event} blocked [${l.check}]: ${l.result.block ?? l.result.rewrite}${l.draft ? `\n     draft: ${JSON.stringify(l.draft)}` : ""}`);
-} };
+const show = { write: teachingView };
 
 async function ollamaModel() {
   try {

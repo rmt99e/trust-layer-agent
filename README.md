@@ -128,12 +128,12 @@ This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
 
 ## What it enforces
 
-The first seven items are the built-in checks. All are on by default; turn one off with `builtins: { name: false }`.
+The first six items are the built-in checks, on by default; turn one off with `builtins: { name: false }`. The seventh, `untrusted_text_is_data`, is structural and always on.
 
 - **verified_first**: blocks any tool not marked `beforeVerification` until `facts.verified` is true. It's off, with a startup warning, when no tool declares `verifies: true`.
 - **yes_after_quote**: a write runs only if the user's latest message is a clear yes (an affirmative phrase with no negation, hedge or question). For a write with `confirm`, the named quote must also exist this session, be unused and unexpired, and have been shown in an earlier reply; after that, "go ahead", "I'll take it" or "can you just switch me?" also counts, and questions about cost don't.
 - **no_unconfirmed_claims**: prices, percentages, dates, relative dates ("tomorrow") and "done" wording in a draft reply must appear in a visible tool result or commitment from this session, or in operator text (instructions, journeys, knowledge files). User text never counts. Values match by unit, so a 10% discount doesn't confirm "$10". Write outcomes are checked both ways:
-  - "Done" wording ("has been switched", "went through") needs a successful write, and is blocked while any write's latest call failed or is pending. A clause that negates it ("nothing was changed") or reports status ("you're all set staying on Starter") isn't a done claim; a bare "you're all set" is blocked only after a failed or pending write.
+  - "Done" wording ("has been switched", "went through") needs a successful write, and is blocked while any write's latest call failed or is pending. A clause that negates it ("nothing was changed") or reports status ("you're all set staying on Starter") isn't a done claim; a bare "you're all set" is blocked only while a write is failed, pending, unknown or awaiting approval.
   - Failure wording ("didn't go through", "failed", "nothing has been changed") is blocked after a write succeeded, unless some write's latest call failed.
   - While a write's outcome is unknown (a timeout, say), every draft is blocked until that write's `reconcileWith` read succeeds. When code already has the read's inputs (bound or in the failed call), the agent runs the read itself before the model replies. A write with no `reconcileWith` can't be settled, and the block tells the model to hand off.
   - A number only the user said may appear inside the agent's own refusal that governs it ("I can't offer Plus at $10"). A comparative ("lower than", "best", "at least") disqualifies the refusal.
@@ -204,9 +204,9 @@ The four things you write, in detail, then the session and the stores. Extension
 
 ### Tools
 
-Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `name`, a `description` and a zod `input`, which is validated before `run`.
+Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `name`, a `description` and a zod `input`, which is validated before `run` and types `run`, `bind`, `fromUser` and `confirm.by`, so a misspelled field is a compile error. `records` and `outcome` are typed from `run`'s return value when `run` is declared before them.
 
-- **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data (email, phone, address, postcode, dob, ssn, card number, iban) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
+- **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data or secrets (email, phone, address, postcode, dob, ssn, card number, iban, pin, password, token, passport, tax id, driver licence, account number) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
 - **`bind`**: fills input fields from session facts, e.g. `{ accountId: "facts.accountId" }`.
 - **`records`**: what a successful call writes to the session: `facts` (e.g. `verified: true`) and `commitments` (e.g. a quote with its prices and expiry). A call that throws records nothing.
 - **`beforeVerification`** lets a tool run before verification; **`verifies`** marks the tool whose records can set `facts.verified`.
@@ -288,7 +288,7 @@ The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `req
 
 ### The session and the agent verbs
 
-The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases every turn and on every approval decision, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
+The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases on every turn that produces a reply and on every approval decision, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
 `agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
 
@@ -392,6 +392,9 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Claims about fit or eligibility aren't checked (see [docs/results.md](docs/results.md)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
 - `no_invented_inputs` matches whole words, case-insensitively. A user who typed "Springfeld" can be searched for as "Springfeld", not "Springfield".
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
+- Consent is per turn: one yes licenses every unconfirmed write the model calls in that turn. Tie a write to what was proposed with `confirm`, or with a check of your own.
+- The whole conversation is replayed to the model every turn; there is no windowing.
+- Trace masking replaces any run of ten or more digits with `[phone]`, so long reference numbers in free text are masked too. Visibility is the guarantee; masking is best effort.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.

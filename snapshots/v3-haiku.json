@@ -4,7 +4,7 @@
   "k": 4,
   "config": {
     "agentModel": "anthropic:claude-haiku-4-5-20251001",
-    "customerModel": "anthropic:claude-sonnet-5-5",
+    "userModel": "anthropic:claude-sonnet-5-5",
     "instructions": "46906eba07f2",
     "journeys": "6e56ec6ac799",
     "knowledge": "9d585b63c16d",
@@ -216,6 +216,5 @@
     }
   },
   "overall": 0.7272727272727273,
-  "cost": 2.629915000000002,
-  "results": "results/2026-10-05T03-26-42-326Z.json"
+  "cost": 2.629915000000002
 }

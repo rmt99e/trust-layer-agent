@@ -1,12 +1,11 @@
-import { postJson, type Model, type ModelMessage, type ModelResponse } from "./types.js";
+import { postJson, type HttpOptions, type Model, type ModelMessage, type ModelResponse } from "./types.js";
 
-export interface AnthropicOptions {
+export interface AnthropicOptions extends HttpOptions {
   model: string;
   apiKey?: string;                    // default: ANTHROPIC_API_KEY
   baseUrl?: string;
   maxTokens?: number;
   extra?: Record<string, unknown>;    // passed through to the request body, e.g. sampling or effort settings
-  retryDelayMs?: number;
 }
 const STOP: Record<string, ModelResponse["stop"]> = { end_turn: "end", tool_use: "tool_calls", max_tokens: "max_tokens", refusal: "refusal" };
 
@@ -21,7 +20,7 @@ export function anthropic(o: AnthropicOptions): Model {
       const tools = req.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
       const body = { model: o.model, max_tokens: req.maxTokens ?? o.maxTokens ?? 16000, system: req.system,
         messages: toAnthropic(req.messages), ...(tools.length && { tools }), ...o.extra };
-      const res = await postJson("anthropic", url, { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, body, o.retryDelayMs);
+      const res = await postJson("anthropic", url, { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, body, o);
       const blocks: any[] = res.content ?? [];
       return {
         text: blocks.filter((b) => b.type === "text").map((b) => b.text).join(""),

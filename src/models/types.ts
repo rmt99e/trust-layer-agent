@@ -28,21 +28,25 @@ export class ModelError extends Error {
   constructor(message: string, public status?: number) { super(message); this.name = "ModelError"; }
 }
 
+/** Shared by both adapters: how long one request may take, and how long one retry may wait. */
+export interface HttpOptions { retryDelayMs?: number; timeoutMs?: number }
+const DEFAULT_TIMEOUT_MS = 60_000, MAX_RETRY_WAIT_MS = 30_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** POST JSON with one retry on 429, 5xx or a network error. Other failures throw the provider's message. */
-export async function postJson(label: string, url: string, headers: Record<string, string>, body: unknown, retryDelayMs = 1000): Promise<any> {
+/** POST JSON with one retry on 429, 5xx, a timeout or a network error. Other failures throw the provider's message. */
+export async function postJson(label: string, url: string, headers: Record<string, string>, body: unknown, http: HttpOptions = {}): Promise<any> {
+  const retryDelayMs = http.retryDelayMs ?? 1000, timeoutMs = http.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+      res = await fetch(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
     } catch (e) {
       if (attempt === 0) { await sleep(retryDelayMs); continue; }
-      throw new ModelError(`${label}: network error: ${(e as Error).message}`);
+      throw new ModelError(`${label}: ${(e as Error).name === "TimeoutError" ? `no response within ${timeoutMs} ms` : `network error: ${(e as Error).message}`}`);
     }
     if (res.ok) return res.json();
     if ((res.status === 429 || res.status >= 500) && attempt === 0) {
-      await sleep(Number(res.headers.get("retry-after")) * 1000 || retryDelayMs);
+      await sleep(Math.min(Number(res.headers.get("retry-after")) * 1000 || retryDelayMs, MAX_RETRY_WAIT_MS));
       continue;
     }
     const text = await res.text();

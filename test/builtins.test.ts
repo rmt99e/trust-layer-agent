@@ -25,7 +25,7 @@ describe("verified_first", () => {
   it("still applies when the app created the session with verified: false", async () => {
     const noVerifier = tools.filter((t) => !t.verifies);
     const { result } = await runChecks(action("get_account"), ctx({ facts: { verified: false }, tools: noVerifier }), only("verified_first"));
-    expect(result).toHaveProperty("block");
+    expect(result).toEqual({ block: "Verify the user before using get_account." });
   });
 });
 
@@ -39,7 +39,7 @@ describe("yes_after_quote", () => {
   it.each(["Can you just switch me?", "go ahead and switch", "please switch me", "do it 👍"])("%s is a request to proceed", (t) => expect(isProceed(t)).toBe(true));
   it.each(["what would it cost?", "Before you change anything, what exactly would it cost me?", "don't switch me yet"])("%s is not", (t) => expect(isProceed(t)).toBe(false));
 
-  describe("more consent phrases (fix 3)", () => {
+  describe("more consent phrases after a shown quote", () => {
     const shown = (said: string) => run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", `c: ${said}`]);
     const notShown = (said: string) => run(["c: switch me to Plus", "a: Let me check.", `c: ${said}`], [quote({ shownTurn: undefined })]);
     it.each(["sounds good", "sounds good to me, I'd like to go with that", "let's go with that", "I'll take it"])
@@ -57,8 +57,8 @@ describe("yes_after_quote", () => {
   it("counts a proceed-request as consent only after the quote was shown in an earlier reply", async () => {
     expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: Can you just switch me?"])).result).toEqual(allow());
     expect((await run(["c: switch me to Plus", "a: Let me check.", "c: Can you just switch me?"], [quote({ shownTurn: undefined })])).result).toHaveProperty("block");
-    expect((await run(["c: Can you just switch me?"], [])).result).toHaveProperty("block");
-    expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: what would it cost?"])).result).toHaveProperty("block");
+    expect((await run(["c: Can you just switch me?"], [])).result).toEqual({ block: "Before change_plan, tell the user exactly what will happen and wait for a clear yes." });
+    expect((await run(["c: switch me to Plus", "a: Plus is $29/month. Shall I?", "c: what would it cost?"])).result).toEqual({ block: "Before change_plan, tell the user exactly what will happen and wait for a clear yes." });
   });
 
   const run = (say: string[], commitments = [quote()], now?: Date) =>
@@ -137,7 +137,7 @@ describe("pipeline", () => {
   });
 });
 
-describe("no_repeated_writes (v4 b)", () => {
+describe("no_repeated_writes", () => {
   const W = (name: string, extra = {}) => ({ name, kind: "write" as const, confirm: false as const, ...extra });
   const done = (tool: string, turn: number) => ({ id: "c", tool, turn, ok: true, input: {}, output: { caseId: "case_002" } });
   const go = (tool: any, results: any[], say = ["c: help", "a: ok", "c: please"]) =>
@@ -162,7 +162,7 @@ describe("no_repeated_writes (v4 b)", () => {
   });
 });
 
-describe("no retry of an unknown or pending write in the same turn (v4.1 fix 1)", () => {
+describe("no retry of an unknown or pending write in the same turn", () => {
   const W = (name: string, extra = {}) => ({ name, kind: "write" as const, confirm: false as const, reconcileWith: "get_account", ...extra });
   const call = (tool: string, turn: number, extra: object) => ({ id: "c", tool, turn, input: {}, ...extra });
   const timeout = (tool: string, turn = 2) => call(tool, turn, { ok: false, outcome: "unknown", error: { code: "timeout", message: "x" } });
@@ -221,10 +221,10 @@ describe("no_invented_inputs", () => {
   });
   it("never takes a value from a tool result", async () => {
     const c = ctx({ say: said, results: [ok("get_account", { city: "Shelbyville" })], tools: [...tools, search] });
-    expect((await runChecks({ kind: "action", tool: search, input: { city: "Shelbyville" } }, c, only("no_invented_inputs"))).result).toHaveProperty("block");
+    expect((await runChecks({ kind: "action", tool: search, input: { city: "Shelbyville" } }, c, only("no_invented_inputs"))).result).toEqual({ block: 'The user never said "Shelbyville" (city in search_records). Use only values the user gave, or ask them.' });
   });
   it("ignores tools without fromUser, and can be turned off", async () => {
-    expect((await run({ name: "x" }, said)).result).toHaveProperty("block");
+    expect((await run({ name: "x" }, said)).result).toEqual({ block: 'The user never said "x" (name in search_records). Use only values the user gave, or ask them.' });
     expect((await runChecks(action("get_account", { name: "x" }), ctx({ say: said }), only("no_invented_inputs"))).result).toEqual(allow());
     expect(builtinChecks({ no_invented_inputs: false }).map((c) => c.name)).not.toContain("no_invented_inputs");
   });

@@ -1,6 +1,7 @@
 // A fixed customer script through respond(), printed with the teaching view.
 // node --env-file=.env examples/subscriptions/demo.js            (normal)
 // FAIL_CHANGE_PLAN=1 node --env-file=.env examples/subscriptions/demo.js   (the change fails)
+import { teachingView } from "trust-layer-agent";
 import { makeAgent } from "./agent.js";
 
 const SCRIPT = [
@@ -12,12 +13,7 @@ const SCRIPT = [
   "Great, thanks. Is everything done?",
 ];
 
-const show = { write(l) {
-  if (l.type === "tool") console.log(`   · ${l.tool}${l.reconcile ? " (auto re-check)" : ""} → ${l.ok ? "ok" : `failed (${l.error?.code}: ${l.error?.message})`}`);
-  if (l.type === "check" && l.event === "action") console.log(`   ✗ blocked ${l.tool}  [${l.check}]  ${l.result.block}`);
-  if (l.type === "check" && l.event === "reply" && l.result.block)
-    console.log(`   ✗ draft not sent  [${l.check}]\n     draft:  ${JSON.stringify(l.draft)}\n     reason: ${l.result.block}`);
-} };
+const show = { write: teachingView };
 
 console.log(`=== demo${process.env.FAIL_CHANGE_PLAN === "1" ? " (FAIL_CHANGE_PLAN=1)" : ""} ===\n`);
 const agent = makeAgent({ trace: show });

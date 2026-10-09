@@ -26,7 +26,7 @@ The tools and checks involved (built-in or custom), any journey file, and the me
 
 **Trace excerpt (optional)**
 
-Traces mask emails, phone numbers and addresses by default, but check before pasting and remove any other personal data (names, account IDs, order details).
+Traces mask emails, phone numbers, card numbers, US social security numbers and street addresses by default, but check before pasting and remove any other personal data (names, account IDs, order details).
 
 ```
 ```

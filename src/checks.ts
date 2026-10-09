@@ -1,7 +1,21 @@
-import type { Approval, Commitment, Json, Message, Session, ToolResult } from "./session.js";
+import { currentTurn, type Approval, type Commitment, type Json, type Message, type Session, type ToolResult } from "./session.js";
 import type { Tool } from "./tools.js";
 
-export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies" | "reconcileWith" | "repeatable" | "fromUser">;
+/** What a check may know about a tool: its declaration, never its implementation or schema. */
+export interface ToolInfo {
+  name: string;
+  kind: "read" | "write";
+  bind?: Record<string, string>;
+  fromUser?: string[];
+  confirm?: false | { commitment: string; by: string };
+  beforeVerification?: boolean;
+  verifies?: boolean;
+  reconcileWith?: string;
+  repeatable?: boolean;
+}
+export const toolInfo = ({ name, kind, bind, fromUser, confirm, beforeVerification, verifies, reconcileWith, repeatable }: Tool): ToolInfo =>
+  ({ name, kind, bind: bind as Record<string, string> | undefined, fromUser, confirm, beforeVerification, verifies, reconcileWith, repeatable });
+
 export type CheckEvent = { kind: "action"; tool: ToolInfo; input: Record<string, Json> } | { kind: "reply"; text: string };
 export type CheckResult = { allow: true } | { block: string } | { rewrite: string } | { handoff: string } | { approve: string };
 
@@ -28,8 +42,7 @@ export const check = (name: string, run: Check["run"]): Check => ({ name, run })
 
 export function contextFrom(session: Session, tools: readonly ToolInfo[], operatorText: readonly string[] = [], now = new Date()): CheckContext {
   const { facts, commitments, results, messages, approvals = [], failures } = session;
-  const turn = messages.filter((m) => m.role === "user").length;
-  return { facts, commitments, results, messages, approvals, failures, turn, tools, operatorText, now };
+  return { facts, commitments, results, messages, approvals, failures, turn: currentTurn(session), tools, operatorText, now };
 }
 
 export interface Verdict { result: CheckResult; by?: string; text?: string; trail: { check: string; result: CheckResult }[] }

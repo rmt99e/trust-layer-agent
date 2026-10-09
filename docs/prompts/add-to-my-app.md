@@ -24,7 +24,7 @@ STEP 1: Inspect the data layer, routes, auth and database. Show one row per cand
   may say must be visible; derived numbers (savings, totals) are computed in code.
 - confirm (writes): { commitment: "quote", by: "quoteId" } for anything priced (the write takes a quote id,
   never a price); false for writes that need no yes (open a case, hand off); omit otherwise.
-- records: facts or commitments a successful call adds to the session (e.g. a quote).
+- records: facts or commitments a successful call adds to the session (e.g. a quote). Declare run before records and outcome: TypeScript types their output from run's return value, and only sees it if run comes first.
 - outcome (writes): "done", or can it be pending / time out after applying? Then name the read that shows the truth.
 Also say how users are identified (logged in, or anonymous and verified in chat), which decisions already
 live in code (eligibility, prices, refund windows), and how a person takes over. STOP.

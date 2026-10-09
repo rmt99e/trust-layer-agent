@@ -4,7 +4,7 @@ Notes for coding agents working on this repo. For using the package in an app, r
 
 trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
 
-Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test`, `snapshot`).
+Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `forget`, `chat`), two commands (`test`, `snapshot`).
 
 ## Layout
 
@@ -16,7 +16,8 @@ Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test
 - `src/builtins.ts`: built-in checks (verified_first, yes_after_quote, no_unconfirmed_claims, handoff_after_failures, no_repeated_writes, no_invented_inputs; untrusted_text_is_data is structural, in the agent loop).
 - `src/claims.ts`: deterministic claim extraction and matching, shared by no_unconfirmed_claims and the grader; `ClaimKind` for operator-defined kinds.
 - `src/session.ts`: the session JSON (including `approvals`), `createSession()`, `loadSession()`, `forget()`.
-- `src/journeys.ts`: journey YAML loading, validation with file and line, guardrails compiled to checks.
+- `src/journeys.ts`: journey YAML schema, validation and guardrails compiled to checks.
+- `src/files.ts`: YAML parsing with positions, zod issues as file:line:col, listing files in named paths or directories.
 - `src/privacy.ts`: personal-data patterns used by tool visibility and trace masking.
 - `src/trace.ts`: the JSONL trace sink (masked by default).
 - `src/store.ts`: the `SessionStore` contract (load/save with optimistic locking), `memoryStore()`, `withStore()` (the agent's verbs by session id), `StaleSession`.
@@ -24,7 +25,7 @@ Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test
 - `src/models/`: `types.ts` (the Model interface), `anthropic.ts`, `openai-compatible.ts`, `resolve.ts` ("provider:model" strings).
 - `src/sim/`: `task.ts` (task files), `simulator.ts` (simulated user, stand-in tools, trials), `grade.ts` (deterministic grading).
 - `src/cli.ts`: the `test` and `snapshot` commands.
-- `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts.
+- `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts. `tsconfig.test.json` type-checks the tests in CI (`npm run typecheck`).
 - `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the operations example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `test/examples.test.ts` drives both with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests.
 - `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`. `results/` and `traces/` are written at run time and gitignored.
 - `docs/design.md`: the approved API design.
@@ -59,7 +60,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,500 (non-blank, non-comment; 1,490 today). Count with:
+- Logic lines in `src/` stay under 1,600 (non-blank, non-comment; 1,586 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 

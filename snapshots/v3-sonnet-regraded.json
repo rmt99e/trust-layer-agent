@@ -4,7 +4,7 @@
   "k": 4,
   "config": {
     "agentModel": "anthropic:claude-sonnet-5-5",
-    "customerModel": "anthropic:claude-sonnet-5-5",
+    "userModel": "anthropic:claude-sonnet-5-5",
     "instructions": "46906eba07f2",
     "journeys": "6e56ec6ac799",
     "knowledge": "9d585b63c16d",
@@ -217,6 +217,5 @@
   },
   "overall": 0.9545454545454546,
   "cost": 5.020532000000002,
-  "results": "results/2026-10-05T03-02-45-464Z.json",
   "note": "Re-graded offline (no model calls) with the grader fixes in 802da61 + 6c08ed6: negation/conditional-aware forbidden_phrases and must_not_claim_done; open_case allowed in pending-change, timeout-applied, partial-refund. Other failure reasons kept as originally graded."
 }

@@ -35,9 +35,9 @@ describe("bind", () => {
   });
 
   it("rejects bind and fromUser fields that aren't in the schema, or both on one field", () => {
-    expect(() => read({ ...getInvoice, bind: { customerId: "facts.customerId" } })).toThrow(/not in the input schema/);
-    expect(() => read({ ...getInvoice, fromUser: ["customerId"] })).toThrow(/fromUser field "customerId" is not in the input schema/);
-    expect(() => read({ ...getInvoice, fromUser: ["accountId"] })).toThrow(/can't be both bound and fromUser/);
+    expect(() => read({ ...getInvoice, bind: { customerId: "facts.customerId" } as any })).toThrow(/not in the input schema/);
+    expect(() => read({ ...getInvoice, fromUser: ["customerId"] as any })).toThrow(/fromUser field "customerId" is not in the input schema/);
+    expect(() => read({ ...getInvoice, fromUser: ["accountId"] as any })).toThrow(/can't be both bound and fromUser/);
     expect(read({ ...getInvoice, fromUser: ["invoiceId"] }).fromUser).toEqual(["invoiceId"]);
   });
 });
@@ -59,6 +59,9 @@ describe("visibility", () => {
     expect(value).toEqual({ id: "acc_1", plan: { name: "Basic", price: 9 }, note: "reach me at [email]",
       invoices: [{ id: "inv_1", amount: 9 }] });
     expect(hidden.sort()).toEqual(["dob", "email", "homeAddress", "invoices[].cardNumber", "phone", "ssn"]);
+    const secrets = visibleOutput({ pin: "4417", userPin: "1", pin_code: "2", apiToken: "t", tokens: 3, maxTokens: 4, password: "p", passport: "x", taxId: "9", licenceNumber: "L", driverLicense: "D", licenses: 5, accountNumber: "1", accountNotes: "n", routing: "r", shipping: "s", pinned: true });
+    expect(secrets.hidden.sort()).toEqual(["accountNumber", "apiToken", "driverLicense", "licenceNumber", "passport", "password", "pin", "pin_code", "routing", "taxId", "userPin"]);
+    expect(secrets.value).toEqual({ tokens: 3, maxTokens: 4, licenses: 5, accountNotes: "n", shipping: "s", pinned: true });
   });
 
   it("masks phone, card, ssn and address inside free text, keeping dates and prices", () => {
