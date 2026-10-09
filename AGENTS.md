@@ -2,7 +2,7 @@
 
 Notes for coding agents working on this repo. For using the package in an app, read README.md.
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys; the library itself is journey-neutral, and nothing in `src/` may assume one.
 
 Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test`, `snapshot`).
 
@@ -25,7 +25,7 @@ Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test
 - `src/sim/`: `task.ts` (task files), `simulator.ts` (simulated user, stand-in tools, trials), `grade.ts` (deterministic grading).
 - `src/cli.ts`: the `test` and `snapshot` commands.
 - `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts.
-- `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the full example (store, tools, journeys, policy, `sim/` suite and tasks).
+- `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the operations example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `test/examples.test.ts` drives both with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests.
 - `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`. `results/` and `traces/` are written at run time and gitignored.
 - `docs/design.md`: the approved API design.
 

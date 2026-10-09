@@ -1,5 +1,7 @@
 # Examples
 
+Two fictional apps: a subscription app's support desk and a company's purchasing desk. `test/examples.test.ts` drives both with a scripted model on every CI run; the commands below use a real one.
+
 All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the repository root. Run `npm install` first (it builds the package).
 
 | File | What it shows |
@@ -8,6 +10,8 @@ All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the rep
 | [subscriptions/chat.js](subscriptions/chat.js) | Chat with the full subscription agent: tools, journeys, policy and every built-in check, shown inline. |
 | [subscriptions/demo.js](subscriptions/demo.js) | A scripted customer through `respond()`, printed in the same teaching view. |
 | [subscriptions/sim/](subscriptions/sim/) | The simulation suite: 22 tasks, stand-ins over a seeded store. Run with `npx trust-layer-agent test --suite examples/subscriptions/sim`. |
+| [procurement/demo.js](procurement/demo.js) | A second journey, internal purchasing: a scripted requester, an order parked for a person and approved with `agent.approve()`, and the app's own supplier email checked with `agent.review()`. |
+| [procurement/sim/](procurement/sim/) | Its suite: 4 tasks (within limit, needs approval, made-up item, over budget). `npx trust-layer-agent test --suite examples/procurement/sim`. |
 
 ## Demo toggles (subscriptions/chat.js)
 
