@@ -4,7 +4,7 @@
 
 | Version | Supported |
 | --- | --- |
-| The `main` branch and the latest `v0.1.x` tag | Yes |
+| The `main` branch and the latest release tag | Yes |
 | Pre-release (current main) | Best effort |
 
 ## Reporting a vulnerability
@@ -29,7 +29,9 @@ Bypasses of what the library claims to enforce in code, for example:
 - a write tool that runs without the required quote and yes (`yes_after_quote`), or account data returned before verification (`verified_first`);
 - a model or user overriding a bound tool input (bind injection);
 - personal data reaching the model past field-level visibility, or reaching traces past masking;
-- user or tool text forging the fences or system notes so it is read as instructions.
+- user or tool text forging the fences or system notes so it is read as instructions;
+- a `secret` input field stored or replayed in clear (session, trace, history, approval record) once its call has run;
+- a verb reached through `withStore(...).as(owner)` acting on another owner's session, or a tool changing a session's owner fact.
 
 ## Out of scope
 

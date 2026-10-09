@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300 and is at 1,275; the simulator and CLI stay under 450 and are at 396. A change that adds a feature near a cap needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300; the simulator and CLI stay under 450. A change that adds a feature near a cap needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
@@ -69,6 +69,6 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - [SPEC.md](SPEC.md): normative and language-neutral. Update it in the same pull request as any behavior change it covers.
 - [CHANGELOG.md](CHANGELOG.md): add an entry under `[Unreleased]`.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents.
-- [docs/design.md](docs/design.md): the original API design. [docs/how-it-was-built.md](docs/how-it-was-built.md): the build log.
+- [docs/design.md](docs/design.md): the original design's decisions, kept for history. [docs/how-it-was-built.md](docs/how-it-was-built.md): the build log.
 
 Security issues: don't open a public issue. See [SECURITY.md](SECURITY.md).

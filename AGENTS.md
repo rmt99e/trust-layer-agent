@@ -4,12 +4,12 @@ Notes for coding agents working on this repo. For using the package in an app, r
 
 trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
 
-Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `forget`, `chat`), two commands (`test`, `snapshot`).
+Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `resume`, `forget`, `chat`), two commands (`test`, `snapshot`).
 
 ## Layout
 
 - `src/index.ts`: public exports. `src/sim/simulator.ts` is also exported as `trust-layer-agent/sim`.
-- `src/agent.ts`: `Agent` and the `respond()` loop: model turn, checks on actions and replies, session updates. Also `review()` (reply checks on a draft the app wrote) and `approve()` / `decline()` for actions a check parked.
+- `src/agent.ts`: `Agent` and the `respond()` loop: model turn, checks on actions and replies, session updates. Also `review()` (reply checks on a draft the app wrote), `approve()` / `decline()` for actions a check parked, and `resume()` for a handed-off session a person hands back.
 - `src/chat.ts`: `agent.chat()` for trying an agent in the terminal.
 - `src/tools.ts`: `read()` / `write()`, input validation, field-level visibility, bound inputs.
 - `src/checks.ts`: the check type and result shape (allow, block, rewrite, handoff, approve), check context, check runner.
@@ -28,7 +28,7 @@ Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `ap
 - `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts. `tsconfig.test.json` type-checks the tests in CI (`npm run typecheck`).
 - `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the operations example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `test/examples.test.ts` drives both with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests.
 - `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`. `results/` and `traces/` are written at run time and gitignored.
-- `docs/design.md`: the approved API design.
+- `docs/design.md`: the original design's decisions, kept for history.
 
 ## Commands
 
@@ -60,7 +60,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 (1,275 today); the simulator and CLI stay under 450 (396 today). Count with:
+- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300; the simulator and CLI stay under 450. Count with:
   `cat $(ls src/*.ts src/models/*.ts src/stores/*.ts | grep -v cli.ts) | grep -Ev '^\s*($|//|/?\*)' | wc -l`
   `cat src/cli.ts src/sim/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
@@ -81,7 +81,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 
 - [README.md](README.md): what it is, quickstart, the two examples. Measurements live in docs/results.md and plans in docs/roadmap.md; the README carries nothing that goes stale.
 - [SPEC.md](SPEC.md): the language-neutral spec (journey schema, check results, session JSON, task format).
-- [docs/design.md](docs/design.md): the approved API design. Where it and the code disagree, the code is current.
+- [docs/design.md](docs/design.md): the original design's decisions, kept for history; SPEC.md and the code are current.
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, CI, the rules above and the pull request checklist.
 - [SECURITY.md](SECURITY.md): how to report a check bypass or data leak privately.
 - [CHANGELOG.md](CHANGELOG.md): changes per version.

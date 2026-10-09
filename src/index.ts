@@ -16,7 +16,7 @@ export { anthropic } from "./models/anthropic.js";
 export { openaiCompatible } from "./models/openai-compatible.js";
 export type { AnthropicOptions } from "./models/anthropic.js";
 export type { OpenAICompatibleOptions } from "./models/openai-compatible.js";
-export type { Model, ModelRequest, ModelResponse, ModelMessage, ToolSpec, ToolCall } from "./models/types.js";
+export type { Model, ModelRequest, ModelResponse, ModelMessage, ToolSpec, ToolCall, HttpOptions } from "./models/types.js";
 export { jsonl, maskTrace } from "./trace.js";
 export type { TraceSink } from "./trace.js";
 export { teachingView } from "./chat.js";
