@@ -10,7 +10,7 @@ export type { ClaimKind } from "./claims.js";
 export { createSession, loadSession, forget } from "./session.js";
 export type { Session, SessionV1, ForgottenSession, Commitment, ToolResult, Message, Approval, Json } from "./session.js";
 export { memoryStore, withStore, StaleSession } from "./store.js";
-export type { SessionStore } from "./store.js";
+export type { SessionStore, StoreOptions } from "./store.js";
 export { ModelError } from "./models/types.js";
 export { anthropic } from "./models/anthropic.js";
 export { openaiCompatible } from "./models/openai-compatible.js";

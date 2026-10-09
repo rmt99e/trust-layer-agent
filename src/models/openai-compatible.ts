@@ -22,13 +22,14 @@ export function openaiCompatible(o: OpenAICompatibleOptions): Model {
       const maxTokens = req.maxTokens ?? o.maxTokens;
       const body = { model: o.model, messages: [{ role: "system", content: req.system }, ...toOpenAI(req.messages)],
         ...(tools.length && { tools }), ...(maxTokens && { max_tokens: maxTokens }), ...o.extra };
-      const res = await postJson("openai-compatible", `${baseUrl}/chat/completions`, apiKey ? { authorization: `Bearer ${apiKey}` } : {}, body, o);
+      const { body: res, requestId } = await postJson("openai-compatible", `${baseUrl}/chat/completions`, apiKey ? { authorization: `Bearer ${apiKey}` } : {}, body, o);
       const choice = res.choices?.[0] ?? {};
       return {
         text: textOf(choice.message?.content),
         toolCalls: (choice.message?.tool_calls ?? []).map((c: any) => ({ id: c.id, name: c.function.name, input: parseArgs(c.function.arguments) })),
         stop: STOP[choice.finish_reason] ?? "end",
         usage: res.usage && { inputTokens: res.usage.prompt_tokens, outputTokens: res.usage.completion_tokens },
+        requestId: requestId ?? res.id,
       };
     },
   };

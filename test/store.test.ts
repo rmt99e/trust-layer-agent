@@ -234,9 +234,46 @@ describe("withStore: the agent's verbs by session id", () => {
     await bound.respond(session.id, "hi again");
     await new Promise((r) => setTimeout(r));
     expect(db.sessions.get(session.id)).toMatchObject({ rev: 2, status: "open" });
-    expect(db.traces.filter((t) => t.session_id === session.id).map((t) => t.type)).toEqual(["turn", "turn"]);
+    expect(db.traces.filter((t) => t.session_id === session.id).map((t) => t.type)).toEqual(["model", "turn", "model", "turn"]);
     await bound.forget(session.id);
     await new Promise((r) => setTimeout(r));
     expect([db.sessions.get(session.id)!.status, db.traces.length]).toEqual(["forgotten", 0]);
+  });
+});
+
+describe("withStore: owned sessions", () => {
+  const owned = () => { const store = memoryStore(); return { store, bound: withStore(agentWith([{ call: "get_plan" }, "Basic.", "Still Basic.", "Hi there."]), store, { owner: "facts.accountId" }) }; };
+  it("as(owner) seeds the fact on a new session, loads only that owner's sessions, and reads another owner's id as no session", async () => {
+    const { store, bound } = owned();
+    const mine = bound.as("acc_1"), theirs = bound.as("acc_2");
+    const t1 = await mine.respond(null, "What plan am I on?");
+    expect([t1.session.facts.accountId, ((await store.load(t1.session.id)) as Session).rev]).toEqual(["acc_1", 1]);
+    expect((await mine.respond(t1.session.id, "Sure?")).reply).toBe("Still Basic.");
+    await expect(theirs.respond(t1.session.id, "hi")).rejects.toThrow(`no session "${t1.session.id}"`);
+    await expect(theirs.approve(t1.session.id, "p_1")).rejects.toThrow(`no session "${t1.session.id}"`);
+    await expect(theirs.forget(t1.session.id)).rejects.toThrow(`no session "${t1.session.id}"`);
+    expect(((await store.load(t1.session.id)) as Session).rev).toBe(2);                  // nothing of theirs touched it
+  });
+  it("a forgotten session reads as no session to an owner, since a tombstone has no owner to check", async () => {
+    const { bound } = owned(), mine = bound.as("acc_1");
+    const t1 = await mine.respond(null, "hi");
+    await mine.forget(t1.session.id);
+    await expect(mine.respond(t1.session.id, "again")).rejects.toThrow(`no session "${t1.session.id}"`);
+  });
+  it("with an owner configured, the unscoped verbs refuse; without one, as() refuses", async () => {
+    const { bound } = owned();
+    await expect(bound.respond(null, "hi")).rejects.toThrow("sessions are owned by facts.accountId; call as(owner) first");
+    await expect(bound.review("s_0123456789ab", "hi")).rejects.toThrow("call as(owner) first");
+    expect(() => withStore(agentWith([]), memoryStore()).as("acc_1")).toThrow('pass { owner: "facts.<key>" } to use as()');
+  });
+  it("resume by id saves the resumed session against the loaded rev", async () => {
+    const store = memoryStore();
+    const agent = new Agent({ model: scripted(["Bye.", "Welcome back."]), instructions: "You help.", tools: [plan], builtins: { verified_first: false }, trace: false,
+      checks: [check("bail", (e) => (e.kind === "reply" && e.text === "Bye." ? { handoff: "asked" } : allow()))] });
+    const bound = withStore(agent, store);
+    const off = await bound.respond(null, "bye");
+    const back = await bound.resume(off.session.id, { note: "Sorted the billing issue by hand.", by: "ops@example.test" });
+    expect([back.status, back.rev, ((await store.load(back.id)) as Session).rev]).toEqual(["open", 2, 2]);
+    expect((await bound.respond(back.id, "still there?")).reply).toBe("Welcome back.");
   });
 });

@@ -20,13 +20,14 @@ export function anthropic(o: AnthropicOptions): Model {
       const tools = req.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
       const body = { model: o.model, max_tokens: req.maxTokens ?? o.maxTokens ?? 16000, system: req.system,
         messages: toAnthropic(req.messages), ...(tools.length && { tools }), ...o.extra };
-      const res = await postJson("anthropic", url, { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, body, o);
+      const { body: res, requestId } = await postJson("anthropic", url, { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, body, o);
       const blocks: any[] = res.content ?? [];
       return {
         text: blocks.filter((b) => b.type === "text").map((b) => b.text).join(""),
         toolCalls: blocks.filter((b) => b.type === "tool_use").map((b) => ({ id: b.id, name: b.name, input: b.input })),
         stop: STOP[res.stop_reason] ?? "end",
         usage: res.usage && { inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens },
+        requestId: requestId ?? res.id,
         raw: blocks,
       };
     },

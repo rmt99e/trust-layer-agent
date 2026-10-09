@@ -127,12 +127,23 @@ export class Agent {
     return v;
   }
 
-  /** A person approved a parked action: it runs now with the recorded input, and its result is in the session for the model's next turn. */
-  approve(session: Session, id: string) { return this.decide(session, id); }
+  /** A person approved a parked action: it runs now with the recorded input, and its result is in the session for the model's next turn. `by` names them for the audit trail. */
+  approve(session: Session, id: string, opts: { by?: string } = {}) { return this.decide(session, id, opts); }
   /** A person declined it: recorded as a failed call with code "declined", so the model learns next turn. */
-  decline(session: Session, id: string, reason = "A person declined this action.") { return this.decide(session, id, reason); }
+  decline(session: Session, id: string, opts: { reason?: string; by?: string } = {}) { return this.decide(session, id, opts, opts.reason ?? "A person declined this action."); }
 
-  private async decide(session: Session, id: string, declined?: string): Promise<{ session: Session; result: ToolResult }> {
+  /** A person hands a handed-off session back: status returns to open, failures reset, and their note, if any, is a `person` message the model will see. */
+  resume(session: Session, opts: { note?: string; by?: string } = {}): Session {
+    let s = loadSession(session);
+    if (s.status !== "handed_off") throw new Error(`session "${s.id}" isn't handed off`);
+    const turn = currentTurn(s), at = this.now().toISOString();
+    s = { ...s, status: "open", failures: 0, rev: s.rev + 1,
+      messages: opts.note ? [...s.messages, { role: "person", text: opts.note, turn, at, ...(opts.by && { by: opts.by }) }] : s.messages };
+    this.log(s, turn, "resume", { note: opts.note, by: opts.by });
+    return s;
+  }
+
+  private async decide(session: Session, id: string, opts: { by?: string }, declined?: string): Promise<{ session: Session; result: ToolResult }> {
     let s = loadSession(session);
     const a = s.approvals.find((x) => x.id === id), tool = a && this.byName.get(a.tool);
     if (!a || a.status !== "pending") throw new Error(`no pending approval "${id}"`);
@@ -141,17 +152,18 @@ export class Agent {
     // Approval doesn't re-run the checks, but a confirmed write still needs its commitment to be usable now.
     const stale = !declined && tool?.confirm && this.opts.builtins?.yes_after_quote !== false ? this.staleCommitment(s, tool, a.input) : undefined;
     const ran: Ran = declined ? this.failedResult(s, a, "declined", declined) : stale ? this.failedResult(s, a, "commitment_unusable", stale)
-      : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
+      : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility, now: this.now() });
     s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
     if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
-    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id, input: redactInput(x, x.input) } : x) };
-    this.log(s, turn, "approval", { approval: id, decision: status, ...this.toolLine(ran.result) });
+    const decided = { status, result: ran.result.id, decidedAt: this.now().toISOString(), ...(opts.by && { decidedBy: opts.by }) };
+    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, ...decided, input: redactInput(x, x.input) } : x) };
+    this.log(s, turn, "approval", { approval: id, decision: status, decidedBy: opts.by, ...this.toolLine(ran.result) });
     return { session: s, result: ran.result };
   }
 
   /** A ToolResult for a parked action that did not run, appended to the session. */
   private failedResult(s: Session, a: Approval, code: string, message: string): Ran {
-    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: redactInput(a, a.input), error: { code, message } };
+    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: redactInput(a, a.input), error: { code, message }, at: this.now().toISOString() };
     return { result, session: { ...s, results: [...s.results, result] } };
   }
 
@@ -161,10 +173,11 @@ export class Agent {
     const k = s.commitments.find((x) => x.type === c.commitment && x.id === id);
     if (!k) return `No ${c.commitment} "${id}" exists in this conversation any more.`;
     if (k.status !== "open") return `${c.commitment} "${id}" was already used.`;
-    if (k.expiresAt && new Date(k.expiresAt) <= (this.opts.now?.() ?? new Date())) return `${c.commitment} "${id}" expired before it was approved.`;
+    if (k.expiresAt && new Date(k.expiresAt) <= this.now()) return `${c.commitment} "${id}" expired before it was approved.`;
   }
 
-  private ctx = (s: Session) => contextFrom(s, this.infos, this.operatorText, this.opts.now?.() ?? new Date());
+  private now = () => this.opts.now?.() ?? new Date();
+  private ctx = (s: Session) => contextFrom(s, this.infos, this.operatorText, this.now());
 
   /** One trace line. Every sink gets masked data; structural fields stay intact (an id with 10+ digits would otherwise read as a phone number). */
   private log(s: Session, turn: number, type: string, data: Record<string, unknown>, observe?: Observer) {
@@ -195,7 +208,7 @@ export class Agent {
     const read = write.reconcileWith ? this.byName.get(write.reconcileWith) : undefined;
     if (!read) return undefined;
     const given = Object.fromEntries(Object.keys(unboundSchema(read).shape).filter((k) => k in failedInput).map((k) => [k, failedInput[k]]));
-    return unboundSchema(read).safeParse(given).success ? runTool(read, given, s, { strictVisibility: this.opts.strictVisibility }) : undefined;
+    return unboundSchema(read).safeParse(given).success ? runTool(read, given, s, { strictVisibility: this.opts.strictVisibility, now: this.now() }) : undefined;
   }
 
   /**
@@ -211,6 +224,7 @@ export class Agent {
     const answered = (turn: number) => s.messages.some((m) => m.role === "agent" && m.turn === turn);   // a failed turn has no reply to replay after
     return s.messages.flatMap((m): ModelMessage[] => m.role === "agent"
       ? [{ role: "assistant", content: m.text }, ...results(m, true)]
+      : m.role === "person" ? [{ role: "assistant", content: m.text }]                                // said from the agent's side of the conversation
       : [{ role: "user", content: fenceUser(m.text) }, ...results(m, false), ...(answered(m.turn) ? [] : results(m, true))]);
   }
 
@@ -218,7 +232,7 @@ export class Agent {
     let s: Session = session ? loadSession(session) : createSession();
     if (s.status === "handed_off") return { reply: this.opts.handoffMessage, session: s, usage: { inputTokens: 0, outputTokens: 0, calls: 0 },
       handoff: { summary: "Already handed off.", reason: "handed_off" } };
-    s = { ...s, messages: [...s.messages, { role: "user", text: message, turn: currentTurn(s) + 1 }] };
+    s = { ...s, messages: [...s.messages, { role: "user", text: message, turn: currentTurn(s) + 1, at: this.now().toISOString() }] };
     const turn = currentTurn(s);
     const emit = (type: string, data: Record<string, unknown>) => this.log(s, turn, type, data, observe);
     const msgs = this.history(s);
@@ -233,21 +247,31 @@ export class Agent {
 
     const finish = (text: string, handoff?: Reply["handoff"]): Reply => {
       s = { ...s, rev: s.rev + 1, status: handoff ? "handed_off" : s.status,
-        messages: [...s.messages, { role: "agent", text, turn }], commitments: markShown(s.commitments, text, turn) };
+        messages: [...s.messages, { role: "agent", text, turn, at: this.now().toISOString() }], commitments: markShown(s.commitments, text, turn) };
       emit("turn", { user: message, reply: text, retries, model: this.model.id, usage, ...(handoff && { handoff }) });
       return { reply: text, session: s, usage, ...(handoff && { handoff }), ...(parked.length ? { approvals: parked } : {}) };
     };
     const handoffNow = (summary: string, reason: string) => finish(this.opts.handoffMessage, { summary, reason });
     const verdict = (e: CheckEvent) => runChecks(e, this.ctx(s), this.checks)
       .catch((err: Error): Verdict => ({ result: handoff(`A check failed: ${err.message}`), by: CHECK_ERROR, trail: [] }));
+    const callModel = async (): Promise<ModelResponse> => {                      // one `model` trace line per call, so a line can be matched to the provider's log
+      const t0 = Date.now(), line = { model: this.model.id };
+      try {
+        const res = await this.model.generate({ system: this.system, messages: msgs, tools });
+        emit("model", { ...line, requestId: res.requestId, ms: Date.now() - t0, stop: res.stop, usage: res.usage });
+        return res;
+      } catch (e) {
+        emit("model", { ...line, ms: Date.now() - t0, error: (e as Error)?.message ?? String(e) });
+        throw new TurnFailed({ ...s, rev: s.rev + 1 }, e as Error, parked, usage);                   // what ran stays in the session
+      }
+    };
 
     for (const due of this.journeys.handoffs) {          // deterministic handoffs need no model call
       const summary = due(this.ctx(s));
       if (summary) return handoffNow(summary, "journey");
     }
     for (;;) {
-      const res = await Promise.resolve().then(() => this.model.generate({ system: this.system, messages: msgs, tools }))
-        .catch((e: Error) => { throw new TurnFailed({ ...s, rev: s.rev + 1 }, e, parked, usage); });   // what ran stays in the session
+      const res = await callModel();
       usage.calls++; usage.inputTokens += res.usage?.inputTokens ?? 0; usage.outputTokens += res.usage?.outputTokens ?? 0;
       if (res.stop === "refusal") return handoffNow("The model declined to respond.", "refusal");
       if (res.toolCalls.length) {
@@ -270,7 +294,7 @@ export class Agent {
           if ("approve" in v.result) {                    // parked for a person; the same call isn't parked twice
             const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && stableJson(a.input) === stableJson(input));
             const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, ...(tool.secret?.length && { secret: tool.secret }),
-              turn, reason: v.result.approve, by: v.by!, status: "pending" };
+              turn, at: this.now().toISOString(), reason: v.result.approve, by: v.by!, status: "pending" };
             if (!same) {
               s = { ...s, approvals: [...s.approvals, a] }; parked.push(a);
               emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result, approval: a.id });
@@ -279,7 +303,7 @@ export class Agent {
               `Tell the user it's been requested, not done. ${NO_MECHANICS}`), true);
             continue;
           }
-          const r = await runTool(tool, modelInput, s, { strictVisibility: this.opts.strictVisibility });
+          const r = await runTool(tool, modelInput, s, { strictVisibility: this.opts.strictVisibility, now: this.now() });
           s = this.spend({ ...r.session, failures: r.result.ok ? 0 : s.failures + 1 }, tool, r.result);
           emit("tool", this.toolLine(r.result));
           const auto = r.result.outcome === "unknown" ? await this.reconcile(tool, input, s) : undefined;   // the real input, not the redacted record
