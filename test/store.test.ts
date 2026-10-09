@@ -38,6 +38,15 @@ function storeContract(name: string, make: () => SessionStore) {
       await store.save(forget(s), 0);
       expect(await store.load(s.id)).toEqual({ v: 1, id: s.id, forgotten: true });
       await expect(store.save({ ...s, rev: 1 }, 0)).rejects.toThrow(StaleSession);   // the app's stale copy can't resurrect it
+      await expect(store.save({ ...s, rev: 1 }, -1)).rejects.toThrow(StaleSession);  // nor can anyone "lock" on the tombstone's rev
+    });
+    it("saving the same rev again is an ordinary write, and StaleSession carries id and expectedRev", async () => {
+      const store = make(), s = createSession();
+      await store.save(s);
+      await store.save(s, 0);                                                           // e.g. respond() on a handed-off session: unchanged
+      expect((await store.load(s.id) as Session).rev).toBe(0);
+      const e = await store.save(s, 3).catch((x) => x);
+      expect([e.name, e.id, e.expectedRev]).toEqual(["StaleSession", s.id, 3]);
     });
   });
 }
@@ -71,10 +80,16 @@ describe("postgres adapter", () => {
     await plain.save(s);
     expect(db.sql.at(-1)).toEqual({ text: 'INSERT INTO "tla_sessions" (id, rev, status, session) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING', params: [s.id, 0, "open", JSON.stringify(s)] });
     await plain.save({ ...s, rev: 1, status: "handed_off" }, 0);
-    expect(db.sql.at(-1)!.text).toBe('UPDATE "tla_sessions" SET rev = $2, status = $3, session = $4, updated_at = now() WHERE id = $1 AND rev = $5');
-    expect(db.sql.at(-1)!.params!.slice(1, 3)).toEqual([1, "handed_off"]);
+    expect(db.sql.at(-1)).toEqual({ text: 'UPDATE "tla_sessions" SET rev = $2, status = $3, session = $4, updated_at = now() WHERE id = $1 AND rev = $5',
+      params: [s.id, 1, "handed_off", JSON.stringify({ ...s, rev: 1, status: "handed_off" }), 0] });
     await plain.save(forget(s), 1);
     expect(db.sessions.get(s.id)).toMatchObject({ rev: -1, status: "forgotten" });
+  });
+  it("needs rowCount, and reads a session column that came back as JSON text", async () => {
+    const { store } = postgres({ query: async () => ({ rows: [] }) as any });
+    await expect(store.save(createSession())).rejects.toThrow(/query must return \{ rowCount \}/);
+    const s = createSession(), text = postgres({ query: async () => ({ rows: [{ session: JSON.stringify(s) }], rowCount: 1 }) }).store;
+    expect(await text.load(s.id)).toEqual(s);
   });
   it("refuses a table name that isn't a plain identifier", () => {
     for (const bad of ['x"; DROP TABLE y; --', "a b", "1abc", "a.b.c", ""]) expect(() => postgres({ query: fakePostgres().query, sessions: bad })).toThrow(/isn't a plain table name/);
@@ -90,6 +105,24 @@ describe("postgres adapter", () => {
     await new Promise((r) => setTimeout(r));
     expect(db.traces.map((t) => t.session_id)).toEqual(["s_2"]);
   });
+  it("trace statements run in issue order, so a forget can't overtake an earlier write on a pool", async () => {
+    const rows: string[] = [];
+    let release!: () => void;
+    const slowInsert = new Promise<void>((r) => { release = r; });
+    const query = async (text: string, params: unknown[] = []) => {
+      if (text.startsWith("INSERT")) { await slowInsert; rows.push(params[0] as string); }
+      else rows.splice(0, rows.length, ...rows.filter((id) => id !== params[0]));
+      return { rows: [], rowCount: 1 };
+    };
+    const { trace } = postgres({ query });
+    trace.write({ type: "turn", sessionId: "s_1", turn: 1 });
+    trace.forget!("s_1");
+    await new Promise((r) => setTimeout(r));
+    expect(rows).toEqual([]);                                   // the delete hasn't run: it's queued behind the insert
+    release();
+    await new Promise((r) => setTimeout(r));
+    expect(rows).toEqual([]);                                   // insert landed, then the delete removed it
+  });
   it("a failing trace write is reported, never thrown", async () => {
     const onError = vi.fn();
     const { trace } = postgres({ query: async () => { throw new Error("connection lost"); }, onError });
@@ -100,6 +133,9 @@ describe("postgres adapter", () => {
     noisy.write({ type: "turn", sessionId: "s_1", turn: 1 });
     await new Promise((r) => setTimeout(r));
     expect(console.warn).toHaveBeenCalledWith("⚠️  postgres trace: connection lost");
+    const sync = postgres({ query: (() => { throw new Error("pool is closed"); }) as any, onError: () => { throw new Error("handler broke too"); } }).trace;
+    expect(() => sync.write({ type: "turn", sessionId: "s_1", turn: 1 })).not.toThrow();   // a sync throw, and a throwing handler, stay inside the sink
+    await new Promise((r) => setTimeout(r));
   });
   it("ships the schema for both tables, with the configured names", () => {
     const { schema } = postgres({ query: fakePostgres().query, sessions: "convos", traces: "audit.lines" });
@@ -129,6 +165,31 @@ describe("withStore: the agent's verbs by session id", () => {
     expect([a.status, b.status]).toEqual(["fulfilled", "rejected"]);
     expect((b as PromiseRejectedResult).reason).toBeInstanceOf(StaleSession);
     expect((await store.load(session.id) as Session).messages.at(-2)!.text).toBe("one");
+  });
+  it("respond on a handed-off session is an idempotent same-rev save", async () => {
+    const store = memoryStore();
+    const agent = new Agent({ model: scripted(["Hello.", "Bye."]), instructions: "You help.", tools: [plan], builtins: { verified_first: false }, trace: false,
+      checks: [check("bail", (e) => (e.kind === "reply" && e.text === "Bye." ? { handoff: "asked" } : allow()))] });
+    const bound = withStore(agent, store);
+    const { session } = await bound.respond(null, "hi");
+    const off = await bound.respond(session.id, "bye");
+    expect(off.session.status).toBe("handed_off");
+    const again = await bound.respond(session.id, "still there?");                   // unchanged session, rev not bumped, save still fine
+    expect([again.handoff?.reason, again.session.rev, (await store.load(session.id) as Session).rev]).toEqual(["handed_off", 2, 2]);
+  });
+  it("a forget that loses the race leaves the trace deleted and the row live; retried from a fresh load it finishes", async () => {
+    const inner = memoryStore(), forgetTrace = vi.fn();
+    let competitor = true;                                                            // bumps the rev once, between forget's load and its save
+    const racing: SessionStore = { load: (id) => inner.load(id), async save(s, r) {
+      if ("forgotten" in s && competitor) { competitor = false; const live = (await inner.load(s.id)) as Session; await inner.save({ ...live, rev: live.rev + 1 }, r); }
+      return inner.save(s, r);
+    } };
+    const bound = withStore(new Agent({ model: scripted(["Hello."]), instructions: "You help.", tools: [plan], builtins: { verified_first: false }, trace: { write() {}, forget: forgetTrace } }), racing);
+    const { session } = await bound.respond(null, "hi");
+    await expect(bound.forget(session.id)).rejects.toBeInstanceOf(StaleSession);
+    expect([forgetTrace.mock.calls.length, (await inner.load(session.id) as Session).rev]).toEqual([1, 2]);
+    expect(await bound.forget(session.id)).toEqual({ v: 1, id: session.id, forgotten: true });
+    expect([forgetTrace.mock.calls.length, await inner.load(session.id)]).toEqual([2, { v: 1, id: session.id, forgotten: true }]);
   });
   it("approve, decline and review work by id; forget stores the tombstone and ends the session", async () => {
     const store = memoryStore(), forgetTrace = vi.fn();

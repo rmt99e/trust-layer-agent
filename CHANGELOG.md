@@ -20,7 +20,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
-- The `src/` logic-line cap is 1,500 (was 1,300 before these two additions); `src/` is at 1,482.
+- The `src/` logic-line cap is 1,500 (was 1,400); `src/` is at 1,484.
 
 - v4.2: **code reconciles unknown outcomes before any reply.** When a write ends with an unknown outcome and declares `reconcileWith`, the agent runs that read itself before the model replies, if every input the read needs is bound or present in the failed call. Its visible result is added to the write's tool message as `reconcile: { tool, output }`, and the trace marks it `reconcile: true`. If the read can't be run (it needs inputs code doesn't have) or fails, every draft is blocked until a successful reconcile read; a handoff is still possible. In rehearsal, a reply implied failure ("our team will handle your switch… you should hear back soon") without any failure phrase; this closes that gap.
 - Demo toggles in examples/subscriptions/chat.js: `CHANGE_PLAN_OUTCOME=fail|timeout|pending` (`FAIL_CHANGE_PLAN=1` still means fail) and `AGENT_MODEL=sonnet|haiku`. The `chat()` view labels code's re-check `(auto re-check)`.

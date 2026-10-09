@@ -22,14 +22,13 @@ export class StaleSession extends Error {
 const revOf = (s: Session | ForgottenSession) => ("forgotten" in s ? -1 : s.rev);   // a tombstone outranks every rev
 
 /** The reference store: a Map. Same locking rule as any other store; for tests, examples and single-process apps. */
-export function memoryStore(): SessionStore & { rows: Map<string, Session | ForgottenSession> } {
+export function memoryStore(): SessionStore {
   const rows = new Map<string, Session | ForgottenSession>();
   return {
-    rows,
     async load(id) { const s = rows.get(id); return s && structuredClone(s); },
     async save(s, expectedRev) {
-      const was = rows.get(s.id);
-      if (expectedRev === undefined ? was !== undefined : !was || revOf(was) !== expectedRev) throw new StaleSession(s.id, expectedRev);
+      const was = rows.get(s.id), stale = expectedRev === undefined ? was !== undefined : expectedRev < 0 || !was || revOf(was) !== expectedRev;
+      if (stale) throw new StaleSession(s.id, expectedRev);
       rows.set(s.id, structuredClone(s));
     },
   };
@@ -51,7 +50,7 @@ export function withStore(agent: Agent, store: SessionStore) {
     async approve(id: string, approvalId: string) { const s = await get(id); return put(await agent.approve(s, approvalId), s.rev); },
     async decline(id: string, approvalId: string, reason?: string) { const s = await get(id); return put(await agent.decline(s, approvalId, reason), s.rev); },
     async review(id: string | null, draft: string) { return agent.review(id ? await get(id) : null, draft); },
-    /** Deletes the trace (through the agent's sink) and stores the tombstone in the session's place. */
+    /** Deletes the trace (through the agent's sink) first, then stores the tombstone: a lost race leaves the trace gone and the session live, and a retried forget finishes the job. */
     async forget(id: string): Promise<ForgottenSession> { const s = await get(id), t = agent.forget(s); await store.save(t, s.rev); return t; },
   };
 }
