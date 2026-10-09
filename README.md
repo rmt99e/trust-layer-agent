@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
-[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The two examples](#the-two-examples) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The two examples](#the-two-examples) · [Testing your agent](#testing-your-agent) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
 
 ## What it is
 
@@ -124,7 +124,7 @@ The trace sink records the refused draft as one JSON line:
 {"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
 ```
 
-This exchange is the first test in [test/agent.test.ts](test/agent.test.ts).
+This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
 
 ## What it enforces
 
@@ -167,11 +167,11 @@ const getOrder = read({ name: "get_order", description: "Look up an order.",
 const refund = write({ name: "refund_order", description: "Refund an order in full.",
   input: z.object({ orderId: z.string() }), run: ({ orderId }) => ({ refunded: orders[orderId].total }) });
 
-const agent = new Agent({ model: "anthropic:claude-sonnet-5-5", instructions: "You help customers with their orders. Reply in plain text.", tools: [getOrder, refund] });
+const agent = new Agent({ model: "anthropic:<model-name>", instructions: "You help customers with their orders. Reply in plain text.", tools: [getOrder, refund] });
 await agent.chat();   // try it in the terminal
 ```
 
-Put `ANTHROPIC_API_KEY=...` in `.env` and run `node --env-file=.env examples/refunds.js` (from a clone, run `npm install` first). `chat()` prints every tool call, blocked action and blocked draft inline.
+The runnable version, with a current model id, is [examples/refunds.js](examples/refunds.js): put `ANTHROPIC_API_KEY=...` in `.env` and run `node --env-file=.env examples/refunds.js` (from a clone, run `npm install` first). `chat()` prints every tool call, blocked action and blocked draft inline.
 
 Two startup notices are expected. `verified_first is OFF` means no tool can verify a user; clear it by giving one tool `verifies: true`, by creating sessions with `createSession({ facts: { verified: true } })`, or with `builtins: { verified_first: false }`. The ℹ️ notice lists tools without a `visible` list, whose personal-data fields are hidden by default.
 
@@ -328,10 +328,9 @@ These call a real model and need `ANTHROPIC_API_KEY` in `.env`:
 node --env-file=.env examples/subscriptions/chat.js                         # chat with it
 node --env-file=.env examples/subscriptions/demo.js                         # a scripted customer
 FAIL_CHANGE_PLAN=1 node --env-file=.env examples/subscriptions/demo.js      # the same, with the plan change failing
-CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subscriptions/chat.js   # a timeout, on the small model
 ```
 
-`chat.js` takes `CHANGE_PLAN_OUTCOME=fail|timeout|pending` and `AGENT_MODEL=sonnet|haiku`; see [examples/README.md](examples/README.md). The same data, tools and policy back the simulator suite in [sim/](examples/subscriptions/sim/), which has 22 tasks. `TRUST_LAYER_CHECKS=off` runs the example agent with every built-in check off and journey guardrails removed, keeping all prompt text.
+Demo toggles for failing, pending and timed-out changes are listed in [examples/README.md](examples/README.md). The same data, tools and policy back the simulator suite in [sim/](examples/subscriptions/sim/). `TRUST_LAYER_CHECKS=off` runs the example agent with every built-in check off and journey guardrails removed, keeping all prompt text.
 
 ### A purchasing desk with approvals
 
@@ -341,7 +340,7 @@ CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subs
 - an order above the team's limit returns `approve(...)` from one custom check, so it is parked for a person in purchasing while the chat goes on, and "ordered" stays blocked until it runs;
 - the purchase-order email to the supplier is rendered by the app, not the model, and goes through `agent.review()` before it is sent. Two claim kinds (`count`, `status`) extend the claim check to what purchasing replies state.
 
-Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `place_order` (`reconcileWith: "list_orders"` settles a timeout), `open_ticket`, `handoff_to_person`. Rules in [store.js](examples/procurement/store.js), the journey in [journeys/order.yaml](examples/procurement/journeys/order.yaml), the suite in [sim/](examples/procurement/sim/) with 4 tasks.
+Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `place_order` (`reconcileWith: "list_orders"` settles a timeout), `open_ticket`, `handoff_to_person`. Rules in [store.js](examples/procurement/store.js), the journey in [journeys/order.yaml](examples/procurement/journeys/order.yaml), the suite in [sim/](examples/procurement/sim/).
 
 ```sh
 node --env-file=.env examples/procurement/demo.js     # a scripted requester, then a person approving, then the email through review()
@@ -358,16 +357,6 @@ npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v1
 ```
 
 `test` prints a cost estimate, runs every task k times, prints a per-task table, writes `results/<timestamp>.json`, and diffs against the newest snapshot or the one named by `--against` (flipped tasks, friction, cost and changed config).
-
-- `--k`: trials per task (default 4).
-- `--min-pass`: the pass^k fraction required (default 1).
-- `--max-cost`: stops the run at that many dollars (default 10).
-- `--tasks a,b`, `--agent-model provider:model`.
-- Exit codes: 0 when the gate passes; 1 when pass^k is below `--min-pass` or a task flipped pass→fail against the snapshot; 2 on errors.
-
-`snapshot` pins the latest results with fingerprints of the models, instructions, journeys, knowledge, tools, checks and library code, and refuses if any of them changed since the last `test`.
-
-A suite is a `suite.js` that exports the agent options, your tools, a stand-in `run` per tool over a fresh seeded store, `createStore()`, a `state()` function for the grader, the tasks directory, the agent and user models, and prices. `createStore()` and `state()` may be async, so the store can be a seeded test database. See [sim/suite.js](examples/subscriptions/sim/suite.js). A task is YAML:
 
 ```yaml
 id: timeout-applied
@@ -388,24 +377,7 @@ expect:
 max_steps: 12
 ```
 
-Other `expect` fields: `forbidden_actions`, `must_handoff`, `required_claims`, `forbidden_claims` (e.g. `[{ money: 10 }]`), `allow_in_refusal` and `must_not_claim_done`. A simulated user plays the persona. Grading is deterministic, with no LLM judge: the final data state must equal the seed with the expected writes applied, forbidden actions must not have run, the handoff must match, required claims must appear, and no sent reply may contain an unconfirmed or forbidden claim. Model outages count as infrastructure errors, not failures.
-
-pass^k is the share of tasks whose k trials all passed; a task that passes 3 of 4 trials counts as a fail. Report trial counts (passing trials / total) next to it.
-
-## Results
-
-v4 (tag `v4`) on the subscriptions suite: 22 tasks, k=4, Sonnet 5.5 as the simulated customer. A harmful case is a false claim reaching the customer or a write made on false information; every failing trial was read by hand.
-
-| Agent | pass^4 | Trials passed | Harmful cases | Cost |
-|---|---|---|---|---|
-| Sonnet 5.5 | 100% (22/22) | 88/88 | 0 | $5.05 |
-| Haiku 4.5 | 77% (17/22) | 79/88 | 1 | $2.59 |
-
-Eight of Haiku's 9 failed trials were unneeded handoffs. The harmful case was in `switch-request-after-quote`: Haiku described the Starter plan (100 credits) as covering a user who used 180–240 credits a month, then switched them after a yes. No check reads claims about fit or eligibility.
-
-v4.2 changed how unknown outcomes are handled (code runs the reconcile read before any reply). A re-run of `timeout-applied` only, k=4 per model, cost about $0.54; in all 8 trials the agent reported the correct outcome on the turn the change timed out.
-
-Per-task results are in [snapshots/](snapshots/) (`v4-sonnet.json`, `v4-haiku.json`). The v1–v4 history, the checks-on/checks-off comparison and the harm-tempting tasks are in [docs/how-it-was-built.md](docs/how-it-was-built.md).
+A suite is a `suite.js` that exports your agent options, your tools, a stand-in `run` per tool over a fresh seeded store, the tasks directory and the models. The flags, the suite shape, the other `expect` fields and the exact pass^k rule are in [docs/testing.md](docs/testing.md); the task format is normative in [SPEC.md](SPEC.md).
 
 ## How it differs from guardrail tools
 
@@ -417,33 +389,21 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 
 - Affirmatives, negations, "done" wording, refusals and relative dates are English phrase lists. Slash dates are read month first.
 - Units come from field names: `price`, `charge`, `amount`, `fee`, `cost`, `total`, `balance`, `savings`, `increase` and `refund` mean money; `percent` and `pct` mean a percentage. A number in any other field can't confirm "$29"; rename the field or return `"$29"`. Sums and differences aren't computed, so tools should return every number the agent may say.
-- The refusal allowance matches Sonnet's "I can't offer…" refusals; Haiku's phrasing mostly falls outside it.
-- Claims about fit or eligibility aren't checked (see [Results](#results)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
-- The procurement example has no pinned simulation results yet; its suite is validated and driven by a scripted model in CI, not scored against a real model.
+- Claims about fit or eligibility aren't checked (see [docs/results.md](docs/results.md)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
 - `no_invented_inputs` matches whole words, case-insensitively. A user who typed "Springfeld" can be searched for as "Springfeld", not "Springfield".
-- Done wording isn't tied to a specific write: after `open_case` succeeded, "switched to Plus" was allowed (shown in a v4 unit test).
-- Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,490 non-blank, non-comment lines, against a 1,500-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
-- The suite is small, written by the same authors as the fixes, and run once per version.
-- `review()` checks a message the app wrote; nothing schedules or sends it. v0.1 has no multi-day journeys, voice or multi-agent setups.
-
-## Roadmap
-
-1. Fit and eligibility decisions in tool output, with the write gated on them: for example, a quote returns `fitsUsage`, and a check blocks `change_plan` on a quote that doesn't fit.
-2. A Python port, following [SPEC.md](SPEC.md).
-3. Streaming. The trade-off: words would appear before they're checked.
-4. More model adapters.
-5. Optional small-model reply review, off by default, on top of the deterministic checks.
-6. A cross-check on an external benchmark.
+- `review()` checks a message the app wrote; nothing schedules or sends it. There are no multi-day journeys, voice or multi-agent setups.
 
 ## Docs
 
 - [SPEC.md](SPEC.md): the language-neutral spec (journey schema, check results, session JSON, task format). The TypeScript package is its reference implementation.
 - [docs/design.md](docs/design.md): the pre-v1 API design. Where it and SPEC.md disagree, SPEC.md wins.
+- [docs/results.md](docs/results.md): measured pass^k per version, and the limitations those runs exposed.
+- [docs/roadmap.md](docs/roadmap.md): what is planned.
+- [docs/testing.md](docs/testing.md): `test` flags, the suite shape, task fields and the pass^k rule.
 - [docs/how-it-was-built.md](docs/how-it-was-built.md): the build log, with timeline, decisions, full results and cost.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 - [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt): for coding agents.
