@@ -40,6 +40,7 @@ export interface Approval {
   id: string;                 // "p_<n>"
   tool: string;
   input: Record<string, Json>;
+  secret?: string[];          // the tool's secret fields when parked, so the record can be redacted even if the tool is gone
   turn: number;
   reason: string;             // what the check said
   by: string;                 // the check that asked

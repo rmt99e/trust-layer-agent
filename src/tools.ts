@@ -72,8 +72,8 @@ export const unboundInput = <T>(tool: Tool, input: Record<string, T>): Record<st
 
 export const REDACTED = "[redacted]";
 /** An input with its secret fields replaced: what the session, the traces and the model's history keep of a call. */
-export const redactInput = <T>(tool: Tool, input: Record<string, T>): Record<string, T | string> =>
-  tool.secret?.length ? { ...input, ...Object.fromEntries(tool.secret.filter((k) => k in input).map((k) => [k, REDACTED])) } : input;
+export const redactInput = <T>({ secret }: Pick<Tool, "secret">, input: Record<string, T>): Record<string, T | string> =>
+  secret?.length ? { ...input, ...Object.fromEntries(secret.filter((k) => k in input).map((k) => [k, REDACTED])) } : input;
 
 /** What the model sees: name, description and the input schema without bound fields. */
 export function toolSpec(tool: Tool): { name: string; description: string; inputSchema: Record<string, unknown> } {

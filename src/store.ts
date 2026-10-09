@@ -43,11 +43,17 @@ export function withStore(agent: Agent, store: SessionStore) {
   };
   const put = async <T extends { session: Session }>(r: T, was?: number) => { await store.save(r.session, was); return r; };
   return {
-    /** A turn the model failed is saved too (TurnFailed carries it), so the writes it ran are not lost; the error is rethrown. A save that fails instead throws its own error with the TurnFailed as `cause`. */
+    /** A turn the model failed is saved too (TurnFailed carries it), so the writes it ran are not lost; the error is rethrown. A save that fails instead throws its own error, with the TurnFailed as `cause` when it has none. */
     async respond(id: string | null, message: string): Promise<Reply> {
       const s = id ? await get(id) : null;
       try { return await put(await agent.respond(s, message), s?.rev); }
-      catch (e) { if (e instanceof TurnFailed) await store.save(e.session, s?.rev).catch((err: Error) => { throw Object.assign(err, { cause: e }); }); throw e; }
+      catch (e) {
+        if (e instanceof TurnFailed) await store.save(e.session, s?.rev).catch((err: unknown) => {
+          if (err instanceof Error && err.cause === undefined && !Object.isFrozen(err)) err.cause = e;
+          throw err;
+        });
+        throw e;
+      }
     },
     async approve(id: string, approvalId: string) { const s = await get(id); return put(await agent.approve(s, approvalId), s.rev); },
     async decline(id: string, approvalId: string, reason?: string) { const s = await get(id); return put(await agent.decline(s, approvalId, reason), s.rev); },

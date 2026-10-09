@@ -325,6 +325,24 @@ describe("secret inputs", () => {
     expect(r.session.results[0]).toMatchObject({ ok: false, error: { code: "invalid_input", message: `pin: "[redacted]" is a placeholder for an earlier call's value, not a value; ask for it again.` } });
     expect(seen).toEqual([]);
   });
+  it("a pending secret is still redacted on decline and in the waiting note when the tool is no longer registered", async () => {
+    const parkIt = check("big", (e) => (e.kind === "action" ? approve("needs a person") : allow()));
+    const t1 = await agent(scripted([{ call: "pay", input: { amount: 5, cvv: "123" } }, "Requested."]), [pay], { checks: [parkIt] }).respond(session(), "pay 5");
+    expect(t1.session.approvals[0].secret).toEqual(["cvv"]);
+    const model = scripted(["Still pending."]), later = agent(model, [verify], { checks: [parkIt] });     // pay is gone
+    await later.respond(t1.session, "done yet?");
+    expect(model.requests[0].messages.at(-1)?.content).toContain('pay {"amount":5,"cvv":"[redacted]"}');
+    const { session: s, result } = await later.decline(t1.session, "p_1");
+    expect([s.approvals[0].input.cvv, result.input.cvv]).toEqual(["[redacted]", "[redacted]"]);
+  });
+  it("a reconcile read gets the real input, not the redacted record", async () => {
+    const got: unknown[] = [];
+    const status = read({ name: "pay_status", description: "Status.", input: z.object({ cvv: z.string() }), run: (i) => { got.push(i); return { paid: true }; } });
+    const risky = write({ name: "pay", description: "Pay.", input: z.object({ cvv: z.string() }), secret: ["cvv"], confirm: false, reconcileWith: "pay_status",
+      run: () => { throw new ToolError("timeout", "x", { outcome: "unknown" }); } });
+    const r = await agent(scripted([{ call: "pay", input: { cvv: "123" } }, "It's paid."]), [risky, status]).respond(session(), "pay");
+    expect([got, r.session.results.map((x) => [x.tool, x.ok, x.input.cvv])]).toEqual([[{ cvv: "123" }], [["pay", false, "[redacted]"], ["pay_status", true, "123"]]]);
+  });
   it("must name a field the schema has, and can't be bound or the confirm.by field", () => {
     expect(() => read({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["b"] as any, run: () => 1 })).toThrow(/secret field "b" is not in the input schema/);
     expect(() => read({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["a"], bind: { a: "facts.a" }, run: () => 1 })).toThrow(/can't be bound or a confirm.by field/);

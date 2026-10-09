@@ -138,18 +138,18 @@ export class Agent {
     const turn = currentTurn(s), status = declined ? "declined" as const : "approved" as const;
     // Approval doesn't re-run the checks, but a confirmed write still needs its commitment to be usable now.
     const stale = !declined && tool?.confirm && this.opts.builtins?.yes_after_quote !== false ? this.staleCommitment(s, tool, a.input) : undefined;
-    const ran: Ran = declined ? this.failedResult(s, a, "declined", declined, tool) : stale ? this.failedResult(s, a, "commitment_unusable", stale, tool)
+    const ran: Ran = declined ? this.failedResult(s, a, "declined", declined) : stale ? this.failedResult(s, a, "commitment_unusable", stale)
       : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
     s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
     if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
-    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id, input: tool ? redactInput(tool, x.input) : x.input } : x) };
+    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id, input: redactInput(x, x.input) } : x) };
     this.log(s, turn, "approval", { approval: id, decision: status, ...this.toolLine(ran.result) });
     return { session: s, result: ran.result };
   }
 
   /** A ToolResult for a parked action that did not run, appended to the session. */
-  private failedResult(s: Session, a: Approval, code: string, message: string, tool?: Tool): Ran {
-    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: tool ? redactInput(tool, a.input) : a.input, error: { code, message } };
+  private failedResult(s: Session, a: Approval, code: string, message: string): Ran {
+    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: redactInput(a, a.input), error: { code, message } };
     return { result, session: { ...s, results: [...s.results, result] } };
   }
 
@@ -221,7 +221,7 @@ export class Agent {
     const emit = (type: string, data: Record<string, unknown>) => this.log(s, turn, type, data, observe);
     const msgs = this.history(s);
     const waiting = s.approvals.filter((a) => a.status === "pending");           // still parked from earlier turns
-    const shownInput = (a: Approval) => { const t = this.byName.get(a.tool) ?? { bind: {} } as Tool; return unboundInput(t, redactInput(t, a.input)); };
+    const shownInput = (a: Approval) => unboundInput(this.byName.get(a.tool) ?? { bind: {} } as Tool, redactInput(a, a.input));
     if (waiting.length) msgs.push({ role: "user", content: note(`Waiting for a person's approval: ${waiting.map((a) =>
       `${a.tool} ${escapeTags(JSON.stringify(shownInput(a)))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
     const tools = this.opts.tools.map(toolSpec);
@@ -267,7 +267,8 @@ export class Agent {
           }
           if ("approve" in v.result) {                    // parked for a person; the same call isn't parked twice
             const same = s.approvals.find((a) => a.status === "pending" && a.tool === tool.name && stableJson(a.input) === stableJson(input));
-            const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, turn, reason: v.result.approve, by: v.by!, status: "pending" };
+            const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, ...(tool.secret?.length && { secret: tool.secret }),
+              turn, reason: v.result.approve, by: v.by!, status: "pending" };
             if (!same) {
               s = { ...s, approvals: [...s.approvals, a] }; parked.push(a);
               emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result, approval: a.id });
@@ -279,7 +280,7 @@ export class Agent {
           const r = await runTool(tool, modelInput, s, { strictVisibility: this.opts.strictVisibility });
           s = this.spend({ ...r.session, failures: r.result.ok ? 0 : s.failures + 1 }, tool, r.result);
           emit("tool", this.toolLine(r.result));
-          const auto = r.result.outcome === "unknown" ? await this.reconcile(tool, r.result.input, s) : undefined;
+          const auto = r.result.outcome === "unknown" ? await this.reconcile(tool, input, s) : undefined;   // the real input, not the redacted record
           if (auto) {
             s = { ...auto.session, failures: auto.result.ok ? 0 : s.failures + 1 };
             emit("tool", { ...this.toolLine(auto.result), reconcile: true });
