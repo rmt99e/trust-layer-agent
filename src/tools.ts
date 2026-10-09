@@ -25,6 +25,7 @@ export interface ToolDef<S extends Shape = Shape, O = any> {
   visible?: string[];                                              // output paths the model may see; see visibleOutput
   bind?: Partial<Record<Field<S>, `${typeof FACTS_PREFIX}${string}`>>;   // { accountId: "facts.accountId" }
   fromUser?: Field<S>[];                                           // inputs whose values must come from the user's own words or a fact
+  secret?: Field<S>[];                                             // inputs kept out of the session and traces once the call has run
   confirm?: false | { commitment: string; by: Field<S> };          // writes only
   beforeVerification?: boolean;
   verifies?: boolean;
@@ -54,6 +55,7 @@ function define<S extends Shape, O>(kind: "read" | "write", def: ToolDef<S, O>):
     if (!(field in def.input.shape)) fail(`fromUser field "${field}" is not in the input schema`);
     if (def.bind?.[field]) fail(`"${field}" can't be both bound and fromUser`);
   }
+  for (const field of def.secret ?? []) if (!(field in def.input.shape)) fail(`secret field "${field}" is not in the input schema`);
   const confirm = def.confirm ?? (def.name === HANDOFF_TOOL ? false : undefined);   // the reserved handoff write needs no yes
   return { ...def, ...(confirm !== undefined && { confirm }), kind };
 }
@@ -64,6 +66,11 @@ export const unboundSchema = (tool: Tool) => tool.input.omit(Object.fromEntries(
 /** An input without its bound fields: what the model is shown or asked for. */
 export const unboundInput = <T>(tool: Tool, input: Record<string, T>): Record<string, T> =>
   Object.fromEntries(Object.entries(input).filter(([k]) => !boundFields(tool).includes(k)));
+
+export const REDACTED = "[redacted]";
+/** An input with its secret fields replaced: what the session, the traces and the model's history keep of a call. */
+export const redactInput = <T>(tool: Tool, input: Record<string, T>): Record<string, T | string> =>
+  tool.secret?.length ? { ...input, ...Object.fromEntries(tool.secret.filter((k) => k in input).map((k) => [k, REDACTED])) } : input;
 
 /** What the model sees: name, description and the input schema without bound fields. */
 export function toolSpec(tool: Tool): { name: string; description: string; inputSchema: Record<string, unknown> } {
@@ -108,7 +115,8 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
     const result: ToolResult = { id, tool: tool.name, turn, ...r };
     return { result, session: { ...next, results: [...next.results, result] } };
   };
-  const failed = (code: string, message: string, outcome?: "unknown") => done({ ok: false, input: raw, error: { code, message }, ...(outcome && { outcome }) });
+  const failed = (code: string, message: string, outcome?: "unknown") =>
+    done({ ok: false, input: redactInput(tool, raw), error: { code, message }, ...(outcome && { outcome }) });
 
   for (const [field, path] of Object.entries(tool.bind ?? {}) as [string, string][]) {
     const value = session.facts[path.slice(FACTS_PREFIX.length)];
@@ -142,6 +150,6 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
   try { outcome = tool.kind === "write" ? tool.outcome?.(output) ?? "done" : undefined; }
   catch (e) { outcome = "unknown"; outcomeError = (e as Error).message; }            // a broken outcome() can't be trusted either way
   if (recordsError && tool.kind === "write") outcome = "unknown";                     // nor can a write whose records() broke
-  return done({ ok: true, input: parsed.data as Record<string, Json>, output: value, ...(outcome && { outcome }),
+  return done({ ok: true, input: redactInput(tool, parsed.data as Record<string, Json>), output: value, ...(outcome && { outcome }),
     ...(outcomeError && { outcomeError }), ...(recordsError && { recordsError }) }, next);
 }

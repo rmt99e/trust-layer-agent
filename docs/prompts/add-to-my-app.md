@@ -12,7 +12,8 @@ Add trust-layer-agent to this app. You write three things (tools, checks, journe
 Extend only through tools, checks, journeys and model adapters; never patch the package. It ships as plain ESM
 JavaScript with types: no build step in plain-JS apps, and TS apps get the types. Use only names the installed
 package exports (node_modules/trust-layer-agent/dist/index.d.ts): Agent, read, write, z, ToolError, check,
-allow, block, rewrite, handoff, createSession, forget, jsonl, maskTrace, anthropic, openaiCompatible, ModelError.
+allow, block, rewrite, handoff, approve, createSession, loadSession, forget, withStore, memoryStore, StaleSession,
+TurnFailed, jsonl, maskTrace, teachingView, anthropic, openaiCompatible, ModelError.
 If this prompt disagrees with those type files, the type files win; tell me. At every STOP, show me your work
 and wait.
 
@@ -130,8 +131,9 @@ STEP 5: One table and one Express route:
     res.json({ sessionId: r.session.id, reply: r.reply, handedOff: Boolean(r.handoff) });
   });
 
-respond() never mutates the session you pass and bumps rev each turn, so the update is a compare-and-set. Tools
-may have run before a save loses, so also handle one message at a time per conversation. Anonymous visitors get
+respond() never mutates the session you pass and bumps rev each turn, so the update is a compare-and-set. If it
+rejects with TurnFailed, save e.session (withStore does this for you): tools may have run before the model
+failed, and that session is the record of them. Handle one message at a time per conversation. Anonymous visitors get
 createSession({ facts: { verified: false } }) and the verify tool. A handed-off session only returns the handoff
 message; start a new one to talk to the agent again. To delete a conversation, call agent.forget(session): it
 deletes the trace through the sink's forget (warning once if your sink has none) and returns the

@@ -216,6 +216,7 @@ Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `
 - **`reconcileWith`** (writes): the read tool that settles an unknown outcome, e.g. `"get_account"` on `change_plan`. It must name a read tool of the same agent, or `new Agent()` throws.
 - **`repeatable: true`** (writes): lets a write succeed more than once in a turn.
 - **`fromUser`**: input fields whose values must come from the user's own words or a session fact, e.g. `["name", "city"]` on a search tool. Checked by `no_invented_inputs`; a field can't be both bound and `fromUser`.
+- **`secret`**: input fields that must not outlive the call, e.g. `["pin"]` on a verify tool. `run` gets the real value; the session, the traces and the model's history keep `[redacted]`.
 
 A successful write tool named `handoff_to_person` ends the turn as a handoff.
 
@@ -310,7 +311,7 @@ await bound.approve(session.id, "p_1");
 await bound.forget(session.id);            // deletes the trace rows and stores the tombstone in the session's place
 ```
 
-A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
+A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. If the model fails mid-turn, `respond` rejects with `TurnFailed`, which carries the session so far; `withStore` saves it before rethrowing, so a write that ran before the failure is never lost, and the model sees it next turn. `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
 ## The two examples
 

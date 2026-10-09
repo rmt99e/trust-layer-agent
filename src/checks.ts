@@ -52,7 +52,9 @@ export async function runChecks(event: CheckEvent, ctx: CheckContext, checks: re
   const trail: Verdict["trail"] = [];
   let text = event.kind === "reply" ? event.text : undefined, rewrittenBy: string | undefined;
   for (const c of checks) {
-    const result = await c.run(event.kind === "reply" ? { kind: "reply", text: text! } : event, ctx);
+    let result: CheckResult;
+    try { result = await c.run(event.kind === "reply" ? { kind: "reply", text: text! } : event, ctx); }
+    catch (e) { throw new Error(`check "${c.name}" threw: ${(e as Error).message}`, { cause: e }); }
     trail.push({ check: c.name, result });
     if ("allow" in result) continue;
     if ("approve" in result && event.kind === "reply") throw new Error(`check "${c.name}" returned approve for a reply; approve applies to actions only`);

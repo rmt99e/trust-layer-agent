@@ -1,4 +1,4 @@
-import { Agent, type AgentOptions, type Usage } from "../agent.js";
+import { Agent, TurnFailed, type AgentOptions, type Usage } from "../agent.js";
 import { claimKinds } from "../builtins.js";
 import { contextFrom, toolInfo } from "../checks.js";
 import { resolveModel } from "../models/resolve.js";
@@ -111,7 +111,8 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
       if (budget.spent > budget.max) return { ...r, status: "stopped", error: `cost limit $${budget.max} reached` };
     }
   } catch (e) {
-    if (e instanceof ModelError) return { ...r, status: "infra", error: e.message };
+    const cause = e instanceof TurnFailed ? e.cause : e;
+    if (cause instanceof ModelError) return { ...r, status: "infra", error: cause.message };
     throw e;
   }
   r.ended ??= "max_steps";

@@ -1,6 +1,6 @@
 import { BUILTIN_NAMES, checkPipeline, verificationWarning, type BuiltinOptions } from "./builtins.js";
 import { chatLoop, type Observer } from "./chat.js";
-import { block, contextFrom, runChecks, toolInfo, type Check, type ToolInfo, type Verdict } from "./checks.js";
+import { block, contextFrom, handoff, runChecks, toolInfo, type Check, type CheckEvent, type ToolInfo, type Verdict } from "./checks.js";
 import { markShown } from "./claims.js";
 import { listFiles } from "./files.js";
 import { loadJourneys, type LoadedJourneys } from "./journeys.js";
@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { createSession, currentTurn, FACTS_PREFIX, forget, HANDOFF_TOOL, loadSession, nextResultId, SESSION_ID, stableJson,
   type Approval, type ForgottenSession, type Json, type Session, type ToolResult } from "./session.js";
-import { runTool, toolSpec, unboundInput, unboundSchema, type Tool } from "./tools.js";
+import { redactInput, runTool, toolSpec, unboundInput, unboundSchema, type Tool } from "./tools.js";
 import { jsonl, maskTrace, type TraceSink } from "./trace.js";
 
 export interface AgentOptions {
@@ -30,6 +30,10 @@ export interface AgentOptions {
   warn?: (message: string) => void;  // where startup notices go; default console.warn
 }
 export interface Usage { inputTokens: number; outputTokens: number; calls: number }
+/** The model failed mid-turn. `session` holds everything that ran before it did (the user's message, tool results), so a store can keep it. */
+export class TurnFailed extends Error {
+  constructor(public session: Session, public cause: Error) { super(`turn ${currentTurn(session)} failed: ${cause.message}`); this.name = "TurnFailed"; }
+}
 export interface Reply { reply: string; session: Session; handoff?: { summary: string; reason: string }; approvals?: Approval[]; usage: Usage }
 type Ran = Awaited<ReturnType<typeof runTool>>;
 
@@ -43,6 +47,7 @@ const fenceTool = (content: unknown) => `<tool_result>${escapeTags(JSON.stringif
 /** A system note: the library's own words. Anything interpolated from the model, user or tools is escaped first. */
 const note = (text: string) => `<system_note>${text}</system_note>`;
 const NO_MECHANICS = "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.";
+const CHECK_ERROR = "check_error";                                    // a check that throws fails closed: the turn hands off
 const INCOMPLETE = "complete_reply";                                   // the structural reply check: a draft must be whole
 const incomplete = (res: ModelResponse) => res.stop === "max_tokens" ? "The draft was cut off by the model's output limit. Write a shorter reply."
   : !res.text.trim() ? "The draft was empty. Write a reply." : undefined;
@@ -135,7 +140,7 @@ export class Agent {
       : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
     s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
     if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
-    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id } : x) };
+    s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, status, result: ran.result.id, input: tool ? redactInput(tool, x.input) : x.input } : x) };
     this.log(s, turn, "approval", { approval: id, decision: status, ...this.toolLine(ran.result) });
     return { session: s, result: ran.result };
   }
@@ -227,13 +232,16 @@ export class Agent {
       return { reply: text, session: s, usage, ...(handoff && { handoff }), ...(parked.length ? { approvals: parked } : {}) };
     };
     const handoffNow = (summary: string, reason: string) => finish(this.opts.handoffMessage, { summary, reason });
+    const verdict = (e: CheckEvent) => runChecks(e, this.ctx(s), this.checks)
+      .catch((err: Error): Verdict => ({ result: handoff(`A check failed: ${err.message}`), by: CHECK_ERROR, trail: [] }));
 
     for (const due of this.journeys.handoffs) {          // deterministic handoffs need no model call
       const summary = due(this.ctx(s));
       if (summary) return handoffNow(summary, "journey");
     }
     for (;;) {
-      const res = await this.model.generate({ system: this.system, messages: msgs, tools });
+      const res = await this.model.generate({ system: this.system, messages: msgs, tools })
+        .catch((e: Error) => { throw new TurnFailed({ ...s, rev: s.rev + 1 }, e); });        // what ran stays in the session
       usage.calls++; usage.inputTokens += res.usage?.inputTokens ?? 0; usage.outputTokens += res.usage?.outputTokens ?? 0;
       if (res.stop === "refusal") return handoffNow("The model declined to respond.", "refusal");
       if (res.toolCalls.length) {
@@ -245,11 +253,11 @@ export class Agent {
           const tool = this.byName.get(call.name);
           if (!tool) { answer(note(`There is no tool named ${escapeTags(call.name)}.`), true); continue; }
           const modelInput = unboundInput(tool, (call.input ?? {}) as Record<string, Json>);   // the model never supplies a bound field, even in a record
-          const input = { ...modelInput, ...this.boundValues(tool, s) };
-          const v = await runChecks({ kind: "action", tool: toolInfo(tool), input }, this.ctx(s), this.checks);
+          const input = { ...modelInput, ...this.boundValues(tool, s) }, shown = redactInput(tool, modelInput);
+          const v = await verdict({ kind: "action", tool: toolInfo(tool), input });
           if ("handoff" in v.result) return handoffNow(v.result.handoff, v.by!);
           if ("block" in v.result) {
-            emit("check", { event: "action", tool: call.name, input: modelInput, check: v.by, result: v.result });
+            emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result });
             answer(note(`Not run. Blocked: ${escapeTags(v.result.block)} ${NO_MECHANICS}`), true);
             continue;
           }
@@ -258,7 +266,7 @@ export class Agent {
             const a: Approval = same ?? { id: "p_" + (s.approvals.length + 1), tool: tool.name, input, turn, reason: v.result.approve, by: v.by!, status: "pending" };
             if (!same) {
               s = { ...s, approvals: [...s.approvals, a] }; parked.push(a);
-              emit("check", { event: "action", tool: call.name, input: modelInput, check: v.by, result: v.result, approval: a.id });
+              emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result, approval: a.id });
             }
             answer(note(`Not run: ${tool.name} needs a person's approval (${escapeTags(v.result.approve)})${same ? ", which is already requested" : ""}. ` +
               `Tell the user it's been requested, not done. ${NO_MECHANICS}`), true);
@@ -280,7 +288,7 @@ export class Agent {
         continue;
       }
       const cut = incomplete(res);                           // a cut-off or empty draft is refused like any other, before the checks see it
-      const v: Verdict = cut ? { result: block(cut), by: INCOMPLETE, trail: [] } : await runChecks({ kind: "reply", text: res.text }, this.ctx(s), this.checks);
+      const v: Verdict = cut ? { result: block(cut), by: INCOMPLETE, trail: [] } : await verdict({ kind: "reply", text: res.text });
       if ("handoff" in v.result) return handoffNow(v.result.handoff, v.by!);
       if ("block" in v.result) {
         emit("check", { event: "reply", check: v.by, result: v.result, draft: res.text });

@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Agent, allow, approve, check, createSession, handoff, jsonl, loadSession, read, teachingView, ToolError, write, z, type Model, type ModelResponse, type Session } from "../src/index.js";
+import { Agent, allow, approve, block, check, createSession, handoff, jsonl, loadSession, memoryStore, read, teachingView, ToolError, TurnFailed, withStore, write, z,
+  type Model, type ModelResponse, type Session } from "../src/index.js";
 import { extractClaims, markShown } from "../src/claims.js";
 import { main } from "../src/cli.js";
 import { runTool } from "../src/tools.js";
@@ -201,5 +202,86 @@ describe("the teaching view", () => {
     teachingView({ type: "review", result: { allow: true } });
     expect(log.mock.calls.map((c) => c[0])).toEqual(["   · get_order → ok", "   ⏸ parked refund  [big]  Over.", '   ✗ draft not sent  [claims]\n     draft:  "x"\n     reason: No.', "   ✓ approved refund → ok", "   review → ok"]);
     log.mockRestore();
+  });
+});
+
+describe("a turn that fails after a tool ran", () => {
+  const charge = write({ name: "charge_card", description: "Charge the card.", input: z.object({ amount: z.number() }), confirm: false, run: () => ({ charged: true }) });
+  const boom = new Error("provider down");
+  /** Calls charge_card, then the provider dies; on a later turn it tries the same charge again, then answers. */
+  const flaky = (): Model & { requests: any[] } => {
+    const inner = scripted([{ call: "charge_card", input: { amount: 5 } }, { call: "charge_card", input: { amount: 5 } }, "Yes, it went through."]);
+    let n = 0;
+    return { id: "fake:flaky", requests: inner.requests, generate: (req) => (++n === 2 ? Promise.reject(boom) : inner.generate(req)) };
+  };
+  it("rejects with TurnFailed carrying the session so far: the user's message, the write that ran, rev bumped; the input session untouched", async () => {
+    const s = session(), err = await agent(flaky(), [charge]).respond(s, "charge me 5").catch((e) => e);
+    expect(err).toBeInstanceOf(TurnFailed);
+    expect([err.cause, err.message]).toEqual([boom, "turn 1 failed: provider down"]);
+    expect(err.session.results.map((r: any) => [r.tool, r.ok])).toEqual([["charge_card", true]]);
+    expect([err.session.rev, err.session.messages]).toEqual([1, [{ role: "user", text: "charge me 5", turn: 1 }]]);
+    expect([s.results, s.messages, s.rev]).toEqual([[], [], 0]);
+  });
+  it("the next turn replays the failed turn's write to the model, and no_repeated_writes still refuses to run it again", async () => {
+    const model = flaky(), a = agent(model, [charge]);
+    const err = await a.respond(session(), "charge me 5").catch((e) => e);
+    lines.length = 0;
+    const r = await a.respond(err.session, "did it go through?");
+    expect(JSON.stringify(model.requests[2].messages)).toContain(`{\\"charged\\":true}`);          // the result is in the history the model sees
+    expect(lines.find((l) => l.type === "check")).toMatchObject({ event: "action", tool: "charge_card", check: "no_repeated_writes" });
+    expect([r.reply, r.session.results.length]).toEqual(["Yes, it went through.", 1]);
+  });
+  it("withStore saves the failed turn's session before rethrowing, so the next turn builds on it", async () => {
+    const store = memoryStore(), bound = withStore(agent(flaky(), [charge]), store);
+    const err = await bound.respond(null, "charge me 5").catch((e) => e);
+    expect(err).toBeInstanceOf(TurnFailed);
+    const saved = (await store.load(err.session.id)) as Session;
+    expect([saved.rev, saved.results.length]).toEqual([1, 1]);
+    const r = await bound.respond(saved.id, "did it go through?");
+    expect([r.session.rev, ((await store.load(saved.id)) as Session).rev]).toEqual([2, 2]);
+  });
+  it("a check that throws fails closed: the turn hands off naming the check, with reason check_error; review() lets it propagate", async () => {
+    const flakyCheck = check("flaky", () => { throw new Error("db down"); });
+    const a = agent(scripted(["Hello."]), [charge], { checks: [flakyCheck] });
+    const r = await a.respond(session(), "hi");
+    expect(r.handoff).toEqual({ summary: 'A check failed: check "flaky" threw: db down', reason: "check_error" });
+    expect([r.session.status, r.session.rev]).toEqual(["handed_off", 1]);
+    await expect(a.review(session(), "hi")).rejects.toThrow('check "flaky" threw: db down');
+  });
+});
+
+describe("secret inputs", () => {
+  const seen: string[] = [];
+  const verify = read({ name: "verify_user", description: "Verify.", input: z.object({ accountId: z.string(), pin: z.string() }), secret: ["pin"],
+    records: (_o, i) => { seen.push(i.pin); return {}; }, run: ({ pin }) => { seen.push(pin); return { verified: pin === "4417" }; } });
+  const pay = write({ name: "pay", description: "Pay.", input: z.object({ amount: z.number(), cvv: z.string() }), secret: ["cvv"], confirm: false, run: ({ cvv }) => { seen.push(cvv); return { paid: true }; } });
+  const call = (input: Record<string, unknown>): Step => ({ call: "verify_user", input });
+  beforeEach(() => { seen.length = 0; lines.length = 0; });
+  it("is [redacted] in the ToolResult, the trace line and the replayed history; run() and records() get the real value", async () => {
+    const model = scripted([call({ accountId: "a_1", pin: "4417" }), "Verified.", "Still here."]), a = agent(model, [verify]);
+    const t1 = await a.respond(session(), "a_1, pin 4417");
+    expect(t1.session.results[0].input).toEqual({ accountId: "a_1", pin: "[redacted]" });
+    expect(lines.find((l) => l.type === "tool").input.pin).toBe("[redacted]");
+    expect(seen).toEqual(["4417", "4417"]);
+    await a.respond(t1.session, "ok");
+    expect((model.requests[2].messages.find((m: any) => m.toolCalls) as any).toolCalls[0].input).toEqual({ accountId: "a_1", pin: "[redacted]" });
+  });
+  it("stays out of a failed call's result and out of a blocked call's trace line", async () => {
+    const a = agent(scripted([call({ accountId: 1, pin: "4417" }), call({ accountId: "a_1", pin: "4417" }), "Sorry."]), [verify],
+      { checks: [check("second", (e, ctx) => (e.kind === "action" && ctx.results.length ? block("once") : allow()))] });
+    const r = await a.respond(session(), "hi");
+    expect(r.session.results[0]).toMatchObject({ ok: false, error: { code: "invalid_input" }, input: { accountId: 1, pin: "[redacted]" } });
+    expect(lines.find((l) => l.type === "check" && l.event === "action").input).toEqual({ accountId: "a_1", pin: "[redacted]" });
+  });
+  it("a parked action keeps the value until a person decides, since the tool still has to run; approve() then redacts the record", async () => {
+    const a = agent(scripted([{ call: "pay", input: { amount: 5, cvv: "123" } }, "Requested."]), [pay],
+      { checks: [check("big", (e) => (e.kind === "action" ? approve("needs a person") : allow()))] });
+    const t1 = await a.respond(session(), "pay 5");
+    expect(t1.session.approvals[0].input).toEqual({ amount: 5, cvv: "123" });
+    const { session: s, result } = await a.approve(t1.session, "p_1");
+    expect([s.approvals[0].input, result.input, seen]).toEqual([{ amount: 5, cvv: "[redacted]" }, { amount: 5, cvv: "[redacted]" }, ["123"]]);
+  });
+  it("must name a field the schema has", () => {
+    expect(() => read({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["b"] as any, run: () => 1 })).toThrow(/secret field "b" is not in the input schema/);
   });
 });

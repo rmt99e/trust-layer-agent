@@ -91,7 +91,8 @@ const noInventedInputs = check("no_invented_inputs", (e, ctx) => {
 // An unknown or pending outcome may already have applied, so it can't be retried this turn either (even if repeatable).
 const noRepeatedWrites = check("no_repeated_writes", (e, ctx) => {
   if (e.kind !== "action" || e.tool.kind !== "write") return allow();
-  const prior = ctx.results.findLast((r) => r.tool === e.tool.name && r.turn === ctx.turn && (r.ok || r.outcome === "unknown"));
+  const unanswered = (turn: number) => turn === ctx.turn || !ctx.messages.some((m) => m.role === "agent" && m.turn === turn);   // this turn, or one that failed
+  const prior = ctx.results.findLast((r) => r.tool === e.tool.name && unanswered(r.turn) && (r.ok || r.outcome === "unknown"));
   const unsettled = prior && (prior.outcome === "unknown" || prior.outcome === "pending");
   if (!prior || (e.tool.repeatable && !unsettled)) return allow();
   if (unsettled) {

@@ -60,13 +60,14 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,600 (non-blank, non-comment; 1,586 today). Count with:
-  `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
+- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 (1,209 today); the simulator and CLI stay under 450 (395 today). Count with:
+  `cat $(ls src/*.ts src/models/*.ts src/stores/*.ts | grep -v cli.ts) | grep -Ev '^\s*($|//|/?\*)' | wc -l`
+  `cat src/cli.ts src/sim/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 
 ## Conventions
 
-- Checks are deterministic code. Built-ins never call a model; small-model reply review is an optional extra check, off by default.
+- Checks are deterministic code. Built-ins never call a model. A model-backed check would be a custom check an operator writes; the library ships none.
 - No prices or other business values hardcoded in `src/`. They come from tools.
 - Vendor-neutral naming in code, examples and sample data. No real company or product names; the examples are a fictional subscription app and a fictional purchasing desk.
 - Every check change needs tests: add rows to the tables in `test/claims.test.ts` or `test/builtins.test.ts`. A change that lets more through also adds attack rows that must still be blocked.
