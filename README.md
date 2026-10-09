@@ -188,7 +188,7 @@ guardrails:
   - max_calls: { tool: add_usage_pack, per_session: 1 }
   - handoff_when:
       user_says: ["real person", "human", "representative"]
-      summary: User asked for a person.
+      summary: Customer asked for a person.
 ```
 
 The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `require_fact` and `handoff_when` (on a tool result, a tool error code, user phrases or a fact). `handoff_when` is evaluated as soon as a message arrives, so it hands off without a model call. A guardrail can also name a check, which fails loading if that check is disabled. Files are validated when the Agent is built, and errors name the file and line. All loaded journeys are active at once; there is no router.
@@ -254,7 +254,7 @@ npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v1
 
 `snapshot` pins the latest results with fingerprints of the models, instructions, journeys, knowledge, tools, checks and library code, and refuses if any of them changed since the last `test`.
 
-A suite is a `suite.js` that exports the agent options, your tools, a stand-in `run` per tool over a fresh seeded store, `createStore()`, a `state()` function for the grader, the tasks directory, the agent and customer models, and prices. `createStore()` and `state()` may be async, so the store can be a seeded test database. See [sim/suite.js](examples/subscriptions/sim/suite.js). A task is YAML:
+A suite is a `suite.js` that exports the agent options, your tools, a stand-in `run` per tool over a fresh seeded store, `createStore()`, a `state()` function for the grader, the tasks directory, the agent and user models, and prices. `createStore()` and `state()` may be async, so the store can be a seeded test database. See [sim/suite.js](examples/subscriptions/sim/suite.js). A task is YAML:
 
 ```yaml
 id: timeout-applied
@@ -311,7 +311,7 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,484 non-blank, non-comment lines, against a 1,500-line cap.
+- The logic in `src/` is 1,488 non-blank, non-comment lines, against a 1,500-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
 - The suite is small, written by the same authors as the fixes, and run once per version.

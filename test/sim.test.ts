@@ -28,10 +28,10 @@ const standIns: Suite["standIns"] = {
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "tla-sim-")); vi.spyOn(console, "warn").mockImplementation(() => {}); });
 const task = (id: string, body: string) => writeFileSync(join(dir, `${id}.yaml`), `id: ${id}\npurpose: test\nuser:\n  persona: p\n  reason: r\n  known_info: k\n  instructions: i\n${body}`);
-const suite = (agent: Step[], customer: Step[], over: Partial<Suite> = {}): Suite => ({
+const suite = (agent: Step[], user: Step[], over: Partial<Suite> = {}): Suite => ({
   agent: { instructions: "Help." }, tools, standIns, seed: SEED, createStore: makeStore, state: (s: any) => s.db, tasks: dir,
-  agentModel: scripted(agent, { id: "fake:agent" }), userModel: scripted(customer, { id: "fake:customer" }),
-  prices: { "fake:agent": { input: 1, output: 1 }, "fake:customer": { input: 1, output: 1 } }, now: "2026-10-03T12:00:00Z", ...over,
+  agentModel: scripted(agent, { id: "fake:agent" }), userModel: scripted(user, { id: "fake:user" }),
+  prices: { "fake:agent": { input: 1, output: 1 }, "fake:user": { input: 1, output: 1 } }, now: "2026-10-03T12:00:00Z", ...over,
 });
 
 const observed = ({ ctx: c = ctx(), ...o }: Partial<Observed> & { ctx?: ReturnType<typeof ctx> } = {}): Observed => ({ live: SEED, gold: SEED,
@@ -102,10 +102,10 @@ describe("grader timing and async state", () => {
   });
   it("defaults the cost cap to $10, like the CLI", async () => {
     task("cap", "expect: {}");
-    const pricey = scripted(["hi", "###STOP###"], { id: "fake:customer", usage: { inputTokens: 1_000_000, outputTokens: 0 } });   // $1 per call
+    const pricey = scripted(["hi", "###STOP###"], { id: "fake:user", usage: { inputTokens: 1_000_000, outputTokens: 0 } });   // $1 per call
     const run = await runSuite(suite(["ok"], [], { userModel: pricey }), { tasks: ["cap"] });
     expect(run.stopped).toBe(false);                                  // $2 < $10 (the old default of $5 would also pass; see next)
-    const many = scripted(Array(12).fill("hi"), { id: "fake:customer", usage: { inputTokens: 1_000_000, outputTokens: 0 } });
+    const many = scripted(Array(12).fill("hi"), { id: "fake:user", usage: { inputTokens: 1_000_000, outputTokens: 0 } });
     const run2 = await runSuite(suite(Array(12).fill("ok"), [], { userModel: many }), { tasks: ["cap"] });
     expect(run2.cost).toBeGreaterThan(5);                             // would have stopped at $5 before
     expect(run2.cost).toBeLessThan(12);
@@ -179,7 +179,7 @@ describe("runSuite", () => {
   it("stops at the cost limit", async () => {
     task("a", "expect: {}"); task("b", "expect: {}");
     const s = suite(["ok", "ok"], ["hi", "###STOP###", "hi", "###STOP###"], {
-      userModel: scripted(["hi", "###STOP###", "hi", "###STOP###"], { id: "fake:customer", usage: { inputTokens: 1_000_000, outputTokens: 0 } }) });
+      userModel: scripted(["hi", "###STOP###", "hi", "###STOP###"], { id: "fake:user", usage: { inputTokens: 1_000_000, outputTokens: 0 } }) });
     const run = await runSuite(s, { maxCost: 0.5 });
     expect(run.stopped).toBe(true);
     expect(run.trials.map((t) => t.status)).toEqual(["stopped", "stopped"]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSession, forget, read, z } from "../src/index.js";
+import { createSession, forget, read, z, type SessionV1 } from "../src/index.js";
 import { loadSession } from "../src/session.js";
 import { runTool } from "../src/tools.js";
 
@@ -13,7 +13,7 @@ describe("session", () => {
 
   it("loadSession upgrades a v1 session: the customer role becomes user, approvals is filled in, v becomes 2", () => {
     const { approvals, ...rest } = createSession();
-    const old = { ...rest, v: 1 as const, messages: [{ role: "customer", text: "hi", turn: 1 }, { role: "agent", text: "hello", turn: 1 }] } as any;
+    const old: SessionV1 = { ...rest, v: 1, messages: [{ role: "customer", text: "hi", turn: 1 }, { role: "agent", text: "hello", turn: 1 }] };
     const loaded = loadSession(old);
     expect(loaded).toMatchObject({ v: 2, approvals: [], messages: [{ role: "user", text: "hi", turn: 1 }, { role: "agent", text: "hello", turn: 1 }] });
     expect(loaded).not.toBe(old);

@@ -82,8 +82,12 @@ describe("cost estimate", () => {
     const t = { ...trial("a", "pass"), tokens: { agent: { input: 100_000, output: 10_000 }, user: { input: 20_000, output: 2_000 } } };
     const prices = { big: { input: 2, output: 10 }, small: { input: 1, output: 5 } };
     const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, userModel: "big" } as unknown as Suite);
-    expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + customer 0.06
+    expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + user 0.06
     expect(at("small")).toBeCloseTo(0.1 + 0.05 + 0.06);        // switching the agent model halves its part
+  });
+  it("prices a results file written before the user role by mean cost instead of crashing", () => {
+    const old = { ...trial("a", "pass"), cost: 0.5, tokens: { agent: { input: 1, output: 1 }, customer: { input: 1, output: 1 } } } as any;
+    expect(estimatePerTrial([old], { prices: {}, agentModel: "m", userModel: "m" } as unknown as Suite)).toBe(0.5);
   });
 });
 

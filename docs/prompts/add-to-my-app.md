@@ -153,7 +153,7 @@ with file:line.
     - If change_plan fails, say plainly that it did not go through and offer a person.
   guardrails:
     - require_call_before: { tool: change_plan, call: quote_plan_change }
-    - handoff_when: { user_says: ["real person", "human", "speak to someone"], summary: User asked for a person. }
+    - handoff_when: { user_says: ["real person", "human", "speak to someone"], summary: Customer asked for a person. }
 
 STOP.
 

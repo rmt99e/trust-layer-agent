@@ -81,7 +81,7 @@ export function compare(prev: Run & { name: string }, cur: Run): string[] {
 
 /** Cost per trial: the last run's tokens per trial, priced at the CURRENT models' prices. */
 export function estimatePerTrial(trials: Trial[], suite: Suite): number {
-  const id = (m: string | Model) => (typeof m === "string" ? m : m.id), withTokens = trials.filter((t) => t.tokens);
+  const id = (m: string | Model) => (typeof m === "string" ? m : m.id), withTokens = trials.filter((t) => t.tokens?.agent && t.tokens.user);   // results written before the user role are priced by mean cost
   if (!withTokens.length) return trials.length ? trials.reduce((a, t) => a + t.cost, 0) / trials.length : 0.08;
   const price = (role: "agent" | "user", m: string | Model) => {
     const p = suite.prices[id(m)] ?? { input: 0, output: 0 };

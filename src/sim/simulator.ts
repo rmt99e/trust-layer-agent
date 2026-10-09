@@ -94,7 +94,7 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
     return c;
   };
   const r: Trial = { task: task.id, trial, status: "fail", turns: 0, cost: 0, tokens, transcript: [], events };
-  const convo: ModelMessage[] = [{ role: "user", content: "(The support chat is open. Write your first message.)" }];
+  const convo: ModelMessage[] = [{ role: "user", content: "(The chat is open. Write your first message.)" }];
   let session: Session | null = null, handedOff = false;
   try {
     for (; r.turns < task.max_steps && !r.ended; r.turns++) {

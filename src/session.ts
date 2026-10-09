@@ -61,10 +61,13 @@ export function createSession(opts: { facts?: Record<string, Json> } = {}): Sess
   return { v: 2, id, rev: 0, status: "open", facts: { ...opts.facts }, commitments: [], results: [], messages: [], approvals: [], failures: 0 };
 }
 
-/** A copy of a stored session, upgraded: v1 named the user "customer" and had no `approvals`. */
-export function loadSession(session: Session | (Omit<Session, "v"> & { v: 1 })): Session {
+/** The v0.1 session: the user was the "customer" and there were no approvals. loadSession() upgrades it. */
+export type SessionV1 = Omit<Session, "v" | "messages" | "approvals"> & { v: 1; messages: { role: "customer" | "agent"; text: string; turn: number }[]; approvals?: Approval[] };
+
+/** A copy of a stored session, upgraded to v2 (idempotent). Every agent method loads a given session this way. */
+export function loadSession(session: Session | SessionV1): Session {
   const s = structuredClone(session);
-  return { ...s, v: 2, approvals: s.approvals ?? [], messages: s.messages.map((m) => (m.role as string) === "customer" ? { ...m, role: "user" } : m) };
+  return { ...s, v: 2, approvals: s.approvals ?? [], messages: s.messages.map((m) => (m.role === "customer" ? { ...m, role: "user" as const } : m) as Message) };
 }
 
 /** Drop everything but the id. The app overwrites or deletes its stored copy. */

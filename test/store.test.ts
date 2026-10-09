@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Agent, allow, approve, check, createSession, forget, memoryStore, read, StaleSession, withStore, write, z, type Session, type SessionStore } from "../src/index.js";
+import { Agent, allow, approve, check, createSession, forget, memoryStore, read, StaleSession, withStore, write, z, type Session, type SessionStore, type SessionV1 } from "../src/index.js";
 import { postgres } from "../src/stores/postgres.js";
 import { scripted, type Step } from "./fake-model.js";
 
@@ -146,6 +146,22 @@ describe("postgres adapter", () => {
   it("passes mask through to the agent", () => {
     expect(postgres({ query: fakePostgres().query }).trace.mask).toBeUndefined();
     expect(postgres({ query: fakePostgres().query, mask: false }).trace.mask).toBe(false);
+  });
+});
+
+describe("a v0.1 session stored as v1 still works end to end", () => {
+  it("a quote shown under the customer role is honoured, the yes is seen, and the turn count continues", async () => {
+    const store = memoryStore(), run = vi.fn(() => ({ status: "active" }));
+    const change = write({ name: "change_plan", description: "Apply.", input: z.object({ quoteId: z.string() }), confirm: { commitment: "quote", by: "quoteId" }, run });
+    const agent = new Agent({ model: scripted([{ call: "change_plan", input: { quoteId: "q_1" } }, "Done, you're all set."]), instructions: "You help.", tools: [change], builtins: { verified_first: false }, trace: false });
+    const v1: SessionV1 = { v: 1, id: "s_v1", rev: 1, status: "open", facts: {}, results: [], failures: 0,
+      commitments: [{ type: "quote", id: "q_1", by: "quote_plan_change", values: { monthlyPrice: 29 }, turn: 1, shownTurn: 1, status: "open" }],
+      messages: [{ role: "customer", text: "switch me to Plus", turn: 1 }, { role: "agent", text: "Plus is $29/month. Shall I?", turn: 1 }] };
+    await store.save(v1 as unknown as Session);
+    const t = await withStore(agent, store).respond("s_v1", "yes");
+    expect(run).toHaveBeenCalled();
+    expect(t.session).toMatchObject({ v: 2, rev: 2, messages: [{ role: "user", turn: 1 }, { role: "agent", turn: 1 }, { role: "user", text: "yes", turn: 2 }, { role: "agent", turn: 2 }] });
+    expect(t.session.commitments[0]).toMatchObject({ status: "used", acceptedTurn: 2 });
   });
 });
 
