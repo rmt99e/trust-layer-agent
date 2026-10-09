@@ -34,7 +34,7 @@ export interface ToolResult {
   at?: string;                                // ISO time the call finished (absent on sessions written before it was recorded)
 }
 
-/** `person`: a teammate's note on resuming a handed-off session (section 2.3 of the spec); the model sees it as said by the agent's side. */
+/** `person`: a teammate's note on resuming a handed-off session (section 2.3 of the spec); the model is told about it in a system note. */
 export interface Message { role: "user" | "agent" | "person"; text: string; turn: number; at?: string; by?: string }
 
 /** An action a check parked for a person to decide. Either decision ends in a ToolResult (`result`). */

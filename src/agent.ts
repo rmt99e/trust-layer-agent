@@ -132,14 +132,14 @@ export class Agent {
   /** A person declined it: recorded as a failed call with code "declined", so the model learns next turn. */
   decline(session: Session, id: string, opts: { reason?: string; by?: string } = {}) { return this.decide(session, id, opts, opts.reason ?? "A person declined this action."); }
 
-  /** A person hands a handed-off session back: status returns to open, failures reset, and their note, if any, is a `person` message the model will see. */
+  /** A person hands a handed-off session back: status returns to open, failures reset, and their note, if any, is a `person` message the model is told about. */
   resume(session: Session, opts: { note?: string; by?: string } = {}): Session {
     let s = loadSession(session);
     if (s.status !== "handed_off") throw new Error(`session "${s.id}" isn't handed off`);
     const turn = currentTurn(s), at = this.now().toISOString();
     s = { ...s, status: "open", failures: 0, rev: s.rev + 1,
       messages: opts.note ? [...s.messages, { role: "person", text: opts.note, turn, at, ...(opts.by && { by: opts.by }) }] : s.messages };
-    this.log(s, turn, "resume", { note: opts.note, by: opts.by });
+    this.log(s, turn, "resume", { ...(opts.note && { note: opts.note }), ...(opts.by && { by: opts.by }) });
     return s;
   }
 
@@ -157,7 +157,7 @@ export class Agent {
     if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
     const decided = { status, result: ran.result.id, decidedAt: this.now().toISOString(), ...(opts.by && { decidedBy: opts.by }) };
     s = { ...s, rev: s.rev + 1, approvals: s.approvals.map((x) => x.id === id ? { ...x, ...decided, input: redactInput(x, x.input) } : x) };
-    this.log(s, turn, "approval", { approval: id, decision: status, decidedBy: opts.by, ...this.toolLine(ran.result) });
+    this.log(s, turn, "approval", { approval: id, decision: status, ...(opts.by && { decidedBy: opts.by }), ...this.toolLine(ran.result) });
     return { session: s, result: ran.result };
   }
 
@@ -224,7 +224,7 @@ export class Agent {
     const answered = (turn: number) => s.messages.some((m) => m.role === "agent" && m.turn === turn);   // a failed turn has no reply to replay after
     return s.messages.flatMap((m): ModelMessage[] => m.role === "agent"
       ? [{ role: "assistant", content: m.text }, ...results(m, true)]
-      : m.role === "person" ? [{ role: "assistant", content: m.text }]                                // said from the agent's side of the conversation
+      : m.role === "person" ? [{ role: "user", content: note(`A teammate handled this conversation and noted: ${escapeTags(m.text)}`) }]   // the user never saw it
       : [{ role: "user", content: fenceUser(m.text) }, ...results(m, false), ...(answered(m.turn) ? [] : results(m, true))]);
   }
 
@@ -255,7 +255,7 @@ export class Agent {
     const verdict = (e: CheckEvent) => runChecks(e, this.ctx(s), this.checks)
       .catch((err: Error): Verdict => ({ result: handoff(`A check failed: ${err.message}`), by: CHECK_ERROR, trail: [] }));
     const callModel = async (): Promise<ModelResponse> => {                      // one `model` trace line per call, so a line can be matched to the provider's log
-      const t0 = Date.now(), line = { model: this.model.id };
+      const t0 = Date.now(), line = { model: this.model.id };                    // wall time, not the agent clock: a fixed clock would time every call at 0
       try {
         const res = await this.model.generate({ system: this.system, messages: msgs, tools });
         emit("model", { ...line, requestId: res.requestId, ms: Date.now() - t0, stop: res.stop, usage: res.usage });

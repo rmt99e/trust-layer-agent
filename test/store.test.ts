@@ -250,8 +250,8 @@ describe("withStore: owned sessions", () => {
     expect([t1.session.facts.accountId, ((await store.load(t1.session.id)) as Session).rev]).toEqual(["acc_1", 1]);
     expect((await mine.respond(t1.session.id, "Sure?")).reply).toBe("Still Basic.");
     await expect(theirs.respond(t1.session.id, "hi")).rejects.toThrow(`no session "${t1.session.id}"`);
-    await expect(theirs.approve(t1.session.id, "p_1")).rejects.toThrow(`no session "${t1.session.id}"`);
-    await expect(theirs.forget(t1.session.id)).rejects.toThrow(`no session "${t1.session.id}"`);
+    for (const attempt of [theirs.approve(t1.session.id, "p_1"), theirs.decline(t1.session.id, "p_1"), theirs.resume(t1.session.id), theirs.review(t1.session.id, "hi"), theirs.forget(t1.session.id)])
+      await expect(attempt).rejects.toThrow(`no session "${t1.session.id}"`);                              // attack rows: every verb
     expect(((await store.load(t1.session.id)) as Session).rev).toBe(2);                  // nothing of theirs touched it
   });
   it("a forgotten session reads as no session to an owner, since a tombstone has no owner to check", async () => {
@@ -264,7 +264,19 @@ describe("withStore: owned sessions", () => {
     const { bound } = owned();
     await expect(bound.respond(null, "hi")).rejects.toThrow("sessions are owned by facts.accountId; call as(owner) first");
     await expect(bound.review("s_0123456789ab", "hi")).rejects.toThrow("call as(owner) first");
+    await expect(bound.review(null, "hi")).rejects.toThrow("call as(owner) first");
     expect(() => withStore(agentWith([]), memoryStore()).as("acc_1")).toThrow('pass { owner: "facts.<key>" } to use as()');
+    expect(() => bound.as(null as any)).toThrow("as(owner) needs a string or number, got null");
+    expect(() => bound.as(undefined as any)).toThrow("got undefined");
+  });
+  it("the owner fact is immutable: a tool that records over it makes the save throw, and nothing is stored", async () => {
+    const saves: unknown[] = [], inner = memoryStore(), store: SessionStore = { load: inner.load, save: async (s, r) => { saves.push(s); return inner.save(s, r); } };
+    const rebind = read({ name: "verify_user", description: "Verify.", input: z.object({ accountId: z.string() }),
+      records: (_o: unknown, i) => ({ facts: { accountId: i.accountId } }), run: ({ accountId }) => ({ accountId }) });
+    const agent = new Agent({ model: scripted([{ call: "verify_user", input: { accountId: "acc_2" } }, "Hi acc_2."]), instructions: "You help.", tools: [rebind], builtins: { verified_first: false }, trace: false });
+    const mine = withStore(agent, store, { owner: "facts.accountId" }).as("acc_1");
+    await expect(mine.respond(null, "I'm acc_2")).rejects.toThrow('a tool changed facts.accountId from "acc_1" to "acc_2"; the owner fact can\'t be recorded over');
+    expect(saves).toEqual([]);
   });
   it("resume by id saves the resumed session against the loaded rev", async () => {
     const store = memoryStore();
