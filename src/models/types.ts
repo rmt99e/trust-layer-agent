@@ -15,6 +15,7 @@ export interface ModelResponse {
   toolCalls: ToolCall[];
   stop: "end" | "tool_calls" | "max_tokens" | "refusal";
   usage?: { inputTokens: number; outputTokens: number };
+  requestId?: string;                           // the provider's id for this request, so a trace line can be matched to its logs
   raw?: unknown;                                // the provider's content, for the adapter to echo back unchanged
 }
 
@@ -33,8 +34,8 @@ export interface HttpOptions { retryDelayMs?: number; timeoutMs?: number }
 const DEFAULT_TIMEOUT_MS = 60_000, MAX_RETRY_WAIT_MS = 30_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** POST JSON with one retry on 429, 5xx, a timeout or a network error. Other failures throw the provider's message. */
-export async function postJson(label: string, url: string, headers: Record<string, string>, body: unknown, http: HttpOptions = {}): Promise<any> {
+/** POST JSON with one retry on 429, 5xx, a timeout or a network error. Other failures throw the provider's message. Returns the body and the provider's request id header, if any. */
+export async function postJson(label: string, url: string, headers: Record<string, string>, body: unknown, http: HttpOptions = {}): Promise<{ body: any; requestId?: string }> {
   const retryDelayMs = http.retryDelayMs ?? 1000, timeoutMs = http.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   for (let attempt = 0; ; attempt++) {
     let res: Response;
@@ -44,7 +45,7 @@ export async function postJson(label: string, url: string, headers: Record<strin
       if (attempt === 0) { await sleep(retryDelayMs); continue; }
       throw new ModelError(`${label}: ${(e as Error).name === "TimeoutError" ? `no response within ${timeoutMs} ms` : `network error: ${(e as Error).message}`}`);
     }
-    if (res.ok) return res.json();
+    if (res.ok) return { body: await res.json(), requestId: res.headers.get("request-id") ?? res.headers.get("x-request-id") ?? undefined };
     if ((res.status === 429 || res.status >= 500) && attempt === 0) {
       await sleep(Math.min(Number(res.headers.get("retry-after")) * 1000 || retryDelayMs, MAX_RETRY_WAIT_MS));
       continue;

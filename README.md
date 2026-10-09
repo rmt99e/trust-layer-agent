@@ -55,7 +55,7 @@ Prices, percentages, dates and "done" wording in a draft must appear in a succes
 
 ### A person can take the decision
 
-A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. Your app shows the parked action to a person and calls `agent.approve()` or `agent.decline()`; the result lands in the session for the next turn. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it lands. See [Checks](#checks).
+A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. Your app shows the parked action to a person and calls `agent.approve()` or `agent.decline()`, naming who decided; the result, the decision, who made it and when all land in the session for the next turn and the audit trail. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it lands. See [Checks](#checks).
 
 ### Your own messages are checked too
 
@@ -236,14 +236,14 @@ new Agent({ ...options, checks: [bigRefunds] });
 
 Built-ins run first, then journey guardrails, then your checks. For actions, the first non-allow result wins; a blocked tool doesn't run and the model is told why. For replies, rewrites chain; a block discards the draft and the model tries again, up to `maxRetries` (default 2), after which the turn hands off. The built-ins are described in [What it enforces](#what-it-enforces).
 
-**Approvals.** `approve(reason)` parks the action for a person instead of running or refusing it. The conversation goes on: the model is told the action is requested, not done, and `no_unconfirmed_claims` blocks "it's done" wording until it is. The parked action is on the session as `approvals[]` (`{ id, tool, input, turn, reason, by, status }`) and on the reply as `approvals` for the ones parked this turn. Your app decides, whenever it likes:
+**Approvals.** `approve(reason)` parks the action for a person instead of running or refusing it. The conversation goes on: the model is told the action is requested, not done, and `no_unconfirmed_claims` blocks "it's done" wording until it is. The parked action is on the session as `approvals[]` (`{ id, tool, input, turn, at, reason, by, status, result?, decidedAt?, decidedBy? }`) and on the reply as `approvals` for the ones parked this turn. Your app decides, whenever it likes:
 
 ```js
 const { reply, session, approvals } = await agent.respond(saved, message);
 if (approvals) queueForReview(approvals);                      // show a person the tool, input and reason
 
-const { session: next, result } = await agent.approve(session, "p_1");    // runs it now, with the parked input
-// or: await agent.decline(session, "p_1", "Over the self-service limit.")  // a failed call with code "declined"
+const { session: next, result } = await agent.approve(session, "p_1", { by: reviewer.id });   // runs it now, with the parked input
+// or: await agent.decline(session, "p_1", { reason: "Over the self-service limit.", by: reviewer.id })  // a failed call with code "declined"
 await save(next);                                                           // the model sees the result next turn
 ```
 
@@ -289,9 +289,9 @@ The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `req
 
 ### The session and the agent verbs
 
-The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases on every turn that produces a reply and on every approval decision, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
+The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), each message, result and approval stamped with the agent's clock, a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases on every turn that produces a reply and on every approval decision, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
-`agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
+`agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.resume(session, { note, by })` hands a handed-off conversation back to the agent: the person's note is recorded as a `person` message and the model is told what the teammate did, and the session is open again. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
 
 The default trace sink, `jsonl()`, writes one masked file per session to `./traces/`. `maskTrace` is exported for your own logs. The session itself holds what the user typed; store it like other user data.
 
@@ -304,14 +304,15 @@ import { withStore, memoryStore } from "trust-layer-agent";
 import { postgres } from "trust-layer-agent/postgres";
 
 const pg = postgres({ query: (text, params) => pool.query(text, params) });   // pg's pool.query as is; run pg.schema once
-const bound = withStore(new Agent({ ...options, trace: pg.trace }), pg.store);
+const bound = withStore(new Agent({ ...options, trace: pg.trace }), pg.store, { owner: "facts.accountId" });
 
-const { reply, session, approvals } = await bound.respond(sessionId ?? null, message);   // null starts one
-await bound.approve(session.id, "p_1");
-await bound.forget(session.id);            // deletes the trace rows and stores the tombstone in the session's place
+const mine = bound.as(user.accountId);     // every verb below is scoped to this owner
+const { reply, session, approvals } = await mine.respond(sessionId ?? null, message);   // null starts one, with the owner fact set
+await mine.approve(session.id, "p_1", { by: user.id });
+await mine.forget(session.id);            // deletes the trace rows and stores the tombstone in the session's place
 ```
 
-A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. If the model fails mid-turn, `respond` rejects with `TurnFailed`, which carries the session so far; `withStore` saves it before rethrowing, so a write that ran before the failure is never lost, and the model sees it next turn. `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
+A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. With `owner` set, a session id from a request can't reach another owner's conversation: it reads as `no session`, the same as an id that doesn't exist. Every trace line for a model call carries the provider's request id and the wall time, so a line can be matched to the provider's own log. If the model fails mid-turn, `respond` rejects with `TurnFailed`, which carries the session so far; `withStore` saves it before rethrowing, so a write that ran before the failure is never lost, and the model sees it next turn. `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
 ## The two examples
 

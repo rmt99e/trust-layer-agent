@@ -37,6 +37,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Owned sessions.** `withStore(agent, store, { owner: "facts.<key>" })` and `as(owner)`: a new session gets the owner fact, and a verb on another owner's session id fails as `no session`, the same as an unknown id. With `owner` set the unscoped verbs refuse, so forgetting `as()` fails closed; the owner fact can't be recorded over by a tool (the save throws), and `as()` takes only a string or number.
+- **Attribution.** Every message, tool result and approval carries `at` (the agent's clock). `approve(session, id, { by })` and `decline(session, id, { reason, by })` record `decidedAt` and `decidedBy` on the approval (`decline`'s reason moved into the options object). Every model call emits a `model` trace line with the provider's request id (`ModelResponse.requestId`, from the `request-id` header or the body's `id`), wall time, stop reason and usage; a failed call's line carries the error.
+- **`resume(session, { note, by })`.** A handed-off session returns to `open` with failures reset; the person's note is a `person` message; the model is told about it in a system note, since the user never saw it. `withStore` gains `resume(id, …)`.
 - **`secret` on a tool declaration.** Input fields named in `secret` (a PIN, a card's security code) reach `run` and `records` as given and are stored as `[redacted]` everywhere else: the ToolResult, the trace lines, the model's replayed history, and the Approval record once a person decides. Until now a verified PIN sat in `results[]` for the life of the session.
 - `TurnFailed` is exported.
 - The logic-line cap is two caps: library 1,300, simulator and CLI 450. The aggregate ceiling rises from 1,600 to 1,750; the two grow for different reasons and the trust boundary is the one to watch.

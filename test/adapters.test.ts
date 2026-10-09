@@ -153,3 +153,14 @@ describe("provider:model strings", () => {
     expect(() => resolveModel("gemini:m")).toThrow(/use "anthropic:<model>" or "openai-compatible:<model>"/);
   });
 });
+
+describe("request ids", () => {
+  it("anthropic reports the request-id header, falling back to the body id; openai-compatible reports the body id", async () => {
+    mockFetch(new Response(JSON.stringify({ id: "msg_1", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" }), { status: 200, headers: { "request-id": "req_abc" } }));
+    expect((await anthropic({ model: "m", apiKey: "k" }).generate(req)).requestId).toBe("req_abc");
+    mockFetch(reply(200, { id: "msg_2", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" }));
+    expect((await anthropic({ model: "m", apiKey: "k" }).generate(req)).requestId).toBe("msg_2");
+    mockFetch(reply(200, { id: "chatcmpl-9", choices: [{ message: { content: "ok" }, finish_reason: "stop" }] }));
+    expect((await openaiCompatible({ model: "m", apiKey: "k" }).generate(req)).requestId).toBe("chatcmpl-9");
+  });
+});

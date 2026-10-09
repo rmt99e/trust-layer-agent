@@ -94,7 +94,7 @@ untrusted_text_is_data (structural, always on). A custom check is one function:
   check("big_refunds_to_person", (e) => e.kind === "action" && e.tool.name === "refund_invoice" &&
     e.input.amount > 100 ? handoff("Refund over $100 requested.") : allow())
 Use approve("Refund over $100.") instead of handoff when a person should decide that one action while the chat
-goes on: the reply then carries approvals[], and agent.approve(session, id) / agent.decline(session, id, reason)
+goes on: the reply then carries approvals[], and agent.approve(session, id, { by }) / agent.decline(session, id, { reason, by })
 settle it later. If replies state counts, statuses or reference numbers, add claim kinds under
 builtins: { no_unconfirmed_claims: { kinds: [{ name, find: /regex/ }] } } so those need a tool result too.
 Messages the app writes itself (a rendered notice) go through agent.review(session, draft) before sending.

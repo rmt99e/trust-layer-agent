@@ -108,14 +108,14 @@ export function visibleOutput(output: Json, visible?: string[], strict = false):
   return { value: walk(output, "") ?? null, hidden: [...new Set(hidden)] };
 }
 
-export interface RunOptions { strictVisibility?: boolean }
+export interface RunOptions { strictVisibility?: boolean; now?: Date }
 
 /** Validate, inject bound fields, run, record. Returns the result and a new session; never throws for tool failures. */
 export async function runTool(tool: Tool, modelInput: unknown, session: Session, opts: RunOptions = {}) {
   const turn = currentTurn(session), id = nextResultId(session);
   const raw = (modelInput && typeof modelInput === "object" ? { ...modelInput } : {}) as Record<string, Json>;
   const done = (r: Omit<ToolResult, "id" | "tool" | "turn">, next: Session = session) => {
-    const result: ToolResult = { id, tool: tool.name, turn, ...r };
+    const result: ToolResult = { id, tool: tool.name, turn, ...r, at: (opts.now ?? new Date()).toISOString() };
     return { result, session: { ...next, results: [...next.results, result] } };
   };
   const failed = (code: string, message: string, outcome?: "unknown") =>

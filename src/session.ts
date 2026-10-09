@@ -31,9 +31,11 @@ export interface ToolResult {
   outcome?: "done" | "pending" | "unknown";   // writes; a failed call without one is a known failure
   outcomeError?: string;                      // the tool's outcome() threw; the outcome is treated as unknown
   recordsError?: string;                      // the tool's records() threw; nothing was recorded, and a write's outcome is unknown
+  at?: string;                                // ISO time the call finished (absent on sessions written before it was recorded)
 }
 
-export interface Message { role: "user" | "agent"; text: string; turn: number }
+/** `person`: a teammate's note on resuming a handed-off session (section 2.3 of the spec); the model is told about it in a system note. */
+export interface Message { role: "user" | "agent" | "person"; text: string; turn: number; at?: string; by?: string }
 
 /** An action a check parked for a person to decide. Either decision ends in a ToolResult (`result`). */
 export interface Approval {
@@ -42,10 +44,13 @@ export interface Approval {
   input: Record<string, Json>;
   secret?: string[];          // the tool's secret fields when parked, so the record can be redacted even if the tool is gone
   turn: number;
+  at?: string;                // ISO time it was parked
   reason: string;             // what the check said
   by: string;                 // the check that asked
   status: "pending" | "approved" | "declined";
   result?: string;            // the ToolResult id once decided
+  decidedAt?: string;         // ISO time of the decision
+  decidedBy?: string;         // who decided, as the app names them (an email, a user id); the audit trail's answer to "who approved this"
 }
 
 export interface Session {

@@ -388,7 +388,7 @@ describe("approve: an action parked for a person", () => {
   it("doesn't run the tool, parks it on the session, tells the model, and blocks 'done' wording meanwhile", async () => {
     const { model, t2 } = await parkIt();
     expect(refundRun).not.toHaveBeenCalled();
-    const parked = { id: "p_1", tool: "refund_order", input: { orderId: "123", amount: 150 }, turn: 2, reason: "Refund over $100.", by: "big_refunds", status: "pending" };
+    const parked = { id: "p_1", tool: "refund_order", input: { orderId: "123", amount: 150 }, turn: 2, at: expect.any(String), reason: "Refund over $100.", by: "big_refunds", status: "pending" };
     expect(t2.approvals).toEqual([parked]);
     expect(t2.session.approvals).toEqual([parked]);
     expect(t2.reply).toBe("I've requested the refund; a person has to approve it, so nothing has changed yet.");
@@ -426,9 +426,9 @@ describe("approve: an action parked for a person", () => {
   });
   it("agent.decline records a failed call with code declined, so a 'done' reply stays blocked", async () => {
     const { agent, t2 } = await parkIt(["Your refund has been processed.", "A person reviewed it and the refund wasn't approved, so nothing was refunded."]);
-    const { session, result } = await agent.decline(t2.session, "p_1", "Over the self-service limit.");
+    const { session, result } = await agent.decline(t2.session, "p_1", { reason: "Over the self-service limit." });
     expect(refundRun).not.toHaveBeenCalled();
-    expect(result).toEqual({ id: "c_1", tool: "refund_order", turn: 2, ok: false, input: { orderId: "123", amount: 150 }, error: { code: "declined", message: "Over the self-service limit." } });
+    expect(result).toEqual({ id: "c_1", tool: "refund_order", turn: 2, ok: false, input: { orderId: "123", amount: 150 }, error: { code: "declined", message: "Over the self-service limit." }, at: expect.any(String) });
     expect(session.approvals[0]).toMatchObject({ status: "declined", result: "c_1" });
     expect(session.failures).toBe(0);
     expect(traceLines(session).at(-1)).toMatchObject({ type: "approval", approval: "p_1", decision: "declined", tool: "refund_order", ok: false, error: { code: "declined" } });

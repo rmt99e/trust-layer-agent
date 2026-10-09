@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300 and is at 1,228; the simulator and CLI stay under 450 and are at 396. A change that adds a feature near a cap needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300 and is at 1,275; the simulator and CLI stay under 450 and are at 396. A change that adds a feature near a cap needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
