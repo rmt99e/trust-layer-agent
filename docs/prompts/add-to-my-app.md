@@ -122,8 +122,12 @@ STEP 5: One table and one Express route:
       await pool.query("insert into agent_sessions (id, account_id, rev, data) values ($1, $2, $3, $4)", [session.id, accountId, session.rev, session]);
     }
     let r;
-    try { r = await agent.respond(session, message); }                       // { reply, session, handoff?, usage }
-    catch (e) { if (e instanceof ModelError) return res.status(503).json({ error: "Try again shortly." }); throw e; }
+    try { r = await agent.respond(session, message); }                       // { reply, session, handoff?, approvals?, usage }
+    catch (e) {
+      if (!(e instanceof TurnFailed)) throw e;                               // the model failed; e.session holds what ran before it did
+      await pool.query("update agent_sessions set data = $1, rev = $2, updated_at = now() where id = $3 and rev = $4", [e.session, e.session.rev, e.session.id, session.rev]);
+      return res.status(503).json({ error: "Try again shortly." });
+    }
     const saved = await pool.query("update agent_sessions set data = $1, rev = $2, updated_at = now() where id = $3 and rev = $4",
       [r.session, r.session.rev, r.session.id, session.rev]);
     if (!saved.rowCount) return res.status(409).json({ error: "This conversation changed elsewhere. Reload." });

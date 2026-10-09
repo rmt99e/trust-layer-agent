@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci         # runs the prepare build, so dist/ exists for the examples
+      - run: npm ci         # runs the prepare build too, as an install from GitHub would
       - run: npm test       # unit tests only: no secrets, no model calls, no simulations
-      - run: npx tsc -p tsconfig.test.json   # the tests and vitest config type-check too
+      - run: npm run typecheck               # the tests and vitest config type-check too
       - run: npm run build
       - run: npm pack --dry-run              # what an npm install would get

@@ -13,3 +13,4 @@ What is planned, in rough order. Items move here from issues and pull-request di
 ## Pre-1.0 naming decision
 
 - The check result `approve(reason)` means "this needs a person's approval", while `agent.approve(session, id)` means "a person approved it". Same word, two directions. Rename the check helper (candidates: `needsApproval`, `park`) before the first npm release, since the wire key `approve` on `CheckResult` and in trace lines would change with it.
+- `by` names three different things across the session: the tool on a `Commitment`, the check on an `Approval`, the person on a `Message`, while the person on an `Approval` is `decidedBy`. All are wire keys, so a rename is a schema change; decide it with the `approve` helper before 1.0.

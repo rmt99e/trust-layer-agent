@@ -18,7 +18,7 @@ const stub = (name: string, kind: "read" | "write" = "read", out: unknown = {}) 
   (kind === "read" ? read : write)({ name, description: name, input: z.object({}).passthrough(), run: () => out });
 
 describe("journeys", () => {
-  it("loads the plan-change journey from design.md", () => {
+  it("loads the plan-change journey fixture", () => {
     const j = loadJourneys(PLAN_CHANGE, known);
     expect(j.prompts[0]).toMatch(/^## Journey: plan-change\nGoal: Help a verified customer/);
     expect(j.checks.map((c) => c.name)).toEqual(["plan-change:require_call_before", "plan-change:allow_values", "plan-change:allow_values",

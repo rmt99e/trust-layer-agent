@@ -1,6 +1,6 @@
 // Real-model smoke test: a tiny agent, one read tool, two turns, per available provider.
 // Run with `npm run smoke` (loads .env via node --env-file). Never prints a key.
-import { Agent, anthropic, createSession, openaiCompatible, read, z } from "../dist/index.js";
+import { Agent, anthropic, createSession, openaiCompatible, read, teachingView, z } from "../dist/index.js";
 
 const getPlan = read({
   name: "get_plan", description: "The user's current plan, price and renewal date.", input: z.object({}),

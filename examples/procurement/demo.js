@@ -27,7 +27,7 @@ for (const message of SCRIPT) {
 const pending = session.approvals.filter((a) => a.status === "pending");
 if (!pending.length) { console.log("(nothing was parked for approval this run)"); process.exit(0); }
 console.log(`[a person in purchasing approves ${pending[0].id}: ${pending[0].reason}]`);
-({ session } = await agent.approve(session, pending[0].id));
+({ session } = await agent.approve(session, pending[0].id, { by: "purchasing-lead" }));
 const r = await agent.respond(session, "Did it go through?");
 session = r.session;
 console.log(`you   > Did it go through?\nagent > ${r.reply}\n`);

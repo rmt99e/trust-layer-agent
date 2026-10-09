@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compare, configOf, estimatePerTrial, gate, libraryFiles, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
+import { compare, configOf, estimatePerTrial, gate, libraryFiles, main, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
 import { read, write, z } from "../src/index.js";
 import type { Suite } from "../src/sim/simulator.js";
 import { asserted, claimsDone, insideRefusal, MONEY, PERCENT, says } from "../src/sim/grade.js";
@@ -215,3 +215,16 @@ describe("fingerprint covers claim kinds, which JSON alone would drop", () => {
   ] as const)("changing %s → config differs", (_n, kinds) => expect(differs(kinds)).toBe(true));
   it("the same regex → no warning", () => expect(differs([{ name: "count", find: /(\d+) records/ }])).toBe(false));
 });
+
+describe("the CLI refuses bad numbers and unknown commands", () => {
+  it("rejects a flag that isn't a number and a command it doesn't know", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tla-cli-"));
+    writeFileSync(join(dir, "suite.js"), "export default {};");
+    await expect(main(["test", "--suite", dir, "--k", "abc"])).rejects.toThrow('--k needs a number (got "abc")');
+    await expect(main(["test", "--suite", dir, "--k"])).rejects.toThrow("--k needs a number (got nothing)");
+    await expect(main(["test", "--suite", dir, "--k", "0"])).rejects.toThrow("--k needs a whole number of trials, at least 1 (got 0)");
+    await expect(main(["test", "--suite", dir, "--min-pass", "2"])).rejects.toThrow('--min-pass needs a number from 0 to 1 (got "2")');
+    await expect(main(["bogus"])).rejects.toThrow(/^usage: trust-layer-agent test\|snapshot/);
+  });
+});
+

@@ -9,7 +9,7 @@ export function makeTools(store) {
   return [
     read({
       name: "verify_customer", description: "Verify the customer with their account id and PIN.",
-      input: z.object({ accountId: z.string(), pin: z.string() }), beforeVerification: true, verifies: true,
+      input: z.object({ accountId: z.string(), pin: z.string() }), secret: ["pin"], beforeVerification: true, verifies: true,
       visible: ["verified", "name"],
       records: (o) => (o.verified ? { facts: { verified: true, accountId: o.accountId } } : {}),
       run: ({ accountId, pin }) => store.verify(accountId, pin),

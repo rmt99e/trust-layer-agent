@@ -14,7 +14,7 @@ This document is language-neutral. The TypeScript package (`src/`) is the refere
 - Numbers are compared after normalization to the cent: `norm(x) = round(parseFloat(strip(x)) * 100) / 100`, where `strip` removes every character except digits, `.` and `-`.
 - "Turn" = the number of user messages in the session so far. The agent's reply to user message *n* has turn *n*.
 
-The surface: three nouns (**tools**, **checks**, **journeys**), the agent verbs (**respond**, **review**, **approve**, **decline**, **forget**, **chat**), two commands (**test**, **snapshot**). Extension happens only through five points: tools, checks, journeys, model adapters and session stores.
+The surface: three nouns (**tools**, **checks**, **journeys**), the agent verbs (**respond**, **review**, **approve**, **decline**, **resume**, **forget**, **chat**), two commands (**test**, **snapshot**). Extension happens only through five points: tools, checks, journeys, model adapters and session stores.
 
 ## 1. Tools
 
@@ -345,7 +345,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 |---|---|
 | `v` | schema version, `2`. v1 (the v0.1 tag) named the user role `customer` and had no `approvals`; `loadSession` upgrades it in place, and every agent method loads through `loadSession` |
 | `id` | `s_` + 12 lower-case hex characters |
-| `rev` | incremented once per `respond()` that produces a reply or rejects with `TurnFailed`, and once per approval decision; for optimistic locking by the app |
+| `rev` | incremented once per `respond()` that produces a reply or rejects with `TurnFailed`, once per approval decision, and once per `resume`; for optimistic locking by the app |
 | `status` | `open`, `handed_off` (set on handoff; `resume` sets it back to `open`), `closed` (reserved; never set by v0.1) |
 | `facts` | `{ key: Json }`; from `createSession({ facts })` (trusted app input) and tool `records` |
 | `commitments[]` | `{ type, id, by, values, turn, shownTurn?, acceptedTurn?, status, expiresAt? }`; status `open`/`used` (also reserved: `accepted`, `expired`) |
@@ -358,16 +358,17 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 {
   "v": 2, "id": "s_3f9a1c2b7d4e", "rev": 2, "status": "open",
   "facts": { "verified": true, "accountId": "acc_100" },
+  "approvals": [],
   "commitments": [
     { "type": "quote", "id": "q_001", "by": "quote_plan_change", "values": { "monthlyPrice": 29, "proratedCharge": 4.12 },
       "turn": 1, "shownTurn": 1, "acceptedTurn": 2, "status": "used", "expiresAt": "2026-10-04T12:00:00.000Z" }
   ],
   "results": [
-    { "id": "c_1", "tool": "verify_customer", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "pin": "4417" }, "at": "2026-10-03T12:00:01.000Z",
+    { "id": "c_1", "tool": "verify_customer", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "pin": "[redacted]" }, "at": "2026-10-03T12:00:01.000Z",
       "output": { "verified": true, "name": "Dana" } },
-    { "id": "c_2", "tool": "quote_plan_change", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "planId": "plus" },
+    { "id": "c_2", "tool": "quote_plan_change", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "planId": "plus" }, "at": "2026-10-03T12:00:03.000Z",
       "output": { "quoteId": "q_001", "planName": "Plus", "monthlyPrice": 29, "proratedCharge": 4.12, "effectiveDate": "2026-10-03" } },
-    { "id": "c_3", "tool": "change_plan", "turn": 2, "ok": true, "input": { "accountId": "acc_100", "quoteId": "q_001" },
+    { "id": "c_3", "tool": "change_plan", "turn": 2, "ok": true, "input": { "accountId": "acc_100", "quoteId": "q_001" }, "at": "2026-10-03T12:00:31.000Z",
       "output": { "status": "active" }, "outcome": "done" }
   ],
   "messages": [
@@ -540,7 +541,7 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 ## 13. Conformance
 
 A port conforms to v0.1 when:
-1. It ports the reference test tables and they pass unchanged in meaning, every allowed row **and** every attack row: `test/claims.test.ts` (extraction, kinds, dates, negation, negated subjects, status phrases, refusal allowance, write outcomes done/pending/failed/unknown/reconciled, failure wording, bare "all set", markShown), `test/builtins.test.ts` (phrase cases, extra consent phrases, custom phrase case, yes_after_quote ordering, verified_first applicability and warning, handoff summary, no_repeated_writes and its block reason, pipeline order, rewrite chaining and attribution), `test/tools.test.ts` (bind, visibility, masking, records, errors, recorded outcomes), `test/agent.test.ts` (fencing, notes, retries, handoff, masked sinks, structural fields, `agent.forget`, commitment id+type matching, no second write while redrafting a blocked reply), `test/journeys.test.ts` (validation messages with file:line:col), `test/session.test.ts`, `test/sim.test.ts` (grading, send-time claims, async `createStore` and `state`, the $10 default cost cap, `allow_error`, `allowed_writes`, forbidden phrases, done claims) and `test/cli.test.ts` (summary, compare, gate, library fingerprint, cost estimate, `--against`, the grader's independent refusal and assertion matchers). Block reasons and notes MUST match the exact strings in this spec.
+1. It ports the reference test tables and they pass unchanged in meaning, every allowed row **and** every attack row: `test/claims.test.ts` (extraction, kinds, dates, negation, negated subjects, status phrases, refusal allowance, write outcomes done/pending/failed/unknown/reconciled, failure wording, bare "all set", markShown), `test/builtins.test.ts` (phrase cases, extra consent phrases, custom phrase case, yes_after_quote ordering, verified_first applicability and warning, handoff summary, no_repeated_writes and its block reason, pipeline order, rewrite chaining and attribution), `test/tools.test.ts` (bind, visibility, masking, records, errors, recorded outcomes), `test/agent.test.ts` (fencing, notes, retries, handoff, masked sinks, structural fields, `agent.forget`, commitment id+type matching, no second write while redrafting a blocked reply), `test/journeys.test.ts` (validation messages with file:line:col), `test/session.test.ts`, `test/sim.test.ts` (grading, send-time claims, async `createStore` and `state`, the $10 default cost cap, `allow_error`, `allowed_writes`, forbidden phrases, done claims) and `test/cli.test.ts` (summary, compare, gate, library fingerprint, cost estimate, `--against`, the grader's independent refusal and assertion matchers). Block reasons and notes MUST match the exact strings in this spec, `test/store.test.ts` (the SessionStore contract every store must pass, `withStore` incl. owned sessions), `test/turn-failed.test.ts` (`TurnFailed` and a throwing check), `test/secret.test.ts` (`secret` redaction) and `test/attribution.test.ts` (`at`, decisions, `model` lines, `resume`).
 2. Its session, journey, task, results and snapshot files are interchangeable with the reference implementation's.
 3. It runs the subscriptions suite (`examples/subscriptions/`: same seed, tools, journeys, policy, clock, prices and the tasks in `sim/tasks/`) with its own `test` command and reports each task's trial marks and pass^k. Scores depend on the models; `snapshots/v4-sonnet.json` and `snapshots/v4-haiku.json` (22 tasks, k = 4, graded by the rules in this spec) are the reference results for their pinned configurations. Compare trial counts per task, not only pass^k: at k = 4 a single borderline task moves overall pass^4 by about 4.5 points on 22 tasks. Check the transcript of every task whose counts differ.
 

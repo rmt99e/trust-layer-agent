@@ -304,3 +304,19 @@ describe("done wording while an action awaits a person's approval", () => {
     expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [{ ...waiting(), tool: "get_account" }] })).toEqual({ allow: true });
   });
 });
+
+describe("claims: ids and worded prices", () => {
+  it("markShown matches a commitment id as a whole token", () => {
+    const k = (id: string) => ({ type: "quote", id, by: "q", values: { monthlyPrice: 99 }, turn: 1, status: "open" as const });
+    expect(markShown([k("q_1"), k("q_10")], "Your quote is q_10.", 1).map((x) => x.shownTurn)).toEqual([undefined, 1]);
+  });
+  it('"29 a month" is a price claim; so, as an accepted false positive, is "2 per day"', () => {
+    expect(extractClaims("Plus is 29 a month, or 290 per year.").money).toEqual([29, 290]);
+    expect(extractClaims("You can change plans 2 per day.").money).toEqual([2]);          // tabled: a rate, not a price, but blocked unless a tool returned 2
+  });
+  it("first-person done wording never included 'completed', and still doesn't", () => {
+    expect(extractClaims("I've completed my review of your account.").done).toEqual([]);
+    expect(extractClaims("Your request has been completed.").done).toEqual(["has been completed"]);
+  });
+});
+

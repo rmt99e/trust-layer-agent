@@ -8,7 +8,7 @@ Replace `<language>` and `<repo-url>`, then copy everything inside the block int
 
 ````text
 Port trust-layer-agent to <language>. Reference repo: <repo-url>. Clone it and read SPEC.md, then src/ (about
-1,500 lines of TypeScript), test/ and examples/subscriptions/. SPEC.md is the contract. Where SPEC.md, the
+1,700 logic lines of TypeScript), test/ and examples/subscriptions/. SPEC.md is the contract. Where SPEC.md, the
 source and the tests disagree, the source and its tests win; list every disagreement for me.
 
 Keep the design intact: three things a user writes (tools, checks, journeys), one call (respond), two commands
@@ -18,7 +18,7 @@ RULES
 - Dependencies: a schema validator that can emit JSON Schema, and a YAML parser that keeps line numbers. Use
   the standard library for HTTP, JSON, UUIDs, hashing and files. No model provider SDKs and no agent framework.
 - Same wire formats, byte for byte where it matters: session JSON (v, id, rev, status, facts, commitments,
-  results with each write's outcome, messages, failures), check results ({allow: true} | {block} | {rewrite} |
+  results with each write's outcome, messages, approvals, failures), check results ({allow: true} | {block} | {rewrite} |
   {handoff} | {approve}), journey and task YAML, trace lines, results/ and snapshots/ JSON. A session saved by the TypeScript package must load in
   the port and the other way round.
 - Checks are deterministic code. Copy phrase lists, regexes, block reasons and notes exactly (SPEC.md requires
@@ -41,7 +41,7 @@ Build in this order. For each step, read the named SPEC.md section and source fi
 make them pass before moving on.
 
 1. Session: createSession({ facts }) (id "s_" + 12 hex, rev 0, status "open"), forget(session) returning
-   { v: 1, id, forgotten: true }. Never mutate a session you were given.
+   { v: 2, id, forgotten: true }. Never mutate a session you were given.
    SPEC: 7. Source: src/session.ts. Tests: test/session.test.ts.
 2. Tools: read/write declarations (explicit snake_case name, description, input schema, visible, bind, confirm,
    beforeVerification, verifies, records, run, and for writes outcome, reconcileWith and repeatable); the
@@ -80,8 +80,8 @@ make them pass before moving on.
    earlier turn), handoff_after_failures, no_repeated_writes (a write that already succeeded in this turn is
    blocked, with the prior result in the exact block reason, unless the tool is repeatable; a call this turn
    with an unknown or pending outcome blocks a retry even when the tool is repeatable; an earlier turn or a
-   known failure doesn't count). With untrusted_text_is_data that makes six built-ins; the pipeline test
-   fixes the order of the other five. untrusted_text_is_data is structural and is built in steps 2 and 6.
+   known failure doesn't count), no_invented_inputs. With untrusted_text_is_data that makes seven built-ins; the pipeline test
+   fixes the order of the other six. untrusted_text_is_data is structural and is built in steps 2 and 6.
    SPEC: 5.1, 5.2, 5.5, 5.6. Source: src/builtins.ts. Tests: the rest of test/builtins.test.ts, including
    "no_repeated_writes (v4 b)".
    STOP: show me pass counts for every table in steps 1 to 5, allowed and attack rows separately, and each

@@ -83,7 +83,7 @@ describe("Agent", () => {
       "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.</system_note>");
     expect(r.session.results.map((x) => x.tool)).toEqual(["quote_plan_change"]);
   });
-  it("an action blocked by verified_first doesn't run and the model gets { blocked }", async () => {
+  it("an action blocked by verified_first doesn't run and the model gets a 'Not run. Blocked' system note", async () => {
     getAccount.mockClear();
     const { agent, model } = agentWith([{ call: "get_account" }, "I need to verify you first. What's your account id and PIN?"]);
     const r = await agent.respond(null, "What plan am I on?");

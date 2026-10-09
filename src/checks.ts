@@ -23,7 +23,7 @@ export interface CheckContext {
   facts: Readonly<Record<string, Json>>;
   commitments: readonly Commitment[];
   results: readonly ToolResult[];
-  messages: readonly Message[];        // conversation so far; the last is the user's
+  messages: readonly Message[];        // conversation so far; in a turn the last is the user's (review() sees whatever was said last)
   approvals: readonly Approval[];      // actions parked for a person, pending or decided
   failures: number;
   turn: number;
