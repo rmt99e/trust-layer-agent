@@ -38,7 +38,7 @@ export interface Observed {
   results: readonly ToolResult[];                  // executed tool calls
   blocked: string[];                               // tools whose calls a check blocked
   handedOff: boolean;
-  sent: string[];                                  // replies the customer actually received
+  sent: string[];                                  // replies the user actually received
   sentCtx: CheckContext[];                         // the session as it was when each reply was sent
   kinds?: ClaimKind[];                             // the suite's operator-defined claim kinds
   writes: Set<string>;                             // names of write tools
@@ -69,7 +69,7 @@ export const says = (text: string, re: RegExp, v: number, allowInRefusal = false
     !(allowInRefusal && insideRefusal(t.slice(0, m.index), t.slice(m.index! + m[0].length))));
 };
 
-// Also independent of claims.ts: wording a customer would read as "it happened", unless its own clause negates it.
+// Also independent of claims.ts: wording a user would read as "it happened", unless its own clause negates it.
 const DONE_WORDS = ["has been switched", "have been switched", "has been changed", "has been processed", "has been refunded", "has been applied",
   "has been completed", "is done", "it's done", "all done", "successfully", "went through", "is now active", "is active now", "is complete",
   "you're now on", "you are now on"];

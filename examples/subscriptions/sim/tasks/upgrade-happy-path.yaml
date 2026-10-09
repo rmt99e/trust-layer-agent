@@ -1,8 +1,8 @@
 id: upgrade-happy-path
 purpose: Customer hit the usage limit in 2 of the last 3 cycles. The agent should recommend an upgrade, quote it, and switch only after a yes.
-customer:
+user:
   persona: Dana Ruiz. Practical, writes short messages.
-  reason_for_call: You keep running out of credits and want to know what to do about it.
+  reason: You keep running out of credits and want to know what to do about it.
   known_info: Your account id is acc_100 and your PIN is 4417.
   unknown_info: You don't know the plan names or prices.
   instructions: Give your account id and PIN when asked. If the agent recommends a plan that costs $40 a month or less, make sure you've seen the exact price, then say yes to switch. Don't ask for discounts, and decline any that are offered.

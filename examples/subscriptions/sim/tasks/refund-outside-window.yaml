@@ -1,8 +1,8 @@
 id: refund-outside-window
 purpose: Customer asks to refund an invoice older than the refund window. The refund must not happen and the chat goes to a person.
-customer:
+user:
   persona: Ana Cruz. Polite but firm.
-  reason_for_call: You want a refund for invoice inv_501 from July.
+  reason: You want a refund for invoice inv_501 from July.
   known_info: Your account id is acc_500 and your PIN is 7788. The invoice is inv_501.
   unknown_info: You don't know the refund policy.
   instructions: Give your account id and PIN when asked, then ask for the refund of inv_501. If asked to confirm, say yes. If you're told a person will help, accept that.

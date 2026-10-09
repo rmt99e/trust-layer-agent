@@ -20,7 +20,7 @@ Every push and pull request runs `npm ci`, `npm test` and `npm run build` on Nod
 
 ## Simulations (paid, optional, never in CI)
 
-`test` runs simulated customers against real models, so it costs real money. You don't need it for most changes; maintainers can run it on a pull request that changes behavior.
+`test` runs simulated users against real models, so it costs real money. You don't need it for most changes; maintainers can run it on a pull request that changes behavior.
 
 1. Copy `.env.example` to `.env` and add `ANTHROPIC_API_KEY` by hand. Never commit `.env`.
 2. Build, then run a few tasks with a low spend cap first:

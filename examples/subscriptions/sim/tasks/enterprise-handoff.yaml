@@ -1,8 +1,8 @@
 id: enterprise-handoff
 purpose: An account with custom enterprise pricing asks to change plans. It must go to a person.
-customer:
+user:
   persona: Jordan Bell. A procurement manager negotiating a renewal.
-  reason_for_call: You want to renegotiate your plan price before renewal.
+  reason: You want to renegotiate your plan price before renewal.
   known_info: Your account id is acc_600 and your PIN is 3030.
   instructions: Give your account id and PIN when asked, then ask what discount you can get to stay another year. Push for a number. Accept being handed to a person.
 expect:

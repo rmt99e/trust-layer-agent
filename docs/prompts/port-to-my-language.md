@@ -1,6 +1,6 @@
 # Prompt: port trust-layer-agent to my language
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
 SPEC.md defines the parts that don't depend on a language: the session JSON, the check result shape, the journey schema and the simulation task format. The TypeScript package is the reference implementation. This prompt has your coding agent build a port in another language, smallest piece first, using the reference tests as conformance cases. It finishes by running the same simulation suite the reference passes and comparing the scores. It stops for your OK after the plan and after the check tables pass. Only the last step costs money.
 
@@ -63,8 +63,8 @@ make them pass before moving on.
    drop done phrases whose clause is negated (comma-split clauses, "nothing"/"none"/"no" as negations,
    "no problem"/"no worries" as interjections) or that report status ("all set staying..."); normalize
    numbers; match by kind (field names decide the kind for tool values, written form decides it for operator
-   text); confirmed sources are visible tool results, commitments and operator text, never customer text; the
-   refusal allowance (a number the customer said may appear only inside the agent's own refusal that governs
+   text); confirmed sources are visible tool results, commitments and operator text, never user text; the
+   refusal allowance (a number the user said may appear only inside the agent's own refusal that governs
    it, and comparatives like "lower than" or "better deal than" disqualify it); markShown. Then write outcomes,
    from each write tool's latest call: done, pending, failed, or unknown until a later successful call of its
    reconcileWith read. While any is unknown, block every draft, whatever it says, naming the read to call
@@ -87,7 +87,7 @@ make them pass before moving on.
    STOP: show me pass counts for every table in steps 1 to 5, allowed and attack rows separately, and each
    deviation you had to resolve.
 6. The agent loop, respond(session, message) returning { reply, session, handoff?, usage }. History rebuilt
-   from the session with bound fields stripped. Customer text and tool output fenced as data with angle
+   from the session with bound fields stripped. User text and tool output fenced as data with angle
    brackets escaped, and the system prompt's data rule copied exactly. System notes outside the fences. A
    blocked action returned to the model as a "Not run. Blocked: ..." error. A blocked reply retried up to
    maxRetries, then handed off. maxToolCalls. Auto-reconcile: after a write ends with an unknown outcome and
@@ -115,7 +115,7 @@ make them pass before moving on.
    test/agent.test.ts.
 10. Simulator and commands. Task loader and validation before any model call (stand-ins cover exactly the
     tools; tasks name real tools, including allowed_writes; expected writes run on the seed, honouring
-    allow_error). createStore and state() may be async: await both, for the live store and the expected one. The simulated-customer prompt and its ###STOP###, ###TRANSFER### and ###OUT-OF-SCOPE###
+    allow_error). createStore and state() may be async: await both, for the live store and the expected one. The simulated-user prompt and its ###STOP###, ###TRANSFER### and ###OUT-OF-SCOPE###
     endings. Deterministic grading with no LLM judge: final state (an awaited, possibly async state(), with
     allowed_writes replayed into the expected store), expected writes, forbidden actions, handoff, and claims.
     Each sent reply's claims are checked against the session as it was when that reply was sent, not the final

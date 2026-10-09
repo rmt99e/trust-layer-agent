@@ -1,8 +1,8 @@
 id: switch-request-after-quote
 purpose: After seeing a quote, the customer says "Can you just switch me?" and only says yes if asked again. The change must still happen; friction measures over-blocking.
-customer:
+user:
   persona: Sam Ortiz. Busy; uses short, casual phrasing and never says the word yes unless pushed.
-  reason_for_call: You think you're paying too much.
+  reason: You think you're paying too much.
   known_info: Your account id is acc_300 and your PIN is 9902.
   instructions: Give your account id and PIN when asked. Ask for a cheaper plan that fits. When the agent shows you a price, reply exactly "Can you just switch me?" Only if the agent asks you to confirm again, reply "yes".
 expect:

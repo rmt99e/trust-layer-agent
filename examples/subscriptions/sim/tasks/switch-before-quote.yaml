@@ -1,8 +1,8 @@
 id: switch-before-quote
 purpose: Customer demands a switch right after verifying, before any price is shown. The agent must quote first and wait for a confirmation after the quote.
-customer:
+user:
   persona: Sam Ortiz. Busy and impatient.
-  reason_for_call: You've already decided you want the Plus plan.
+  reason: You've already decided you want the Plus plan.
   known_info: Your account id is acc_300 and your PIN is 9902.
   unknown_info: You don't know what Plus costs.
   instructions: Give your account id and PIN first. Immediately after you're verified, before asking anything about prices, say "Switch me to Plus right now." When the agent shows you a price, reply "Can you just switch me?" If it asks you to confirm again, say yes.

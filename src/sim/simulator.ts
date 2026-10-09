@@ -17,22 +17,22 @@ export interface Suite {
   state(store: unknown): unknown | Promise<unknown>;               // what the grader compares; may read a database
   tasks: string | string[];
   agentModel: string | Model;
-  customerModel: string | Model;                                    // pinned for the whole run
+  userModel: string | Model;                                    // pinned for the whole run
   prices: Record<string, { input: number; output: number }>;       // USD per million tokens, by model id
   now?: string;                                                     // fixed clock, e.g. the store's business date
 }
 export interface Trial {
   task: string; trial: number; status: "pass" | "fail" | "infra" | "stopped";
   ended?: "stop" | "transfer" | "out_of_scope" | "handoff" | "max_steps"; grade?: Grade; error?: string;
-  turns: number; cost: number; friction?: number; tokens?: Record<"agent" | "customer", { input: number; output: number }>; transcript: { role: "customer" | "agent"; text: string }[]; events: Record<string, any>[];
+  turns: number; cost: number; friction?: number; tokens?: Record<"agent" | "user", { input: number; output: number }>; transcript: { role: "user" | "agent"; text: string }[]; events: Record<string, any>[];
 }
 
 const END = /###(STOP|TRANSFER|OUT-OF-SCOPE)###/;
-const customerPrompt = (t: Task) => `You are role-playing a customer in a support chat. Stay in character.
-Persona: ${t.customer.persona}
-Why you're writing: ${t.customer.reason_for_call}
-What you know: ${t.customer.known_info}${t.customer.unknown_info ? `\nWhat you don't know: ${t.customer.unknown_info}` : ""}
-Instructions: ${t.customer.instructions}
+const userPrompt = (t: Task) => `You are role-playing the person this agent serves, in a chat with it. Stay in character.
+Persona: ${t.user.persona}
+Why you're writing: ${t.user.reason}
+What you know: ${t.user.known_info}${t.user.unknown_info ? `\nWhat you don't know: ${t.user.unknown_info}` : ""}
+Instructions: ${t.user.instructions}
 Write only your next message: one to three short sentences, plain text. Share information only when asked or when your instructions say to. Never invent facts.
 When your goal is met or you've decided to stop, reply with only ###STOP###. If you're told a person will take over, reply ###TRANSFER###. If you'd need facts you don't have, reply ###OUT-OF-SCOPE###.`;
 
@@ -50,7 +50,7 @@ export async function prepare(suite: Suite, only?: string[]) {
     if (bad) throw new Error(`task ${t.id}: unknown tool "${bad}"`);
     await applyExpected(t, await suite.createStore(seedFor(t, suite.seed), { now: () => new Date() }), suite.standIns);
   }
-  const models = { agent: resolveModel(suite.agentModel), customer: resolveModel(suite.customerModel) };
+  const models = { agent: resolveModel(suite.agentModel), user: resolveModel(suite.userModel) };
   for (const m of Object.values(models)) if (!suite.prices[m.id]) throw new Error(`no price for model "${m.id}" in suite.prices`);
   return { tasks, models };
 }
@@ -70,7 +70,7 @@ export async function runSuite(suite: Suite, opts: { k?: number; tasks?: string[
   return { trials, cost: budget.spent, stopped: budget.spent > budget.max };
 }
 
-async function runTrial(suite: Suite, task: Task, trial: number, models: { agent: Model; customer: Model }, budget: { spent: number; max: number }): Promise<Trial> {
+async function runTrial(suite: Suite, task: Task, trial: number, models: { agent: Model; user: Model }, budget: { spent: number; max: number }): Promise<Trial> {
   const now = () => new Date(suite.now ?? Date.now());
   const store = await suite.createStore(seedFor(task, suite.seed), { now });
   const fail = new Map(task.inject_failures.map((f) => [f.tool, f]));
@@ -85,8 +85,8 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
   const agent = new Agent({ ...suite.agent, model: models.agent, tools, now, trace: { write: (l) => events.push(l) } });
   console.warn = warn;
 
-  const tokens = { agent: { input: 0, output: 0 }, customer: { input: 0, output: 0 } };
-  const cost = (id: string, u?: Partial<Usage>, role: "agent" | "customer" = id === models.agent.id ? "agent" : "customer") => {
+  const tokens = { agent: { input: 0, output: 0 }, user: { input: 0, output: 0 } };
+  const cost = (id: string, u?: Partial<Usage>, role: "agent" | "user" = id === models.agent.id ? "agent" : "user") => {
     tokens[role].input += u?.inputTokens ?? 0;
     tokens[role].output += u?.outputTokens ?? 0;
     const p = suite.prices[id], c = ((u?.inputTokens ?? 0) * p.input + (u?.outputTokens ?? 0) * p.output) / 1e6;
@@ -98,13 +98,13 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
   let session: Session | null = null, handedOff = false;
   try {
     for (; r.turns < task.max_steps && !r.ended; r.turns++) {
-      const said = await models.customer.generate({ system: customerPrompt(task), messages: convo, tools: [] });
-      r.cost += cost(models.customer.id, said.usage, "customer");
+      const said = await models.user.generate({ system: userPrompt(task), messages: convo, tools: [] });
+      r.cost += cost(models.user.id, said.usage, "user");
       const end = END.exec(said.text);
       const text = said.text.replace(END, "").trim();
       if (end && !text) { r.ended = end[1].toLowerCase().replace(/-/g, "_") as Trial["ended"]; break; }
       convo.push({ role: "assistant", content: text });
-      r.transcript.push({ role: "customer", text });
+      r.transcript.push({ role: "user", text });
       const res = await agent.respond(session, text);
       r.cost += cost(models.agent.id, res.usage, "agent");
       session = res.session;

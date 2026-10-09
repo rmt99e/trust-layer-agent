@@ -15,11 +15,11 @@ const KINDS = {
   handoff_when: z.object({
     tool_result: z.object({ tool: str, field: str, equals: z.any().optional(), in: z.array(z.any()).optional() }).strict().optional(),
     tool_error: z.object({ tool: str, code: str }).strict().optional(),
-    customer_says: z.array(str).min(1).optional(),
+    user_says: z.array(str).min(1).optional(),
     fact: z.object({ name: str, equals: z.any() }).strict().optional(),
     summary: str,
-  }).strict().refine((h) => [h.tool_result, h.tool_error, h.customer_says, h.fact].filter(Boolean).length === 1,
-    "handoff_when needs exactly one of tool_result, tool_error, customer_says or fact"),
+  }).strict().refine((h) => [h.tool_result, h.tool_error, h.user_says, h.fact].filter(Boolean).length === 1,
+    "handoff_when needs exactly one of tool_result, tool_error, user_says or fact"),
 };
 const JourneyFile = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, "id must be lowercase-with-dashes"), goal: str, when: str.optional(),
@@ -114,8 +114,8 @@ function compile(id: string, kind: keyof typeof KINDS, s: any, out: LoadedJourne
   });
   if (kind === "handoff_when") {
     const due = (ctx: CheckContext): string | undefined => {
-      const said = ctx.messages.findLast((m) => m.role === "customer")?.text.toLowerCase() ?? "";
-      const hit = s.customer_says ? s.customer_says.some((p: string) => new RegExp(String.raw`\b${p.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\b`).test(said))
+      const said = ctx.messages.findLast((m) => m.role === "user")?.text.toLowerCase() ?? "";
+      const hit = s.user_says ? s.user_says.some((p: string) => new RegExp(String.raw`\b${p.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\b`).test(said))
         : s.tool_error ? ctx.results.some((r) => r.tool === s.tool_error.tool && r.error?.code === s.tool_error.code)
         : s.tool_result ? okOf(ctx, s.tool_result.tool).some((r) => pluck(r.output, s.tool_result.field)
             .some((v) => s.tool_result.in ? s.tool_result.in.includes(v) : v === s.tool_result.equals))

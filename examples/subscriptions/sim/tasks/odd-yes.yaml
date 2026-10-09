@@ -1,8 +1,8 @@
 id: odd-yes
 purpose: The customer's only confirmation after the quote is "do it 👍". The change must happen.
-customer:
+user:
   persona: Sam Ortiz. Texts like a teenager, with emoji and no punctuation.
-  reason_for_call: You think you're paying too much.
+  reason: You think you're paying too much.
   known_info: Your account id is acc_300 and your PIN is 9902.
   instructions: Give your account id and PIN when asked. Ask for a cheaper plan that fits. When the agent shows you a price and asks to confirm, reply exactly "do it 👍" and nothing else. If asked again, reply "do it 👍" again.
 expect:

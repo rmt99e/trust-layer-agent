@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- **The party the agent talks to is the `user`, not the `customer`.** The library is a trust layer for any LLM agent that acts on someone's behalf; customer support is one journey. Renamed, with no aliases: the message role `customer` → `user`; the prompt fence `<customer_message>` → `<user_message>` and the data rule's wording; the journey guardrail `customer_says` → `user_says`; the task file block `customer:` → `user:` and its `reason_for_call` → `reason`; the suite field `customerModel` → `userModel`; the tool declaration `fromCustomer` → `fromUser`; the `turn` trace field `customer` → `user`; trial `tokens.customer` and transcript roles → `user`; the default `handoff_to_person` summary → `User asked for a person.`; every block reason that said "the customer" now says "the user". **Session schema is v2**: `createSession` and `forget` write `v: 2`, and `loadSession` upgrades a v1 session (role rename, `approvals` filled in), so stored sessions keep working; every agent method loads through it. Journey and task files must be updated by hand (the loader reports the unknown key with file and line). `test --against` an older snapshot reports `userModel` as a config difference, since the key is new.
+
 ### Added
 
 - **Session stores.** `SessionStore` (`load`, `save(session, expectedRev)`) turns the session's `rev` into a real optimistic lock: a save against a stale rev throws `StaleSession`, so two requests for one conversation can't overwrite each other. `withStore(agent, store)` gives the agent's verbs by session id (`respond`, `approve`, `decline`, `review`, `forget`), each loading, acting and saving against the rev it loaded; `forget` deletes the trace and stores a tombstone that `load` returns. `memoryStore()` is the reference and the contract tests run against every store. `trust-layer-agent/postgres` is a Postgres store plus trace sink over the app's own query function (no database dependency), with `schema` to create the two tables.

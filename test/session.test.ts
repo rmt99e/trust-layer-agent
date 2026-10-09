@@ -6,17 +6,19 @@ import { runTool } from "../src/tools.js";
 describe("session", () => {
   it("starts empty, versioned, with trusted facts from the app", () => {
     const s = createSession({ facts: { verified: true, accountId: "acc_1" } });
-    expect(s).toMatchObject({ v: 1, rev: 0, status: "open", facts: { verified: true, accountId: "acc_1" },
+    expect(s).toMatchObject({ v: 2, rev: 0, status: "open", facts: { verified: true, accountId: "acc_1" },
       commitments: [], results: [], messages: [], approvals: [], failures: 0 });
     expect(s.id).toMatch(/^s_[0-9a-f]{12}$/);
   });
 
-  it("loadSession copies a session and fills in approvals for one stored before they existed", () => {
-    const { approvals, ...old } = createSession();
-    const loaded = loadSession(old as any);
-    expect(loaded.approvals).toEqual([]);
+  it("loadSession upgrades a v1 session: the customer role becomes user, approvals is filled in, v becomes 2", () => {
+    const { approvals, ...rest } = createSession();
+    const old = { ...rest, v: 1 as const, messages: [{ role: "customer", text: "hi", turn: 1 }, { role: "agent", text: "hello", turn: 1 }] } as any;
+    const loaded = loadSession(old);
+    expect(loaded).toMatchObject({ v: 2, approvals: [], messages: [{ role: "user", text: "hi", turn: 1 }, { role: "agent", text: "hello", turn: 1 }] });
     expect(loaded).not.toBe(old);
-    expect(loadSession(createSession()).approvals).toEqual([]);
+    expect(old.messages[0].role).toBe("customer");                                     // the stored copy is untouched
+    expect(loadSession(createSession())).toMatchObject({ v: 2, approvals: [] });
   });
 
   it("round-trips as plain JSON, including after a tool call", async () => {
@@ -32,7 +34,7 @@ describe("session", () => {
   it("forget keeps only the id", () => {
     const s = createSession({ facts: { accountId: "acc_1" } });
     const f = forget(s);
-    expect(f).toEqual({ v: 1, id: s.id, forgotten: true });
+    expect(f).toEqual({ v: 2, id: s.id, forgotten: true });
     expect(JSON.parse(JSON.stringify(f))).toEqual(f);
   });
 

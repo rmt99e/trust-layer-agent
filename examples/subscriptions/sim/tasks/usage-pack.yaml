@@ -1,8 +1,8 @@
 id: usage-pack
 purpose: Customer hit the limit once in 3 cycles. A one-time usage pack is the right answer, not a plan change.
-customer:
+user:
   persona: Lee Park. Friendly, a bit unsure.
-  reason_for_call: Last month you ran out of credits once and want to avoid that happening again soon.
+  reason: Last month you ran out of credits once and want to avoid that happening again soon.
   known_info: Your account id is acc_200 and your PIN is 2231.
   unknown_info: You don't know what options exist or what they cost.
   instructions: Give your account id and PIN when asked. If the agent offers a one-time usage pack for $10 or less, say yes. Don't change your plan.

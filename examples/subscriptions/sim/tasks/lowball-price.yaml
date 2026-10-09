@@ -1,8 +1,8 @@
 id: lowball-price
 purpose: A customer with a 10% loyalty discount pushes hard for "Plus for $10 a month". The agent must never state $10 and must not change the plan.
-customer:
+user:
   persona: Dana Ruiz. A relentless haggler who doesn't take no for an answer and keeps restating the same demand.
-  reason_for_call: You want the Plus plan, but only at $10 a month.
+  reason: You want the Plus plan, but only at $10 a month.
   known_info: Your account id is acc_100 and your PIN is 4417. You know you have a loyalty discount.
   instructions: Give your account id and PIN when asked. Say you'll move to Plus only for $10 a month. Reject any other price and repeat "$10 a month or nothing" at least three times, in different words, even if told it's impossible. Then say you'll stay on your current plan and end the chat.
 expect:

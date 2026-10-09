@@ -2,7 +2,7 @@ import { allow, block, check, handoff, type Check, type ToolInfo } from "./check
 import { unconfirmed, type ClaimKind } from "./claims.js";
 import type { Json } from "./session.js";
 
-// untrusted_text_is_data has no check here: bind injection (tools.ts) and fencing customer and
+// untrusted_text_is_data has no check here: bind injection (tools.ts) and fencing user and
 // tool text as data in the prompt (agent.ts) are structural, so there's nothing left to detect.
 
 export interface BuiltinOptions {
@@ -33,7 +33,7 @@ export const isProceed = (text: string) => PROCEED.test(text) && !NOT_PROCEED.te
 /** The warning the Agent constructor prints when verified_first can't do anything. */
 export function verificationWarning(tools: readonly ToolInfo[]): string | undefined {
   if (!tools.some((t) => t.verifies))
-    return "verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified customers. " +
+    return "verified_first is OFF: no tool declares verifies: true. Account tools will run for unverified users. " +
       "This doesn't apply to sessions your app creates with createSession({ facts: { verified } }); those are still checked.";
 }
 
@@ -41,7 +41,7 @@ const verifiedFirst = check("verified_first", (e, ctx) => {
   if (e.kind !== "action" || e.tool.beforeVerification || ctx.facts.verified === true) return allow();
   const verifiers = ctx.tools.filter((t) => t.verifies).map((t) => t.name);
   if (!verifiers.length && !("verified" in ctx.facts)) return allow();     // off: nothing can verify
-  return block(`Verify the customer before using ${e.tool.name}${verifiers.length ? ` (use ${verifiers.join(" or ")})` : ""}.`);
+  return block(`Verify the user before using ${e.tool.name}${verifiers.length ? ` (use ${verifiers.join(" or ")})` : ""}.`);
 });
 
 const yesAfterQuote = (phrases?: string[]) => check("yes_after_quote", (e, ctx) => {
@@ -51,14 +51,14 @@ const yesAfterQuote = (phrases?: string[]) => check("yes_after_quote", (e, ctx) 
   const c = e.tool.confirm, id = c ? e.input[c.by] : undefined;
   const k = c ? ctx.commitments.find((x) => x.type === c.commitment && x.id === id) : undefined;
   const shownEarlier = k?.shownTurn !== undefined && k.shownTurn < ctx.turn;
-  const consent = last?.role === "customer" && (isAffirmative(last.text, phrases) || (shownEarlier && isProceed(last.text)));
-  if (lastAgent < 0 || !consent) return block(`Before ${e.tool.name}, tell the customer exactly what will happen and wait for a clear yes.`);
+  const consent = last?.role === "user" && (isAffirmative(last.text, phrases) || (shownEarlier && isProceed(last.text)));
+  if (lastAgent < 0 || !consent) return block(`Before ${e.tool.name}, tell the user exactly what will happen and wait for a clear yes.`);
   if (!c) return allow();
-  if (!k) return block(`No ${c.commitment} "${id}" exists in this conversation. Create one and show it to the customer first.`);
+  if (!k) return block(`No ${c.commitment} "${id}" exists in this conversation. Create one and show it to the user first.`);
   if (k.status !== "open") return block(`${c.commitment} "${id}" was already used. Create a new one.`);
   if (k.expiresAt && new Date(k.expiresAt) <= ctx.now) return block(`${c.commitment} "${id}" has expired. Create a new one and show it.`);
   if (k.shownTurn === undefined || k.shownTurn >= ctx.turn)
-    return block(`Show the customer ${c.commitment} "${id}" (its price) and wait for a yes after it before ${e.tool.name}.`);
+    return block(`Show the user ${c.commitment} "${id}" (its price) and wait for a yes after it before ${e.tool.name}.`);
   return allow();
 });
 
@@ -67,19 +67,19 @@ const noUnconfirmedClaims = (kinds?: ClaimKind[]) => check("no_unconfirmed_claim
   return why ? block(why) : allow();
 });
 
-// Inputs a tool declares fromCustomer must be values the customer gave: each leaf (string or number) appears whole,
-// case-insensitively, in a customer message, or equals a session fact. Tool output is never a source: data a tool
-// discovered is output, not something the customer asked about.
+// Inputs a tool declares fromUser must be values the user gave: each leaf (string or number) appears whole,
+// case-insensitively, in a user message, or equals a session fact. Tool output is never a source: data a tool
+// discovered is output, not something the user asked about.
 const leaves = (v: Json | undefined): (string | number)[] => typeof v === "string" || typeof v === "number" ? [v]
   : Array.isArray(v) ? v.flatMap(leaves) : v && typeof v === "object" ? Object.values(v).flatMap(leaves) : [];
 const noInventedInputs = check("no_invented_inputs", (e, ctx) => {
-  if (e.kind !== "action" || !e.tool.fromCustomer?.length) return allow();
-  const said = ctx.messages.filter((m) => m.role === "customer").map((m) => m.text).join("\n").replace(/\s+/g, " "), known = leaves(ctx.facts as Json).map((f) => String(f).toLowerCase());
+  if (e.kind !== "action" || !e.tool.fromUser?.length) return allow();
+  const said = ctx.messages.filter((m) => m.role === "user").map((m) => m.text).join("\n").replace(/\s+/g, " "), known = leaves(ctx.facts as Json).map((f) => String(f).toLowerCase());
   const gave = (v: string | number) => { const t = String(v).trim().replace(/\s+/g, " ");
     return !t || known.includes(t.toLowerCase()) || new RegExp(String.raw`(?:^|[^\p{L}\p{N}])${escape(t)}(?=$|[^\p{L}\p{N}])`, "iu").test(said); };
-  for (const field of e.tool.fromCustomer) {
+  for (const field of e.tool.fromUser) {
     const bad = leaves(e.input[field]).find((v) => !gave(v));
-    if (bad !== undefined) return block(`The customer never said "${bad}" (${field} in ${e.tool.name}). Use only values the customer gave, or ask them.`);
+    if (bad !== undefined) return block(`The user never said "${bad}" (${field} in ${e.tool.name}). Use only values the user gave, or ask them.`);
   }
   return allow();
 });

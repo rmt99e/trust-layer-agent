@@ -36,7 +36,7 @@ function storeContract(name: string, make: () => SessionStore) {
       const store = make(), s = createSession();
       await store.save(s);
       await store.save(forget(s), 0);
-      expect(await store.load(s.id)).toEqual({ v: 1, id: s.id, forgotten: true });
+      expect(await store.load(s.id)).toEqual({ v: 2, id: s.id, forgotten: true });
       await expect(store.save({ ...s, rev: 1 }, 0)).rejects.toThrow(StaleSession);   // the app's stale copy can't resurrect it
       await expect(store.save({ ...s, rev: 1 }, -1)).rejects.toThrow(StaleSession);  // nor can anyone "lock" on the tombstone's rev
     });
@@ -188,8 +188,8 @@ describe("withStore: the agent's verbs by session id", () => {
     const { session } = await bound.respond(null, "hi");
     await expect(bound.forget(session.id)).rejects.toBeInstanceOf(StaleSession);
     expect([forgetTrace.mock.calls.length, (await inner.load(session.id) as Session).rev]).toEqual([1, 2]);
-    expect(await bound.forget(session.id)).toEqual({ v: 1, id: session.id, forgotten: true });
-    expect([forgetTrace.mock.calls.length, await inner.load(session.id)]).toEqual([2, { v: 1, id: session.id, forgotten: true }]);
+    expect(await bound.forget(session.id)).toEqual({ v: 2, id: session.id, forgotten: true });
+    expect([forgetTrace.mock.calls.length, await inner.load(session.id)]).toEqual([2, { v: 2, id: session.id, forgotten: true }]);
   });
   it("approve, decline and review work by id; forget stores the tombstone and ends the session", async () => {
     const store = memoryStore(), forgetTrace = vi.fn();
@@ -205,7 +205,7 @@ describe("withStore: the agent's verbs by session id", () => {
     expect((await bound.review(null, "Your refund has been processed.")).result).toHaveProperty("block");
     await expect(bound.decline(session.id, "p_1")).rejects.toThrow('no pending approval "p_1"');
     const t = await bound.forget(session.id);
-    expect(t).toEqual({ v: 1, id: session.id, forgotten: true });
+    expect(t).toEqual({ v: 2, id: session.id, forgotten: true });
     expect(forgetTrace).toHaveBeenCalledWith(session.id);
     expect(await store.load(session.id)).toEqual(t);
     await expect(bound.respond(session.id, "hello?")).rejects.toThrow(`no session "${session.id}" (forgotten)`);

@@ -1,7 +1,7 @@
 import type { Approval, Commitment, Json, Message, Session, ToolResult } from "./session.js";
 import type { Tool } from "./tools.js";
 
-export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies" | "reconcileWith" | "repeatable" | "fromCustomer">;
+export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies" | "reconcileWith" | "repeatable" | "fromUser">;
 export type CheckEvent = { kind: "action"; tool: ToolInfo; input: Record<string, Json> } | { kind: "reply"; text: string };
 export type CheckResult = { allow: true } | { block: string } | { rewrite: string } | { handoff: string } | { approve: string };
 
@@ -9,7 +9,7 @@ export interface CheckContext {
   facts: Readonly<Record<string, Json>>;
   commitments: readonly Commitment[];
   results: readonly ToolResult[];
-  messages: readonly Message[];        // conversation so far; the last is the customer's
+  messages: readonly Message[];        // conversation so far; the last is the user's
   approvals: readonly Approval[];      // actions parked for a person, pending or decided
   failures: number;
   turn: number;
@@ -28,7 +28,7 @@ export const check = (name: string, run: Check["run"]): Check => ({ name, run })
 
 export function contextFrom(session: Session, tools: readonly ToolInfo[], operatorText: readonly string[] = [], now = new Date()): CheckContext {
   const { facts, commitments, results, messages, approvals = [], failures } = session;
-  const turn = messages.filter((m) => m.role === "customer").length;
+  const turn = messages.filter((m) => m.role === "user").length;
   return { facts, commitments, results, messages, approvals, failures, turn, tools, operatorText, now };
 }
 

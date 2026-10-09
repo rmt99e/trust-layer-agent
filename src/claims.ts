@@ -72,7 +72,7 @@ export function confirmedValues(sources: (Json | undefined)[], texts: readonly s
   return ok;
 }
 
-// A number only the customer said may be repeated inside a refusal that directly governs it: "I can't offer
+// A number only the user said may be repeated inside a refusal that directly governs it: "I can't offer
 // Plus at $10", "I'm not able to apply a 50% discount". Every other mention stays unconfirmed, including
 // "I can't believe it's only $10" and a refusal followed by "…but your new price is $10".
 // The refusal must be the agent's own ("I"/"we" as subject): "you won't get a better deal than $10" asserts a price.
@@ -94,7 +94,7 @@ export function unconfirmed(text: string, ctx: CheckContext, kinds: readonly Cla
   const c = extractClaims(text);
   const toolValues = [...ctx.results.filter((r) => r.ok).map((r) => r.output), ...ctx.commitments.map((k) => k.values as Json)];
   const ok = confirmedValues(toolValues, ctx.operatorText);
-  const said = extractClaims(ctx.messages.filter((m) => m.role === "customer").map((m) => m.text).join("\n"));
+  const said = extractClaims(ctx.messages.filter((m) => m.role === "user").map((m) => m.text).join("\n"));
   const refused = (kind: "money" | "percent", n: number) => (kind === "money" ? said.money : said.percents).includes(n) && onlyInRefusals(text, kind, n);
   const badMoney = c.money.find((n) => !ok.money.has(n) && !refused("money", n)), badPct = c.percents.find((n) => !ok.percent.has(n) && !refused("percent", n));
   if (badMoney !== undefined) return `Reply states the amount ${badMoney} but no tool returned that amount. Use a returned value or don't state it.`;

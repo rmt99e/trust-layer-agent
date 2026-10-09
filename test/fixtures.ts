@@ -21,8 +21,8 @@ export function ctx(opts: {
 } = {}): CheckContext {
   let turn = 0;
   const messages: Message[] = (opts.say ?? []).map((line) => {
-    const role = line.startsWith("c:") ? "customer" : "agent";
-    if (role === "customer") turn++;
+    const role = line.startsWith("c:") ? "user" : "agent";
+    if (role === "user") turn++;
     return { role, text: line.slice(2).trim(), turn };
   });
   const session: Session = { ...createSession({ facts: opts.facts ?? { verified: true } }), messages,

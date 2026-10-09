@@ -6,7 +6,7 @@ const record = z.record(z.string(), z.any());
 const TaskFile = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/, "id must be lowercase-with-dashes"),
   purpose: str,
-  customer: z.object({ persona: str, reason_for_call: str, known_info: str, unknown_info: str.optional(), instructions: str }).strict(),
+  user: z.object({ persona: str, reason: str, known_info: str, unknown_info: str.optional(), instructions: str }).strict(),
   initial_state: record.default({}),                                     // dot paths into the seed: { "customers.acc_1.pin": "0000" }
   inject_failures: z.array(z.object({ tool: str, code: str, message: str.optional() }).strict()).default([]),
   expect: z.object({
@@ -21,7 +21,7 @@ const TaskFile = z.object({
     forbidden_phrases: z.array(str).default([]),                        // phrases no sent reply may assert (negated/conditional uses are fine)
     allowed_writes: z.array(str).default([]),                           // extra writes that are fine here; replayed into the expected state
   }).strict(),
-  max_steps: z.number().int().positive().default(20),                   // customer turns before the run counts as a fail
+  max_steps: z.number().int().positive().default(20),                   // user turns before the run counts as a fail
 }).strict();
 
 export type Task = z.infer<typeof TaskFile> & { file: string };
