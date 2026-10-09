@@ -130,7 +130,7 @@ Approval { id: "p_<n>"; tool; input /* model input + bound values */; secret? /*
 
 ### 2.3 resume(session, { note?, by? }): a person hands the conversation back
 
-`resume(session, { note?, by? }) -> Session`. The session MUST be `handed_off`, else throw `session "<id>" isn't handed off`. It returns a new session with `status: "open"`, `failures: 0` (a person has intervened; `handoff_after_failures` starts over), `rev += 1`, and, when `note` is given, an appended message `{ role: "person", text: note, turn: T, at, by? }` where `T` is the current turn (the one that handed off; a person's message is not a user turn, so `currentTurn` is unchanged). It makes no model call and emits a `resume` trace line (section 9). The note is for the model (section 3 says how it is replayed); the user did not see it, and the app sends the user whatever it chooses. Facts are untouched, so a journey `handoff_when` on a fact hands off again on the next turn; that is the operator's rule. `person` text backs no claim (5.3): it is neither a tool result nor operator text.
+`resume(session, { note?, by? }) -> Session`. The session MUST be `handed_off`, else throw `session "<id>" isn't handed off`. It returns a new session with `status: "open"`, `failures: 0` (a person has intervened; `handoff_after_failures` starts over), `rev += 1`, and, when `note` is given, an appended message `{ role: "person", text: note, turn: T, at, by? }` where `T` is the current turn (the one that handed off; a person's message is not a user turn, so `currentTurn` is unchanged). It makes no model call and emits a `resume` trace line (section 9). The note is for the model (section 3 says how it is replayed, inside a `<system_note>`, so it carries the system's trust: a teammate's note can steer the model the way instructions do, and the app SHOULD treat who may resume as it treats who may edit instructions); the user did not see it, and the app sends the user whatever it chooses. Facts are untouched, so a journey `handoff_when` on a fact hands off again on the next turn; that is the operator's rule. `person` text backs no claim (5.3): it is neither a tool result nor operator text.
 
 ## 3. Prompt assembly and fencing (untrusted_text_is_data)
 
@@ -363,7 +363,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
       "turn": 1, "shownTurn": 1, "acceptedTurn": 2, "status": "used", "expiresAt": "2026-10-04T12:00:00.000Z" }
   ],
   "results": [
-    { "id": "c_1", "tool": "verify_customer", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "pin": "4417" },
+    { "id": "c_1", "tool": "verify_customer", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "pin": "4417" }, "at": "2026-10-03T12:00:01.000Z",
       "output": { "verified": true, "name": "Dana" } },
     { "id": "c_2", "tool": "quote_plan_change", "turn": 1, "ok": true, "input": { "accountId": "acc_100", "planId": "plus" },
       "output": { "quoteId": "q_001", "planName": "Plus", "monthlyPrice": 29, "proratedCharge": 4.12, "effectiveDate": "2026-10-03" } },

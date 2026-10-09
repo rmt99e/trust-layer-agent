@@ -46,7 +46,7 @@ export function withStore(agent: Agent, store: SessionStore, opts: StoreOptions 
   const key = opts.owner?.slice(FACTS_PREFIX.length);
   const verbs = (owner?: string | number) => {
     const scoped = () => { if (key !== undefined && owner === undefined) throw new TypeError(`withStore: sessions are owned by ${opts.owner}; call as(owner) first`); };
-    const save = (s: Session | ForgottenSession, was?: number) => {                 // the owner fact is immutable: a tool that records it is a configuration error
+    const save = async (s: Session | ForgottenSession, was?: number) => {           // the owner fact is immutable: a tool that records it is a configuration error
       if (key !== undefined && !("forgotten" in s) && s.facts[key] !== owner) throw new TypeError(`withStore: a tool changed ${opts.owner} from ${JSON.stringify(owner)} to ${JSON.stringify(s.facts[key])}; the owner fact can't be recorded over`);
       return store.save(s, was);
     };
@@ -82,7 +82,7 @@ export function withStore(agent: Agent, store: SessionStore, opts: StoreOptions 
   };
   return { ...verbs(), as(owner: string | number) {
     if (key === undefined) throw new TypeError(`withStore: pass { owner: "facts.<key>" } to use as()`);
-    if (typeof owner !== "string" && typeof owner !== "number") throw new TypeError(`withStore: as(owner) needs a string or number, got ${owner === null ? "null" : typeof owner}`);
+    if (typeof owner !== "string" && (typeof owner !== "number" || Number.isNaN(owner))) throw new TypeError(`withStore: as(owner) needs a string or number, got ${owner === null ? "null" : typeof owner === "number" ? "NaN" : typeof owner}`);
     return verbs(owner);
   } };
 }

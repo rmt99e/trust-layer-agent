@@ -250,8 +250,9 @@ describe("withStore: owned sessions", () => {
     expect([t1.session.facts.accountId, ((await store.load(t1.session.id)) as Session).rev]).toEqual(["acc_1", 1]);
     expect((await mine.respond(t1.session.id, "Sure?")).reply).toBe("Still Basic.");
     await expect(theirs.respond(t1.session.id, "hi")).rejects.toThrow(`no session "${t1.session.id}"`);
-    for (const attempt of [theirs.approve(t1.session.id, "p_1"), theirs.decline(t1.session.id, "p_1"), theirs.resume(t1.session.id), theirs.review(t1.session.id, "hi"), theirs.forget(t1.session.id)])
-      await expect(attempt).rejects.toThrow(`no session "${t1.session.id}"`);                              // attack rows: every verb
+    const id = t1.session.id;
+    for (const attempt of [() => theirs.approve(id, "p_1"), () => theirs.decline(id, "p_1"), () => theirs.resume(id), () => theirs.review(id, "hi"), () => theirs.forget(id)])
+      await expect(attempt()).rejects.toThrow(`no session "${id}"`);                                       // attack rows: every verb
     expect(((await store.load(t1.session.id)) as Session).rev).toBe(2);                  // nothing of theirs touched it
   });
   it("a forgotten session reads as no session to an owner, since a tombstone has no owner to check", async () => {
@@ -268,6 +269,8 @@ describe("withStore: owned sessions", () => {
     expect(() => withStore(agentWith([]), memoryStore()).as("acc_1")).toThrow('pass { owner: "facts.<key>" } to use as()');
     expect(() => bound.as(null as any)).toThrow("as(owner) needs a string or number, got null");
     expect(() => bound.as(undefined as any)).toThrow("got undefined");
+    expect(() => bound.as(NaN)).toThrow("got NaN");
+    expect(() => bound.as({} as any)).toThrow("got object");
   });
   it("the owner fact is immutable: a tool that records over it makes the save throw, and nothing is stored", async () => {
     const saves: unknown[] = [], inner = memoryStore(), store: SessionStore = { load: inner.load, save: async (s, r) => { saves.push(s); return inner.save(s, r); } };
@@ -277,6 +280,12 @@ describe("withStore: owned sessions", () => {
     const mine = withStore(agent, store, { owner: "facts.accountId" }).as("acc_1");
     await expect(mine.respond(null, "I'm acc_2")).rejects.toThrow('a tool changed facts.accountId from "acc_1" to "acc_2"; the owner fact can\'t be recorded over');
     expect(saves).toEqual([]);
+    // The same rewrite in a turn the model then fails: the guard still refuses, and the TurnFailed rides along as the cause.
+    let n = 0;
+    const flaky = { id: "fake:flaky", generate: (r: any) => (++n === 1 ? scripted([{ call: "verify_user", input: { accountId: "acc_2" } }]).generate(r) : Promise.reject(new Error("down"))) };
+    const failing = withStore(new Agent({ model: flaky, instructions: "You help.", tools: [rebind], builtins: { verified_first: false }, trace: false }), store, { owner: "facts.accountId" }).as("acc_1");
+    const err = await failing.respond(null, "I'm acc_2").catch((e) => e);
+    expect([err.message, err.cause?.name, err.cause?.cause?.message, saves]).toEqual([expect.stringContaining("the owner fact can't be recorded over"), "TurnFailed", "down", []]);
   });
   it("resume by id saves the resumed session against the loaded rev", async () => {
     const store = memoryStore();
