@@ -38,9 +38,9 @@ describe("the procurement example, driven by a scripted model", () => {
       "4 × Ergonomic chair is $380 in total, delivery by 2026-10-08. Shall I place the order?",
       { call: "place_order", input: { quoteId: "q_001" } }, "Ordered: 4 items for $380, arriving by 2026-10-08.",
     ], ["Hi, I'm Dana Ruiz, emp_101 on team ops_1.", "We need four ergonomic chairs.", "yes"]);
-    expect(last.reply).toBe("Ordered: 4 items for $380, arriving by 2026-10-08.");
-    expect(store.db.orders).toEqual([expect.objectContaining({ orderId: "po_002", itemId: "sku_chair", quantity: 4, total: 380, status: "ordered" })]);
-    expect(store.db.teams.ops_1.budgetRemaining).toBe(5620);
+    expect(last.reply).toBe("Ordered: 4 items for $380, arriving by 2026-10-08.");                       // "placed" backs its synonym
+    expect(store.db.orders).toEqual([expect.objectContaining({ orderId: "po_001", itemId: "sku_chair", quantity: 4, unitPrice: 95, total: 380, status: "placed" })]);
+    expect(store.db.teams.ops_1.budgetBalance).toBe(5620);
     expect(lines.filter((l) => l.type === "check")).toEqual([]);
   });
 
@@ -62,31 +62,45 @@ describe("the procurement example, driven by a scripted model", () => {
       { call: "search_catalog", input: { query: "standing desks" } }, { call: "quote_order", input: { itemId: "sku_desk", quantity: 10 } },
       "10 × Standing desk is $4200, delivery by 2026-10-15. Shall I place the order?",
       { call: "place_order", input: { quoteId: "q_001" } },
-      "Ordered: 10 standing desks for $4200.",                                                             // not yet
-      "I've requested the order; purchasing has to approve anything over $500, so nothing has been placed yet.",
+      "Ordered: 10 standing desks for $4200.",                                                             // not yet: a status word
+      "I've placed the order for 10 standing desks.",                                                      // not yet: the other status word
+      "I've requested the order; purchasing has to approve anything over $500, so nothing has been placed yet.",   // honest, negated
     ], ["Hi, I'm Lee Park, emp_102 on team ops_1.", "We need ten standing desks for the new floor.", "yes"]);
     expect(store.db.orders).toEqual([]);
     expect(last.approvals).toEqual([expect.objectContaining({ id: "p_1", tool: "place_order", input: { quoteId: "q_001", teamId: "ops_1" }, by: "orders_over_threshold_need_approval",
       reason: "Order of $4200 is over the team's $500 limit for orders without approval." })]);
     expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
-      'Reply states the status "ordered" but no tool returned it. Use a returned value or don\'t state it.']);
+      'Reply states the status "ordered" but no tool returned it. Use a returned value or don\'t state it.',
+      'Reply states the status "placed" but no tool returned it. Use a returned value or don\'t state it.']);
+    expect(last.reply).toContain("nothing has been placed yet");
     const { session: after, result } = await agent.approve(session, "p_1");
-    expect(result).toMatchObject({ ok: true, output: expect.objectContaining({ status: "ordered", total: 4200 }) });
+    expect(result).toMatchObject({ ok: true, output: expect.objectContaining({ status: "placed", total: 4200 }) });
     expect(after.commitments[0]).toMatchObject({ id: "q_001", status: "used" });
     const email = renderPurchaseOrder(store.db.orders[0], SEED.teams.ops_1);
     expect((await agent.review(after, email)).result).toEqual({ allow: true });
     expect((await agent.review(after, email.replace("$4200", "$4300"))).result).toEqual({ block: "Reply states the amount 4300 but no tool returned that amount. Use a returned value or don't state it." });
   });
 
-  it("over budget: place_order fails with over_budget and the journey hands off", async () => {
-    const { last, store } = await run([
+  it("over budget: place_order fails, 'placed' stays blocked, the honest reply with the budget figure goes out", async () => {
+    const { last, store, lines } = await run([
       { call: "identify_requester", input: { requesterId: "emp_201", teamId: "design_2" } }, "Hi Sam.",
       { call: "search_catalog", input: { query: "ergonomic chairs" } }, { call: "quote_order", input: { itemId: "sku_chair", quantity: 4 } },
       "4 × Ergonomic chair is $380, delivery by 2026-10-08. Shall I place the order?",
-      { call: "place_order", input: { quoteId: "q_001" } }, "Sorry, the team is over budget for that.",   // the draft is never sent: the journey hands off first
+      { call: "place_order", input: { quoteId: "q_001" } }, "Your order has been placed.",                  // the lie after a failure
+      { call: "get_budget" }, "That didn't go through: the team has $200 left this quarter and the chairs are $380. Want me to open a ticket?",
     ], ["Hi, I'm Sam Ortiz, emp_201 on team design_2.", "We need four ergonomic chairs.", "yes"]);
-    expect(last.handoff).toEqual({ summary: "The team is over budget for this order.", reason: "order:handoff_when" });
-    expect(last.reply).toBe("I'm passing you to a person who can help. They'll pick this up from here.");
+    expect(lines.find((l) => l.type === "tool" && l.tool === "place_order")).toMatchObject({ ok: false, error: { code: "over_budget" } });
+    expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
+      'Reply states the status "placed" but no tool returned it. Use a returned value or don\'t state it.']);
+    expect(last.reply).toContain("$200 left");
+    expect(last.handoff).toBeUndefined();
     expect(store.db.orders).toEqual([]);
+  });
+  it("the catalog search matches whole words only, so a request for something off-catalog finds nothing", () => {
+    const store = createStore();
+    expect(store.search("a treadmill").found).toBe(0);
+    expect(store.search("an office treadmill").found).toBe(0);
+    expect(store.search("i need a monitor").items.map((i) => i.id)).toEqual(["sku_monitor"]);
+    expect(store.search("chairs").items.map((i) => i.id)).toEqual(["sku_chair"]);
   });
 });

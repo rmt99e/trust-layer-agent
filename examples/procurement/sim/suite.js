@@ -32,7 +32,7 @@ export default {
 
   // What the grader compares: each team's remaining budget and its orders (item, quantity, status), plus ticket counts.
   state: (s) => Object.fromEntries(Object.values(s.db.teams).map((t) => [t.id, {
-    budgetRemaining: t.budgetRemaining,
+    budgetBalance: t.budgetBalance,
     orders: s.db.orders.filter((o) => o.teamId === t.id).map((o) => `${o.itemId}×${o.quantity}:${o.status}`),
     tickets: (s.db.tickets ?? []).filter((k) => k.teamId === t.id).length,
   }])),

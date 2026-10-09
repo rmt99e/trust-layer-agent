@@ -1,8 +1,8 @@
 # Prompt: add trust-layer-agent to my app
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks every tool call before it runs and every reply before it's sent, against what the tools returned and what the user agreed to. It also ships a simulator for testing agents.
 
-This prompt has your coding agent add a support agent to an existing JavaScript or TypeScript app. It wraps your data functions as tools, adds one chat route that stores the session in your database, then writes a journey file and five simulation tasks and runs them. It stops after each step for your OK. Only step 8 costs money, because it calls a model; it shows an estimate first and stops at a cost limit.
+This prompt has your coding agent add such an agent to an existing JavaScript or TypeScript app. The walkthrough uses a support desk; the same steps fit an operations, intake or outreach agent. It wraps your data functions as tools, adds one chat route that stores the session in your database, then writes a journey file and five simulation tasks and runs them. It stops after each step for your OK. Only step 8 costs money, because it calls a model; it shows an estimate first and stops at a cost limit.
 
 Copy everything inside the block into your coding agent, from the app's root folder.
 

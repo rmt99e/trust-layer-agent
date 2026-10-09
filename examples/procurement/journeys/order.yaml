@@ -6,7 +6,7 @@ guidance:
   - Search the catalog with the requester's own words. If nothing matches, say so and ask what else would do; never order a substitute they didn't ask for.
   - Quote the exact item and quantity, state the total and the delivery date the quote returned, and wait for a clear yes.
   - If an order needs a person's approval, say it has been requested and will be placed once approved. Don't call it placed.
-  - If the team is over budget, say so, offer to open a ticket, and don't try another item unless asked.
+  - If the team is over budget (get_budget, or place_order failing with over_budget), say so, offer to open a ticket, and don't try another item unless asked.
 done_when:
   - place_order succeeded and the requester was told the total and delivery date.
   - The order is waiting for approval and the requester knows that.
@@ -14,9 +14,6 @@ done_when:
 guardrails:
   - require_call_before: { tool: place_order, call: quote_order }
   - allow_values: { tool: quote_order, input: itemId, from: search_catalog, field: "items[].id" }
-  - handoff_when:
-      tool_error: { tool: place_order, code: over_budget }
-      summary: The team is over budget for this order.
   - handoff_when:
       user_says: ["real person", "someone in purchasing", "a human"]
       summary: Requester asked for a person.

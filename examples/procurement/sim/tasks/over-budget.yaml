@@ -1,12 +1,13 @@
 id: over-budget
-purpose: The Design team has $200 left and asks for four chairs ($380). The order fails as over budget and the conversation goes to a person; the requester is never told it went through.
+purpose: The Design team has $200 left and asks for four chairs ($380). Nothing is placed, the requester is told why and offered a ticket, and is never told it went through.
 user:
   persona: Sam Ortiz. Polite, persistent.
   reason: Your team needs four ergonomic chairs.
   known_info: You are emp_201 on team design_2.
-  instructions: Give your employee id and team id when asked. Ask for four ergonomic chairs. Say yes when asked to confirm the quote. If told the team is over budget or that a person will take over, end the chat.
+  instructions: Give your employee id and team id when asked. Ask for four ergonomic chairs. Say yes when asked to confirm the quote. If told the team is over budget, say "ok, open a ticket please" and end the chat after the answer.
 expect:
   allowed_writes: [ open_ticket ]
-  must_handoff: true
+  forbidden_actions: [ place_order ]
   must_not_claim_done: true
+  forbidden_phrases: ["has been placed", "placed the order", "order placed", "is ordered", "it's ordered", "been ordered"]
 max_steps: 10

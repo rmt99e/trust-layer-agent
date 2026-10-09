@@ -14,20 +14,21 @@ export const SEED = {
   today: "2026-10-03",
   teams: {
     // A small team: orders up to $500 go through on their own; above that a person approves.
-    ops_1: { id: "ops_1", name: "Operations", budgetRemaining: 6000, maxOrderAmount: 500, members: { emp_101: "Dana Ruiz", emp_102: "Lee Park" } },
+    ops_1: { id: "ops_1", name: "Operations", budgetBalance: 6000, maxOrderAmount: 500, members: { emp_101: "Dana Ruiz", emp_102: "Lee Park" } },
     // Almost out of budget this quarter.
-    design_2: { id: "design_2", name: "Design", budgetRemaining: 200, maxOrderAmount: 500, members: { emp_201: "Sam Ortiz" } },
+    design_2: { id: "design_2", name: "Design", budgetBalance: 200, maxOrderAmount: 500, members: { emp_201: "Sam Ortiz" } },
   },
   orders: [],
 };
 
 const money = (n) => Math.round(n * 100) / 100;
+const STOP_WORDS = new Set(["a", "an", "the", "some", "any", "for", "we", "i", "need", "want", "please", "of", "to", "and", "our", "my", "office", "new"]);
 const addDays = (iso, d) => new Date(Date.parse(iso) + d * 86_400_000).toISOString().slice(0, 10);
 
 export function createStore(seed = SEED, { now = () => new Date() } = {}) {
   const db = structuredClone(seed);
-  let next = 1;
-  const id = (prefix) => `${prefix}_${String(next++).padStart(3, "0")}`;
+  const counters = {};
+  const id = (prefix) => `${prefix}_${String((counters[prefix] = (counters[prefix] ?? 0) + 1)).padStart(3, "0")}`;
   const quotes = new Map();
   const team = (teamId) => {
     const t = db.teams[teamId];
@@ -41,15 +42,15 @@ export function createStore(seed = SEED, { now = () => new Date() } = {}) {
       const t = db.teams[teamId], name = t?.members[requesterId];
       return name ? { verified: true, requesterId, teamId, name, maxOrderAmount: t.maxOrderAmount } : { verified: false, requesterId, teamId };
     },
-    search(query) {
-      const words = query.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
-      const items = CATALOG.filter((c) => words.some((w) => c.tags.includes(w) || c.name.toLowerCase().includes(w)))
+    search(query) {                                                                       // whole words only: "a treadmill" matches nothing
+      const words = query.toLowerCase().split(/[^a-z0-9-]+/).filter((w) => w && !STOP_WORDS.has(w));
+      const items = CATALOG.filter((c) => words.some((w) => c.tags.includes(w) || c.name.toLowerCase().split(/[^a-z0-9-]+/).includes(w)))
         .map(({ tags, ...c }) => c);
       return { query, found: items.length, items };
     },
     budget(teamId) {
       const t = team(teamId);
-      return { teamId, name: t.name, budgetRemaining: t.budgetRemaining, maxOrderAmount: t.maxOrderAmount, openOrders: db.orders.filter((o) => o.teamId === teamId && o.status === "ordered").length };
+      return { teamId, name: t.name, budgetBalance: t.budgetBalance, maxOrderAmount: t.maxOrderAmount, openOrders: db.orders.filter((o) => o.teamId === teamId && o.status === "placed").length };
     },
     quote(teamId, itemId, quantity) {
       team(teamId);
@@ -63,14 +64,10 @@ export function createStore(seed = SEED, { now = () => new Date() } = {}) {
     placeOrder(teamId, quoteId) {
       const t = team(teamId), q = quotes.get(quoteId);
       if (!q || q.teamId !== teamId) throw new ToolError("not_found", "No such quote for this team.");
-      if (q.total > t.budgetRemaining) throw new ToolError("over_budget", `The team has $${t.budgetRemaining} left this quarter; this order is $${q.total}.`);
-      if (db.outcomes?.place_order === "timeout_applied") {                            // demo: the order lands, the response doesn't
-        t.budgetRemaining = money(t.budgetRemaining - q.total);
-        db.orders.push({ orderId: id("po"), teamId, itemId: q.itemId, quantity: q.quantity, total: q.total, status: "ordered", etaDate: q.etaDate });
-        throw new ToolError("timeout", "The purchasing system did not respond.", { outcome: "unknown" });
-      }
-      t.budgetRemaining = money(t.budgetRemaining - q.total);
-      const order = { orderId: id("po"), teamId, itemId: q.itemId, itemName: q.itemName, quantity: q.quantity, total: q.total, status: "ordered", etaDate: q.etaDate };
+      // Numbers in an error aren't claim sources (only successful results are), so the message names no amounts: the model has get_budget for that.
+      if (q.total > t.budgetBalance) throw new ToolError("over_budget", "This order is more than the team has left this quarter. Check get_budget and offer a ticket.");
+      t.budgetBalance = money(t.budgetBalance - q.total);
+      const order = { orderId: id("po"), teamId, itemId: q.itemId, itemName: q.itemName, quantity: q.quantity, unitPrice: q.unitPrice, total: q.total, status: "placed", etaDate: q.etaDate };
       db.orders.push(order);
       return order;
     },
@@ -89,6 +86,6 @@ export function createStore(seed = SEED, { now = () => new Date() } = {}) {
 
 /** The purchase-order email the app sends to the supplier. App-rendered, so it goes through agent.review() before sending. */
 export function renderPurchaseOrder(order, team) {
-  return `Purchase order ${order.orderId} for ${team.name}\n\n${order.quantity} × ${order.itemName} at $${order.unitPrice ?? money(order.total / order.quantity)} each.\n` +
+  return `Purchase order ${order.orderId} for ${team.name}\n\n${order.quantity} × ${order.itemName} at $${order.unitPrice} each.\n` +
     `Total: $${order.total}. Requested delivery by ${order.etaDate}.\n\nPlease confirm receipt of this order.`;
 }

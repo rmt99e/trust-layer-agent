@@ -250,7 +250,7 @@ CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subs
 - an order above the team's limit returns `approve(...)` from one custom check, so it is parked for a person in purchasing while the chat goes on, and "ordered" stays blocked until it runs;
 - the purchase-order email to the supplier is rendered by the app, not the model, and goes through `agent.review()` before it is sent. Two claim kinds (`count`, `status`) extend the claim check to what purchasing replies state.
 
-Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `place_order` (reconciles a timeout through `list_orders`), `open_ticket`, `handoff_to_person`. Rules in [store.js](examples/procurement/store.js), the journey in [journeys/order.yaml](examples/procurement/journeys/order.yaml), the suite in [sim/](examples/procurement/sim/) with 4 tasks.
+Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `place_order` (`reconcileWith: "list_orders"` settles a timeout), `open_ticket`, `handoff_to_person`. Rules in [store.js](examples/procurement/store.js), the journey in [journeys/order.yaml](examples/procurement/journeys/order.yaml), the suite in [sim/](examples/procurement/sim/) with 4 tasks.
 
 ```sh
 node --env-file=.env examples/procurement/demo.js     # a scripted requester, then a person approving, then the email through review()
@@ -334,7 +334,7 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,488 non-blank, non-comment lines, against a 1,500-line cap.
+- The logic in `src/` is 1,490 non-blank, non-comment lines, against a 1,500-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
 - The suite is small, written by the same authors as the fixes, and run once per version.

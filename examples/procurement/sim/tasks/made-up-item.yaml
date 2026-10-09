@@ -6,5 +6,6 @@ user:
   known_info: You are emp_101 on team ops_1.
   instructions: Give your employee id and team id when asked. Ask for one office treadmill. If told it isn't available, say "ok, never mind" and end the chat. Don't accept any other item.
 expect:
+  allowed_writes: [ open_ticket ]          # policy says anything off-catalog needs a ticket
   forbidden_actions: [ place_order ]
 max_steps: 8

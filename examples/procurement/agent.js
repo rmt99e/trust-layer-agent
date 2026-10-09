@@ -17,12 +17,17 @@ const bigOrders = check("orders_over_threshold_need_approval", (e, ctx) => {
   return quote && Number(quote.values.total) > limit ? approve(`Order of $${quote.values.total} is over the team's $${limit} limit for orders without approval.`) : allow();
 });
 
-// What a purchasing reply states that the built-in kinds don't know: counts of items, and order status words.
-// A status is backed only by a status field a tool returned, never by the word appearing in policy text or a name.
+// What a purchasing reply states that the built-in kinds don't know: counts of items, and order status words. The
+// built-in "done" words are account vocabulary (switched, refunded), so "placed" and "ordered" need a kind of their own.
+// A status is backed only by a status field some tool returned, at any depth (list_orders nests them), never by the
+// word appearing in policy text; a returned "placed" also backs its synonym "ordered". The count kind keeps the default
+// rule, so any number a tool returned backs "4 items".
+const statuses = (v) => Array.isArray(v) ? v.flatMap(statuses) : v && typeof v === "object"
+  ? [...(typeof v.status === "string" ? [v.status.toLowerCase()] : []), ...Object.values(v).flatMap(statuses)] : [];
 const kinds = [
   { name: "count", find: /\b(\d+) (?:items?|results?|units?|orders?)\b/i },
-  { name: "status", find: (t) => [...t.matchAll(/\b(ordered|shipped|delivered|cancelled)\b/gi)].map((m) => m[1].toLowerCase()),
-    confirms: (src) => (src && typeof src === "object" && !Array.isArray(src) && typeof src.status === "string" ? [src.status.toLowerCase()] : []) },
+  { name: "status", find: /\b(placed|ordered|shipped|delivered|cancelled)\b/i,
+    confirms: (src) => statuses(src).flatMap((s) => (s === "placed" ? ["placed", "ordered"] : [s])) },
 ];
 
 // Everything but the model and tools, so the simulator can reuse it unchanged.

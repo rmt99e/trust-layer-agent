@@ -2,7 +2,7 @@
 
 Notes for coding agents working on this repo. For using the package in an app, read README.md.
 
-trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys; the library itself is journey-neutral, and nothing in `src/` may assume one.
+trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
 
 Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test`, `snapshot`).
 
@@ -59,7 +59,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,500 (non-blank, non-comment; 1,488 today). Count with:
+- Logic lines in `src/` stay under 1,500 (non-blank, non-comment; 1,490 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 
@@ -67,7 +67,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 
 - Checks are deterministic code. Built-ins never call a model; small-model reply review is an optional extra check, off by default.
 - No prices or other business values hardcoded in `src/`. They come from tools.
-- Vendor-neutral naming in code, examples and sample data. No real company or product names; the example is a fictional subscription app.
+- Vendor-neutral naming in code, examples and sample data. No real company or product names; the examples are a fictional subscription app and a fictional purchasing desk.
 - Every check change needs tests: add rows to the tables in `test/claims.test.ts` or `test/builtins.test.ts`. A change that lets more through also adds attack rows that must still be blocked.
 - Measure behavior changes with `test --against <snapshot>`; keep behavior-neutral fixes separate from behavior changes. Re-baseline after changing the grader.
 - Never weaken a simulation task to make it pass. Fix tools, checks or journeys instead, then rerun `test` and take a new snapshot.
