@@ -19,6 +19,8 @@ Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test
 - `src/journeys.ts`: journey YAML loading, validation with file and line, guardrails compiled to checks.
 - `src/privacy.ts`: personal-data patterns used by tool visibility and trace masking.
 - `src/trace.ts`: the JSONL trace sink (masked by default).
+- `src/store.ts`: the `SessionStore` contract (load/save with optimistic locking), `memoryStore()`, `withStore()` (the agent's verbs by session id), `StaleSession`.
+- `src/stores/postgres.ts`: the Postgres store + trace sink over an app-supplied query function; exported as `trust-layer-agent/postgres`.
 - `src/models/`: `types.ts` (the Model interface), `anthropic.ts`, `openai-compatible.ts`, `resolve.ts` ("provider:model" strings).
 - `src/sim/`: `task.ts` (task files), `simulator.ts` (simulated customer, stand-in tools, trials), `grade.ts` (deterministic grading).
 - `src/cli.ts`: the `test` and `snapshot` commands.
@@ -57,7 +59,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,400 (non-blank, non-comment; 1,398 today). Count with:
+- Logic lines in `src/` stay under 1,500 (non-blank, non-comment; 1,484 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 
@@ -69,7 +71,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 - Every check change needs tests: add rows to the tables in `test/claims.test.ts` or `test/builtins.test.ts`. A change that lets more through also adds attack rows that must still be blocked.
 - Measure behavior changes with `test --against <snapshot>`; keep behavior-neutral fixes separate from behavior changes. Re-baseline after changing the grader.
 - Never weaken a simulation task to make it pass. Fix tools, checks or journeys instead, then rerun `test` and take a new snapshot.
-- Extension happens only through tools, checks, journeys and model adapters. If an app use case needs a core change, the interface is wrong: fix the interface, not the app.
+- Extension happens only through tools, checks, journeys, model adapters and session stores. If an app use case needs a core change, the interface is wrong: fix the interface, not the app.
 - Keep code small and readable, and match the surrounding style.
 - Spec changes go in SPEC.md in the same change as the code, with a CHANGELOG.md entry under `[Unreleased]`.
 

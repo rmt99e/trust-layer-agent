@@ -201,6 +201,24 @@ The session is plain JSON: `facts`, `commitments` (what the customer was shown a
 
 The default trace sink, `jsonl()`, writes one masked file per session to `./traces/`. `maskTrace` is exported for your own logs. The session itself holds what the customer typed; store it like other customer data.
 
+### Stores
+
+A store gives your storage two verbs, `load(id)` and `save(session, expectedRev)`, and `save` must refuse when the stored `rev` isn't the one you loaded. That turns `rev` into a real lock: two requests for one conversation can't overwrite each other. `withStore(agent, store)` then gives you the agent's verbs by session id, each one loading, acting and saving against the rev it loaded:
+
+```js
+import { withStore, memoryStore } from "trust-layer-agent";
+import { postgres } from "trust-layer-agent/postgres";
+
+const pg = postgres({ query: (text, params) => pool.query(text, params) });   // pg's pool.query as is; run pg.schema once
+const bound = withStore(new Agent({ ...options, trace: pg.trace }), pg.store);
+
+const { reply, session, approvals } = await bound.respond(sessionId ?? null, message);   // null starts one
+await bound.approve(session.id, "p_1");
+await bound.forget(session.id);            // deletes the trace rows and stores the tombstone in the session's place
+```
+
+A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
+
 ## The subscriptions example
 
 [examples/subscriptions/](examples/subscriptions/) is a fictional subscription app with plans, usage credits, invoices and seeded customers. The agent verifies the customer, reviews usage, recommends a plan, quotes it, and changes it only after a yes.
@@ -293,7 +311,7 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,398 non-blank, non-comment lines, against a 1,400-line cap.
+- The logic in `src/` is 1,484 non-blank, non-comment lines, against a 1,500-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
 - The suite is small, written by the same authors as the fixes, and run once per version.
