@@ -27,9 +27,9 @@ Bypasses of what the library claims to enforce in code, for example:
 - a reply that states a price, date or "done" no tool returned and still passes `no_unconfirmed_claims`;
 - any reply sent while a write's outcome is still unknown, or a write that runs again in the same turn after it succeeded or while its outcome is unknown or pending (`no_repeated_writes`);
 - a write tool that runs without the required quote and yes (`yes_after_quote`), or account data returned before verification (`verified_first`);
-- a model or customer overriding a bound tool input (bind injection);
+- a model or user overriding a bound tool input (bind injection);
 - personal data reaching the model past field-level visibility, or reaching traces past masking;
-- customer or tool text forging the fences or system notes so it is read as instructions.
+- user or tool text forging the fences or system notes so it is read as instructions.
 
 ## Out of scope
 

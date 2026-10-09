@@ -26,7 +26,7 @@ export interface ToolResult {
   outcomeError?: string;                      // the tool's outcome() threw; the outcome is treated as unknown
 }
 
-export interface Message { role: "customer" | "agent"; text: string; turn: number }
+export interface Message { role: "user" | "agent"; text: string; turn: number }
 
 /** An action a check parked for a person to decide. Either decision ends in a ToolResult (`result`). */
 export interface Approval {
@@ -41,7 +41,7 @@ export interface Approval {
 }
 
 export interface Session {
-  v: 1;
+  v: 2;
   id: string;
   rev: number;
   status: "open" | "handed_off" | "closed";
@@ -53,23 +53,29 @@ export interface Session {
   failures: number;
 }
 
-export interface ForgottenSession { v: 1; id: string; forgotten: true }
+export interface ForgottenSession { v: 2; id: string; forgotten: true }
 
 /** Start a session. Facts passed here come from app code (e.g. a logged-in user) and are trusted. */
 export function createSession(opts: { facts?: Record<string, Json> } = {}): Session {
   const id = "s_" + randomUUID().replace(/-/g, "").slice(0, 12);
-  return { v: 1, id, rev: 0, status: "open", facts: { ...opts.facts }, commitments: [], results: [], messages: [], approvals: [], failures: 0 };
+  return { v: 2, id, rev: 0, status: "open", facts: { ...opts.facts }, commitments: [], results: [], messages: [], approvals: [], failures: 0 };
 }
 
-/** A copy of a stored session with every list present (sessions saved before `approvals` existed lack it). */
-export const loadSession = (session: Session): Session => ({ ...structuredClone(session), approvals: session.approvals ?? [] });
+/** The v0.1 session: the user was the "customer" and there were no approvals. loadSession() upgrades it. */
+export type SessionV1 = Omit<Session, "v" | "messages" | "approvals"> & { v: 1; messages: { role: "customer" | "agent"; text: string; turn: number }[]; approvals?: Approval[] };
+
+/** A copy of a stored session, upgraded to v2 (idempotent). Every agent method loads a given session this way. */
+export function loadSession(session: Session | SessionV1): Session {
+  const s = structuredClone(session);
+  return { ...s, v: 2, approvals: s.approvals ?? [], messages: s.messages.map((m) => (m.role === "customer" ? { ...m, role: "user" as const } : m) as Message) };
+}
 
 /** Drop everything but the id. The app overwrites or deletes its stored copy. */
 export function forget(session: Session): ForgottenSession {
-  return { v: 1, id: session.id, forgotten: true };
+  return { v: 2, id: session.id, forgotten: true };
 }
 
-/** The current turn: the number of customer messages so far. */
+/** The current turn: the number of user messages so far. */
 export function currentTurn(session: Session): number {
-  return session.messages.filter((m) => m.role === "customer").length;
+  return session.messages.filter((m) => m.role === "user").length;
 }

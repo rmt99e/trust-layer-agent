@@ -1,7 +1,7 @@
 {
   "name": "trust-layer-agent",
   "version": "0.1.0",
-  "description": "A TypeScript library that checks an LLM support agent's tool calls before they run and its replies before they're sent.",
+  "description": "A TypeScript library that checks an LLM agent's tool calls before they run and its replies before they're sent.",
   "keywords": [
     "ai",
     "agents",

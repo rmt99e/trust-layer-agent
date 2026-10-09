@@ -18,7 +18,7 @@ const req: ModelRequest = {
   system: "Be helpful.",
   tools: [{ name: "get_account", description: "Account.", inputSchema: { type: "object", properties: {} } }],
   messages: [
-    { role: "user", content: "<customer_message>hi</customer_message>" },
+    { role: "user", content: "<user_message>hi</user_message>" },
     { role: "assistant", content: "", toolCalls: [{ id: "t1", name: "get_account", input: {} }] },
     { role: "tool", toolCallId: "t1", name: "get_account", content: "<tool_result>{\"plan\":\"Basic\"}</tool_result>" },
     { role: "tool", toolCallId: "t2", name: "get_x", content: "<system_note>Not run.</system_note>", isError: true },
@@ -35,7 +35,7 @@ describe("anthropic adapter", () => {
     expect(body).toEqual({ model: "m-1", max_tokens: 16000, system: "Be helpful.",
       tools: [{ name: "get_account", description: "Account.", input_schema: { type: "object", properties: {} } }],
       messages: [
-        { role: "user", content: [{ type: "text", text: "<customer_message>hi</customer_message>" }] },
+        { role: "user", content: [{ type: "text", text: "<user_message>hi</user_message>" }] },
         { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "get_account", input: {} }] },
         { role: "user", content: [
           { type: "tool_result", tool_use_id: "t1", content: "<tool_result>{\"plan\":\"Basic\"}</tool_result>" },
@@ -84,7 +84,7 @@ describe("openai-compatible adapter", () => {
       tools: [{ type: "function", function: { name: "get_account", description: "Account.", parameters: { type: "object", properties: {} } } }],
       messages: [
         { role: "system", content: "Be helpful." },
-        { role: "user", content: "<customer_message>hi</customer_message>" },
+        { role: "user", content: "<user_message>hi</user_message>" },
         { role: "assistant", content: null, tool_calls: [{ id: "t1", type: "function", function: { name: "get_account", arguments: "{}" } }] },
         { role: "tool", tool_call_id: "t1", content: "<tool_result>{\"plan\":\"Basic\"}</tool_result>" },
         { role: "tool", tool_call_id: "t2", content: "<system_note>Not run.</system_note>" },

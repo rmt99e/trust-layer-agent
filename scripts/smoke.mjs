@@ -3,7 +3,7 @@
 import { Agent, anthropic, createSession, openaiCompatible, read, z } from "../dist/index.js";
 
 const getPlan = read({
-  name: "get_plan", description: "The customer's current plan, price and renewal date.", input: z.object({}),
+  name: "get_plan", description: "The user's current plan, price and renewal date.", input: z.object({}),
   visible: ["plan", "monthlyPrice", "renewsOn"],
   run: () => ({ plan: "Basic", monthlyPrice: 9, renewsOn: "2026-11-01" }),
 });
@@ -37,7 +37,7 @@ for (const p of providers) {
   const agent = new Agent({ model, instructions: "You help customers with their subscription. Be brief.", tools: [getPlan], trace: show });
   let session = createSession({ facts: { verified: true } });
   for (const message of ["What plan am I on, and what does it cost?", "When does it renew?"]) {
-    console.log(`  customer: ${message}`);
+    console.log(`  user: ${message}`);
     try {
       const r = await agent.respond(session, message);
       session = r.session;

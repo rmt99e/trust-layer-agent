@@ -9,7 +9,7 @@ const action = (name: string, input = {}): CheckEvent => ({ kind: "action", tool
 describe("verified_first", () => {
   it("blocks account tools before verification, naming the verifying tool", async () => {
     const { result } = await runChecks(action("get_account"), ctx({ facts: {} }), only("verified_first"));
-    expect(result).toEqual({ block: "Verify the customer before using get_account (use verify_customer)." });
+    expect(result).toEqual({ block: "Verify the user before using get_account (use verify_customer)." });
   });
   it("allows beforeVerification tools and verified sessions", async () => {
     expect((await runChecks(action("verify_customer"), ctx({ facts: {} }), only("verified_first"))).result).toEqual(allow());
@@ -189,7 +189,7 @@ describe("no retry of an unknown or pending write in the same turn (v4.1 fix 1)"
 });
 
 describe("no_invented_inputs", () => {
-  const search: ToolInfo = { name: "search_records", kind: "read", fromCustomer: ["name", "city", "aliases"] };
+  const search: ToolInfo = { name: "search_records", kind: "read", fromUser: ["name", "city", "aliases"] };
   const run = (input: Record<string, any>, say: string[], facts: Record<string, any> = { verified: true }) =>
     runChecks({ kind: "action", tool: search, input }, ctx({ say, facts, tools: [...tools, search] }), only("no_invented_inputs"));
   const said = ["c: Hi, I'm Dana Whitfield-Ortiz from Springfield.  I also go by D. Whitfield; I'm 34."];
@@ -202,7 +202,7 @@ describe("no_invented_inputs", () => {
     ["a value from a session fact", { city: "Riverton" }],
     ["a fact in another case", { city: "RIVERTON" }],
     ["an empty value", { city: " " }],
-    ["an input the tool doesn't declare fromCustomer", { depth: "deep" }],
+    ["an input the tool doesn't declare fromUser", { depth: "deep" }],
   ])("allows %s", async (_n, input) => expect((await run(input, said, { verified: true, city: "Riverton" })).result).toEqual(allow()));
 
   // Attacks: a model filling in what it guessed, found in a tool result, or lifted from its own earlier reply.
@@ -214,13 +214,13 @@ describe("no_invented_inputs", () => {
     ["a value only the agent said", { city: "Capital City" }, "Capital City"],
   ])("blocks %s", async (_n, input, bad) => {
     const say = [...said, "a: Is that Capital City?", "c: no"];
-    expect((await run(input, say)).result).toEqual({ block: `The customer never said "${bad}" (${Object.keys(input).at(-1)} in search_records). Use only values the customer gave, or ask them.` });
+    expect((await run(input, say)).result).toEqual({ block: `The user never said "${bad}" (${Object.keys(input).at(-1)} in search_records). Use only values the user gave, or ask them.` });
   });
   it("never takes a value from a tool result", async () => {
     const c = ctx({ say: said, results: [ok("get_account", { city: "Shelbyville" })], tools: [...tools, search] });
     expect((await runChecks({ kind: "action", tool: search, input: { city: "Shelbyville" } }, c, only("no_invented_inputs"))).result).toHaveProperty("block");
   });
-  it("ignores tools without fromCustomer, and can be turned off", async () => {
+  it("ignores tools without fromUser, and can be turned off", async () => {
     expect((await run({ name: "x" }, said)).result).toHaveProperty("block");
     expect((await runChecks(action("get_account", { name: "x" }), ctx({ say: said }), only("no_invented_inputs"))).result).toEqual(allow());
     expect(builtinChecks({ no_invented_inputs: false }).map((c) => c.name)).not.toContain("no_invented_inputs");

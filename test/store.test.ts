@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Agent, allow, approve, check, createSession, forget, memoryStore, read, StaleSession, withStore, write, z, type Session, type SessionStore } from "../src/index.js";
+import { Agent, allow, approve, check, createSession, forget, memoryStore, read, StaleSession, withStore, write, z, type Session, type SessionStore, type SessionV1 } from "../src/index.js";
 import { postgres } from "../src/stores/postgres.js";
 import { scripted, type Step } from "./fake-model.js";
 
@@ -36,7 +36,7 @@ function storeContract(name: string, make: () => SessionStore) {
       const store = make(), s = createSession();
       await store.save(s);
       await store.save(forget(s), 0);
-      expect(await store.load(s.id)).toEqual({ v: 1, id: s.id, forgotten: true });
+      expect(await store.load(s.id)).toEqual({ v: 2, id: s.id, forgotten: true });
       await expect(store.save({ ...s, rev: 1 }, 0)).rejects.toThrow(StaleSession);   // the app's stale copy can't resurrect it
       await expect(store.save({ ...s, rev: 1 }, -1)).rejects.toThrow(StaleSession);  // nor can anyone "lock" on the tombstone's rev
     });
@@ -149,6 +149,22 @@ describe("postgres adapter", () => {
   });
 });
 
+describe("a v0.1 session stored as v1 still works end to end", () => {
+  it("a quote shown under the customer role is honoured, the yes is seen, and the turn count continues", async () => {
+    const store = memoryStore(), run = vi.fn(() => ({ status: "active" }));
+    const change = write({ name: "change_plan", description: "Apply.", input: z.object({ quoteId: z.string() }), confirm: { commitment: "quote", by: "quoteId" }, run });
+    const agent = new Agent({ model: scripted([{ call: "change_plan", input: { quoteId: "q_1" } }, "Done, you're all set."]), instructions: "You help.", tools: [change], builtins: { verified_first: false }, trace: false });
+    const v1: SessionV1 = { v: 1, id: "s_v1", rev: 1, status: "open", facts: {}, results: [], failures: 0,
+      commitments: [{ type: "quote", id: "q_1", by: "quote_plan_change", values: { monthlyPrice: 29 }, turn: 1, shownTurn: 1, status: "open" }],
+      messages: [{ role: "customer", text: "switch me to Plus", turn: 1 }, { role: "agent", text: "Plus is $29/month. Shall I?", turn: 1 }] };
+    await store.save(v1 as unknown as Session);
+    const t = await withStore(agent, store).respond("s_v1", "yes");
+    expect(run).toHaveBeenCalled();
+    expect(t.session).toMatchObject({ v: 2, rev: 2, messages: [{ role: "user", turn: 1 }, { role: "agent", turn: 1 }, { role: "user", text: "yes", turn: 2 }, { role: "agent", turn: 2 }] });
+    expect(t.session.commitments[0]).toMatchObject({ status: "used", acceptedTurn: 2 });
+  });
+});
+
 describe("withStore: the agent's verbs by session id", () => {
   it("respond(null) creates and saves; respond(id) loads, acts and saves against the loaded rev", async () => {
     const store = memoryStore(), bound = withStore(agentWith([{ call: "get_plan" }, "You're on Basic at $9/month.", "Still Basic."]), store);
@@ -188,8 +204,8 @@ describe("withStore: the agent's verbs by session id", () => {
     const { session } = await bound.respond(null, "hi");
     await expect(bound.forget(session.id)).rejects.toBeInstanceOf(StaleSession);
     expect([forgetTrace.mock.calls.length, (await inner.load(session.id) as Session).rev]).toEqual([1, 2]);
-    expect(await bound.forget(session.id)).toEqual({ v: 1, id: session.id, forgotten: true });
-    expect([forgetTrace.mock.calls.length, await inner.load(session.id)]).toEqual([2, { v: 1, id: session.id, forgotten: true }]);
+    expect(await bound.forget(session.id)).toEqual({ v: 2, id: session.id, forgotten: true });
+    expect([forgetTrace.mock.calls.length, await inner.load(session.id)]).toEqual([2, { v: 2, id: session.id, forgotten: true }]);
   });
   it("approve, decline and review work by id; forget stores the tombstone and ends the session", async () => {
     const store = memoryStore(), forgetTrace = vi.fn();
@@ -205,7 +221,7 @@ describe("withStore: the agent's verbs by session id", () => {
     expect((await bound.review(null, "Your refund has been processed.")).result).toHaveProperty("block");
     await expect(bound.decline(session.id, "p_1")).rejects.toThrow('no pending approval "p_1"');
     const t = await bound.forget(session.id);
-    expect(t).toEqual({ v: 1, id: session.id, forgotten: true });
+    expect(t).toEqual({ v: 2, id: session.id, forgotten: true });
     expect(forgetTrace).toHaveBeenCalledWith(session.id);
     expect(await store.load(session.id)).toEqual(t);
     await expect(bound.respond(session.id, "hello?")).rejects.toThrow(`no session "${session.id}" (forgotten)`);

@@ -26,5 +26,5 @@ guardrails:
       tool_result: { tool: get_account, field: plan.pricing, in: [custom, enterprise] }
       summary: Account has custom or enterprise pricing.
   - handoff_when:
-      customer_says: ["real person", "human", "representative", "manager", "speak to someone"]
+      user_says: ["real person", "human", "representative", "manager", "speak to someone"]
       summary: Customer asked for a person.

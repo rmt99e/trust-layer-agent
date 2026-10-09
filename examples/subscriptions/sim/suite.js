@@ -13,7 +13,7 @@ export default {
   now: "2026-10-03T12:00:00Z",                       // the store's business date
   tasks: fileURLToPath(new URL("./tasks", import.meta.url)),
   agentModel: "anthropic:claude-sonnet-5-5",
-  customerModel: "anthropic:claude-sonnet-5-5",
+  userModel: "anthropic:claude-sonnet-5-5",
   prices: {                                          // USD per million tokens, from platform.claude.com/docs/en/about-claude/pricing
     "anthropic:claude-sonnet-5-5": { input: 2, output: 10 },
     "anthropic:claude-haiku-4-5-20251001": { input: 1, output: 5 },

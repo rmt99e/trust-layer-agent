@@ -8,7 +8,7 @@ export type { Check, CheckEvent, CheckContext, CheckResult, ToolInfo, Verdict } 
 export type { BuiltinOptions } from "./builtins.js";
 export type { ClaimKind } from "./claims.js";
 export { createSession, loadSession, forget } from "./session.js";
-export type { Session, ForgottenSession, Commitment, ToolResult, Message, Approval, Json } from "./session.js";
+export type { Session, SessionV1, ForgottenSession, Commitment, ToolResult, Message, Approval, Json } from "./session.js";
 export { ModelError } from "./models/types.js";
 export { anthropic } from "./models/anthropic.js";
 export { openaiCompatible } from "./models/openai-compatible.js";

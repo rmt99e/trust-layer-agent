@@ -1,8 +1,8 @@
 id: asks-for-person
 purpose: Customer asks for a person in their first message. The agent hands off, with no account changes.
-customer:
+user:
   persona: Kim Alvarez. Short on patience.
-  reason_for_call: You don't want to deal with a bot.
+  reason: You don't want to deal with a bot.
   known_info: Your account id is acc_400 and your PIN is 5150.
   instructions: Your first message is "I want to talk to a real person, please." Don't share anything else unless asked.
 expect:

@@ -42,10 +42,10 @@ const read = (p?: string | string[], ext?: RegExp) => (p ? listFiles(p, ext).map
 export function configOf(suite: Suite, suiteFile: string): Record<string, string> {
   const a = suite.agent, id = (m: string | Model) => (typeof m === "string" ? m : m.id);
   return {
-    agentModel: id(suite.agentModel), customerModel: id(suite.customerModel),
+    agentModel: id(suite.agentModel), userModel: id(suite.userModel),
     instructions: hash(a.instructions), journeys: hash(read(a.journeys)), knowledge: hash(read(a.knowledge, /\.(md|txt)$/)),
     tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
-      before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromCustomer: t.fromCustomer }))),
+      before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromUser: t.fromUser }))),
     checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name),
       kinds: claimKinds(a.builtins).map((k) => ({ name: k.name, find: String(k.find), confirms: k.confirms?.toString() })) }),   // JSON drops regexes and functions
     suite: hash(readFileSync(suiteFile, "utf8")),
@@ -81,13 +81,13 @@ export function compare(prev: Run & { name: string }, cur: Run): string[] {
 
 /** Cost per trial: the last run's tokens per trial, priced at the CURRENT models' prices. */
 export function estimatePerTrial(trials: Trial[], suite: Suite): number {
-  const id = (m: string | Model) => (typeof m === "string" ? m : m.id), withTokens = trials.filter((t) => t.tokens);
+  const id = (m: string | Model) => (typeof m === "string" ? m : m.id), withTokens = trials.filter((t) => t.tokens?.agent && t.tokens.user);   // results written before the user role are priced by mean cost
   if (!withTokens.length) return trials.length ? trials.reduce((a, t) => a + t.cost, 0) / trials.length : 0.08;
-  const price = (role: "agent" | "customer", m: string | Model) => {
+  const price = (role: "agent" | "user", m: string | Model) => {
     const p = suite.prices[id(m)] ?? { input: 0, output: 0 };
     return withTokens.reduce((a, t) => a + t.tokens![role].input * p.input + t.tokens![role].output * p.output, 0) / 1e6 / withTokens.length;
   };
-  return price("agent", suite.agentModel) + price("customer", suite.customerModel);
+  return price("agent", suite.agentModel) + price("user", suite.userModel);
 }
 
 const newest = (dir: string) => existsSync(dir)

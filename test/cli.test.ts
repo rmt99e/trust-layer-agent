@@ -32,7 +32,7 @@ describe("summary and friction", () => {
 });
 
 describe("diff against a snapshot", () => {
-  const config = { agentModel: "anthropic:m", customerModel: "anthropic:m", journeys: "aaa" };
+  const config = { agentModel: "anthropic:m", userModel: "anthropic:m", journeys: "aaa" };
   const run = (marks: Record<string, string>, over: Partial<Run> = {}): Run => {
     const s = summarize(Object.entries(marks).flatMap(([task, m]) => [...m].map((c) => trial(task, c === "P" ? "pass" : "fail", c === "P" ? 0 : 1))));
     return { config, summary: s, overall: overall(s), cost: 1, ...over };
@@ -46,8 +46,8 @@ describe("diff against a snapshot", () => {
     expect(lines.at(-1)).toBe("  overall pass^k 67% → 75%; cost $1.00 → $1.00");
   });
   it("warns when pinned configuration differs", () => {
-    const lines = compare({ ...run({ a: "PP" }), name: "v1" }, run({ a: "PP" }, { config: { ...config, customerModel: "openai-compatible:x", journeys: "bbb" } }));
-    expect(lines.slice(0, 2)).toEqual(['⚠️  config differs from snapshot "v1": customerModel', '⚠️  config differs from snapshot "v1": journeys']);
+    const lines = compare({ ...run({ a: "PP" }), name: "v1" }, run({ a: "PP" }, { config: { ...config, userModel: "openai-compatible:x", journeys: "bbb" } }));
+    expect(lines.slice(0, 2)).toEqual(['⚠️  config differs from snapshot "v1": userModel', '⚠️  config differs from snapshot "v1": journeys']);
   });
 });
 
@@ -79,11 +79,15 @@ describe("library fingerprint", () => {
 
 describe("cost estimate", () => {
   it("prices the last run's tokens at the current models' prices", () => {
-    const t = { ...trial("a", "pass"), tokens: { agent: { input: 100_000, output: 10_000 }, customer: { input: 20_000, output: 2_000 } } };
+    const t = { ...trial("a", "pass"), tokens: { agent: { input: 100_000, output: 10_000 }, user: { input: 20_000, output: 2_000 } } };
     const prices = { big: { input: 2, output: 10 }, small: { input: 1, output: 5 } };
-    const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, customerModel: "big" } as unknown as Suite);
-    expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + customer 0.06
+    const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, userModel: "big" } as unknown as Suite);
+    expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + user 0.06
     expect(at("small")).toBeCloseTo(0.1 + 0.05 + 0.06);        // switching the agent model halves its part
+  });
+  it("prices a results file written before the user role by mean cost instead of crashing", () => {
+    const old = { ...trial("a", "pass"), cost: 0.5, tokens: { agent: { input: 1, output: 1 }, customer: { input: 1, output: 1 } } } as any;
+    expect(estimatePerTrial([old], { prices: {}, agentModel: "m", userModel: "m" } as unknown as Suite)).toBe(0.5);
   });
 });
 
@@ -181,7 +185,7 @@ describe("fingerprint covers outcome, reconcileWith and repeatable (v4.1 fix 4)"
   const get = read({ name: "get_account", description: "x", input: z.object({}), run: () => ({}) });
   const change = (o: Record<string, unknown> = {}) => write({ name: "change_plan", description: "x", input: z.object({}), confirm: false,
     outcome: (r: any) => (r.status === "pending" ? "pending" : "done"), reconcileWith: "get_account", run: () => ({}), ...o });
-  const cfg = (t: ReturnType<typeof change>) => configOf({ agent: { instructions: "x" }, tools: [get, t], agentModel: "m", customerModel: "m" } as any, suiteFile);
+  const cfg = (t: ReturnType<typeof change>) => configOf({ agent: { instructions: "x" }, tools: [get, t], agentModel: "m", userModel: "m" } as any, suiteFile);
   const base = cfg(change());
   const differs = (t: ReturnType<typeof change>) => compare({ config: base, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: cfg(t), summary: {}, overall: 1, cost: 0 })
     .some((l) => l === '⚠️  config differs from snapshot "v4": tools');
@@ -194,13 +198,13 @@ describe("fingerprint covers outcome, reconcileWith and repeatable (v4.1 fix 4)"
   ] as const)("changing %s → config differs", (_n, t) => expect(differs(t)).toBe(true));
   // Allowed (1)
   it("an identical tool → no warning", () => expect(differs(change())).toBe(false));
-  it("fromCustomer is covered", () => expect(differs(change({ fromCustomer: [] }))).toBe(true));
+  it("fromUser is covered", () => expect(differs(change({ fromUser: [] }))).toBe(true));
 });
 
 describe("fingerprint covers claim kinds, which JSON alone would drop", () => {
   const suiteFile = join(mkdtempSync(join(tmpdir(), "tla-fp-")), "suite.js");
   writeFileSync(suiteFile, "export default {}");
-  const cfg = (kinds: unknown[]) => configOf({ agent: { instructions: "x", builtins: { no_unconfirmed_claims: { kinds } } }, tools: [], agentModel: "m", customerModel: "m" } as any, suiteFile);
+  const cfg = (kinds: unknown[]) => configOf({ agent: { instructions: "x", builtins: { no_unconfirmed_claims: { kinds } } }, tools: [], agentModel: "m", userModel: "m" } as any, suiteFile);
   const base = cfg([{ name: "count", find: /(\d+) records/ }]);
   const differs = (kinds: unknown[]) => compare({ config: base, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: cfg(kinds), summary: {}, overall: 1, cost: 0 })
     .some((l) => l === '⚠️  config differs from snapshot "v4": checks');

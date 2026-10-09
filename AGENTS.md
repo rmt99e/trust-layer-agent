@@ -2,7 +2,7 @@
 
 Notes for coding agents working on this repo. For using the package in an app, read README.md.
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
 Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test`, `snapshot`).
 
@@ -22,7 +22,7 @@ Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test
 - `src/store.ts`: the `SessionStore` contract (load/save with optimistic locking), `memoryStore()`, `withStore()` (the agent's verbs by session id), `StaleSession`.
 - `src/stores/postgres.ts`: the Postgres store + trace sink over an app-supplied query function; exported as `trust-layer-agent/postgres`.
 - `src/models/`: `types.ts` (the Model interface), `anthropic.ts`, `openai-compatible.ts`, `resolve.ts` ("provider:model" strings).
-- `src/sim/`: `task.ts` (task files), `simulator.ts` (simulated customer, stand-in tools, trials), `grade.ts` (deterministic grading).
+- `src/sim/`: `task.ts` (task files), `simulator.ts` (simulated user, stand-in tools, trials), `grade.ts` (deterministic grading).
 - `src/cli.ts`: the `test` and `snapshot` commands.
 - `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts.
 - `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the full example (store, tools, journeys, policy, `sim/` suite and tasks).
@@ -59,7 +59,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,500 (non-blank, non-comment; 1,484 today). Count with:
+- Logic lines in `src/` stay under 1,500 (non-blank, non-comment; 1,488 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 

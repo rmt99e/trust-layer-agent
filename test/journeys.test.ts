@@ -45,7 +45,7 @@ describe("journeys", () => {
     expect(() => loadJourneys(PLAN_CHANGE, { ...known, disabled: ["yes_after_quote"] })).toThrow(/guardrails\[1\]: check "yes_after_quote" is disabled/);
   });
 
-  it("a customer_says phrase hands off with no model call", async () => {
+  it("a user_says phrase hands off with no model call", async () => {
     const model = scripted([]);
     const agent = new Agent({ model, instructions: "Help.", trace: false, journeys: PLAN_CHANGE,
       tools: TOOLS.map((t) => stub(t, ["change_plan", "add_usage_pack", "open_case"].includes(t) ? "write" : "read")) });
@@ -89,6 +89,6 @@ describe("journeys", () => {
     await agent.respond(createSession({ facts: { verified: true } }), "Quote me Enterprise");
     expect(model.requests[2].messages.at(-1)!.content).toBe(
       "<system_note>Not run. Blocked: planId must be one of the values get_eligible_plans returned (plus, pro). " +
-      "Never mention checks, blocks or internal reasons to the customer; just give the corrected reply.</system_note>");
+      "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.</system_note>");
   });
 });

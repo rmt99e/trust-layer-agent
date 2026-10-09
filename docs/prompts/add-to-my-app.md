@@ -1,6 +1,6 @@
 # Prompt: add trust-layer-agent to my app
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and a customer-facing support agent's tools and replies. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
 
 This prompt has your coding agent add a support agent to an existing JavaScript or TypeScript app. It wraps your data functions as tools, adds one chat route that stores the session in your database, then writes a journey file and five simulation tasks and runs them. It stops after each step for your OK. Only step 8 costs money, because it calls a model; it shows an estimate first and stops at a cost limit.
 
@@ -26,7 +26,7 @@ STEP 1: Inspect the data layer, routes, auth and database. Show one row per cand
   never a price); false for writes that need no yes (open a case, hand off); omit otherwise.
 - records: facts or commitments a successful call adds to the session (e.g. a quote).
 - outcome (writes): "done", or can it be pending / time out after applying? Then name the read that shows the truth.
-Also say how customers are identified (logged in, or anonymous and verified in chat), which decisions already
+Also say how users are identified (logged in, or anonymous and verified in chat), which decisions already
 live in code (eligibility, prices, refund windows), and how a person takes over. STOP.
 
 STEP 2: `npm install github:rmt99e/trust-layer-agent` (Node 20+). It's not on npm yet; its prepare script builds
@@ -45,7 +45,7 @@ functions, so simulations can pass a seeded copy and importing tools never opens
       records: (q) => ({ commitments: [{ type: "quote", id: q.quoteId, expiresAt: q.expiresAt,
         values: { monthlyPrice: q.monthlyPrice, proratedCharge: q.proratedCharge } }] }),
       run: ({ accountId, planId }) => data.quotePlanChange(accountId, planId) }),
-    write({ name: "change_plan", description: "Apply a quote the customer accepted.",
+    write({ name: "change_plan", description: "Apply a quote the user accepted.",
       input: z.object({ accountId: z.string(), quoteId: z.string() }), bind, confirm: { commitment: "quote", by: "quoteId" },
       outcome: (o) => (o.status === "pending" ? "pending" : "done"), reconcileWith: "get_account",
       run: async ({ accountId, quoteId }) => {
@@ -88,7 +88,7 @@ STEP 4: agent/agent.js. Export the config separately; the simulator reuses it un
 Seven built-in checks are on by default: verified_first, yes_after_quote, no_unconfirmed_claims (prices, dates,
 "done" wording, and "it failed" wording after a write that succeeded), handoff_after_failures
 (builtins: { handoff_after_failures: { after: 3 } } tunes it), no_repeated_writes, no_invented_inputs (for tool
-fields declared fromCustomer: ["name"], the value must be in the customer's own words or a fact) and
+fields declared fromUser: ["name"], the value must be in the user's own words or a fact) and
 untrusted_text_is_data (structural, always on). A custom check is one function:
   check("big_refunds_to_person", (e) => e.kind === "action" && e.tool.name === "refund_invoice" &&
     e.input.amount > 100 ? handoff("Refund over $100 requested.") : allow())
@@ -142,18 +142,18 @@ import.meta.url; relative paths resolve from the working directory). Fields: id 
 when?, guidance (list; a prompt), done_when? (list), guardrails (list; enforced in code). A guardrail is a check
 name or one of: require_call_before {tool, call}; allow_values {tool, input, from, field}; max_calls {tool,
 per_session}; require_fact {tool, fact}; handoff_when {one of tool_result {tool, field, equals | in},
-tool_error {tool, code}, customer_says [phrases], fact {name, equals}; plus summary}. Mistakes fail at startup
+tool_error {tool, code}, user_says [phrases], fact {name, equals}; plus summary}. Mistakes fail at startup
 with file:line.
 
   id: plan-change
-  goal: Help a customer pick a plan that fits, and switch only after they accept a quote.
-  when: The customer asks about changing plans, running out of usage, or their price.
+  goal: Help a user pick a plan that fits, and switch only after they accept a quote.
+  when: The user asks about changing plans, running out of usage, or their price.
   guidance:
     - Quote with quote_plan_change, state the price exactly as returned, then ask for a clear yes.
     - If change_plan fails, say plainly that it did not go through and offer a person.
   guardrails:
     - require_call_before: { tool: change_plan, call: quote_plan_change }
-    - handoff_when: { customer_says: ["real person", "human", "speak to someone"], summary: Customer asked for a person. }
+    - handoff_when: { user_says: ["real person", "human", "speak to someone"], summary: Customer asked for a person. }
 
 STOP.
 
@@ -165,7 +165,7 @@ unknown_info, initial_state, inject_failures, max_steps, each key inside expect)
 
   id: happy-path
   purpose: What this task proves.
-  customer: { persona: ..., reason_for_call: ..., known_info: ..., unknown_info: ..., instructions: ... }
+  user: { persona: ..., reason: ..., known_info: ..., unknown_info: ..., instructions: ... }
   initial_state: { "accounts.acc_1.plan": starter }               # dot-path patches to the seed
   inject_failures: [ { tool: change_plan, code: billing_unavailable, message: Nothing was changed. } ]
   expect:
@@ -178,7 +178,7 @@ unknown_info, initial_state, inject_failures, max_steps, each key inside expect)
     allow_in_refusal: false                          # true: "I can't offer Plus at $10" doesn't count as saying $10
     must_not_claim_done: false                       # true: no reply may say it happened (pending or failed writes)
     forbidden_phrases: [ "full refund" ]             # asserted uses fail; "the full refund didn't go through" is fine
-  max_steps: 12                                      # customer turns (default 20); reaching it fails
+  max_steps: 12                                      # user turns (default 20); reaching it fails
 
 expect.writes replay in order on a fresh seed through the stand-ins to build the expected state (list a read
 too if a later write needs what it creates, like quote q_001; add allow_error: <code> to a step that may end
@@ -198,7 +198,7 @@ or run the CLI under a TypeScript loader):
     seed: SEED, createStore,                                       // createStore may be async
     state: (store) => ({ /* what the grader compares; no generated ids */ }),   // may be async
     tasks: fileURLToPath(new URL("./tasks", import.meta.url)),
-    agentModel: "anthropic:<model-name>", customerModel: "anthropic:<model-name>",    // pinned per run
+    agentModel: "anthropic:<model-name>", userModel: "anthropic:<model-name>",    // pinned per run
     prices: { "anthropic:<model-name>": { input: 0, output: 0 } },    // USD per million tokens: fill in
     now: "2026-01-15T12:00:00Z",                                       // optional fixed clock
   };
@@ -208,7 +208,7 @@ be async: createStore can create and seed a throwaway schema (one per call, sinc
 need separate schemas) and return a handle to it, and state() queries it. Never production. STOP.
 
 STEP 8: Run from the app root (it reads .env and writes results/ and snapshots/ there). This costs real money:
-the agent and the simulated customer both call the model. It prints an estimate first (from the last run's
+the agent and the simulated user both call the model. It prints an estimate first (from the last run's
 tokens at the current prices) and stops once spend passes --max-cost (default 10).
   npx trust-layer-agent test --suite agent/sim --k 1 --tasks happy-path --max-cost 1
   npx trust-layer-agent test --suite agent/sim --k 4 --max-cost 5
@@ -230,7 +230,7 @@ NEVER
 - Hardcode prices, plan details or dates in instructions, journeys or knowledge; they come from tools. (Operator
   text counts as confirmed for claims, so a stale price there passes the checks.)
 - Let the model pass account ids or other identity fields. Use bind.
-- Write before the customer's yes. Keep yes_after_quote on; use confirm with a quote commitment for anything priced.
+- Write before the user's yes. Keep yes_after_quote on; use confirm with a quote commitment for anything priced.
 - Let the model decide fit or eligibility in prose for a write ("Starter covers your usage"). No check reads that
   kind of claim. Return it from a tool (e.g. the quote includes fitsUsage) and gate the write on it with a check.
 - Disable or loosen built-in checks to make a test pass.
