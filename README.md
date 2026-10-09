@@ -35,7 +35,7 @@ This exchange is the first test in [test/agent.test.ts](test/agent.test.ts). It 
 
 ## What it enforces
 
-The first six items are the built-in checks. All are on by default; turn one off with `builtins: { name: false }`.
+The first seven items are the built-in checks. All are on by default; turn one off with `builtins: { name: false }`.
 
 - **verified_first**: blocks any tool not marked `beforeVerification` until `facts.verified` is true. It's off, with a startup warning, when no tool declares `verifies: true`.
 - **yes_after_quote**: a write runs only if the customer's latest message is a clear yes (an affirmative phrase with no negation, hedge or question). For a write with `confirm`, the named quote must also exist this session, be unused and unexpired, and have been shown in an earlier reply; after that, "go ahead", "I'll take it" or "can you just switch me?" also counts, and questions about cost don't.
@@ -44,9 +44,11 @@ The first six items are the built-in checks. All are on by default; turn one off
   - Failure wording ("didn't go through", "failed", "nothing has been changed") is blocked after a write succeeded, unless some write's latest call failed.
   - While a write's outcome is unknown (a timeout, say), every draft is blocked until that write's `reconcileWith` read succeeds. When code already has the read's inputs (bound or in the failed call), the agent runs the read itself before the model replies. A write with no `reconcileWith` can't be settled, and the block tells the model to hand off.
   - A number only the customer said may appear inside the agent's own refusal that governs it ("I can't offer Plus at $10"). A comparative ("lower than", "best", "at least") disqualifies the refusal.
+  - Your own claim kinds run after these: `builtins: { no_unconfirmed_claims: { kinds: [...] } }` adds things like counts, status words or reference numbers that must also come from a tool result or operator text (see [Checks](#checks)).
 - **untrusted_text_is_data**: structural and always on. Customer messages and tool output reach the model fenced as data, with angle brackets escaped so they can't forge a system note.
 - **handoff_after_failures**: hands off with a summary of the errors after 2 consecutive tool failures (configurable with `{ after }`).
 - **no_repeated_writes**: blocks a write that already succeeded this turn and gives the model the earlier result. A write declared `repeatable: true` is exempt, except that a write whose latest call this turn has an unknown or pending outcome can't be retried in that turn.
+- **no_invented_inputs**: an input a tool declares in `fromCustomer` must be something the customer gave: each value appears whole in one of their messages, or equals a session fact. A tool result never counts, so data a tool discovered can't become the input to the next search. The model is told which value the customer never said.
 - **Account ids from facts**: inputs declared in a tool's `bind` come from session facts. They're removed from the schema the model sees, and anything the model sends for them is overwritten.
 - **Field visibility**: the model sees only the returned fields a tool lists as `visible` (see [Tools](#tools)).
 - **Masked traces**: every trace sink receives lines with emails, phone numbers, card numbers, US social security numbers and street addresses replaced by `[email]`, `[phone]`, `[card]`, `[ssn]` and `[address]`, unless the sink sets `mask: false`. Masking is pattern matching and best-effort; visibility is the guarantee.
@@ -120,24 +122,60 @@ Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `
 - **`outcome`** (writes): reads a successful result as `"done"` or `"pending"`, e.g. `(o) => (o.status === "pending" ? "pending" : "done")`. The default is done.
 - **`reconcileWith`** (writes): the read tool that settles an unknown outcome, e.g. `"get_account"` on `change_plan`. It must name a read tool of the same agent, or `new Agent()` throws.
 - **`repeatable: true`** (writes): lets a write succeed more than once in a turn.
+- **`fromCustomer`**: input fields whose values must come from the customer's own words or a session fact, e.g. `["name", "city"]` on a search tool. Checked by `no_invented_inputs`; a field can't be both bound and `fromCustomer`.
 
 A successful write tool named `handoff_to_person` ends the turn as a handoff.
 
 ### Checks
 
-One function type guards actions (before a tool runs) and replies (before they're sent). It returns `allow()`, `block(reason)`, `rewrite(text)` (replies only) or `handoff(summary)`.
+One function type guards actions (before a tool runs) and replies (before they're sent). It returns `allow()`, `block(reason)`, `rewrite(text)` (replies only), `handoff(summary)` or `approve(reason)` (actions only).
 
 ```js
-import { check, allow, handoff } from "trust-layer-agent";
+import { check, allow, approve } from "trust-layer-agent";
 
-const bigRefunds = check("big_refunds_go_to_a_person", (e) =>
+const bigRefunds = check("big_refunds_need_a_person", (e) =>
   e.kind === "action" && e.tool.name === "refund_invoice" && e.input.amount > 100
-    ? handoff("Refund over $100 requested.") : allow());
+    ? approve("Refund over $100.") : allow());
 
 new Agent({ ...options, checks: [bigRefunds] });
 ```
 
 Built-ins run first, then journey guardrails, then your checks. For actions, the first non-allow result wins; a blocked tool doesn't run and the model is told why. For replies, rewrites chain; a block discards the draft and the model tries again, up to `maxRetries` (default 2), after which the turn hands off. The built-ins are described in [What it enforces](#what-it-enforces).
+
+**Approvals.** `approve(reason)` parks the action for a person instead of running or refusing it. The conversation goes on: the model is told the action is requested, not done, and `no_unconfirmed_claims` blocks "it's done" wording until it is. The parked action is on the session as `approvals[]` (`{ id, tool, input, turn, reason, by, status }`) and on the reply as `approvals` for the ones parked this turn. Your app decides, whenever it likes:
+
+```js
+const { reply, session, approvals } = await agent.respond(saved, message);
+if (approvals) queueForReview(approvals);                      // show a person the tool, input and reason
+
+const { session: next, result } = await agent.approve(session, "p_1");    // runs it now, with the parked input
+// or: await agent.decline(session, "p_1", "Over the self-service limit.")  // a failed call with code "declined"
+await save(next);                                                           // the model sees the result next turn
+```
+
+Both decisions end in an ordinary tool result in the session, so the next reply is checked against what really happened. An approved call runs without checks: the person's decision is the check. The same call isn't parked twice, and each turn while something is pending the model is reminded not to request it again.
+
+**Your own claim kinds.** `no_unconfirmed_claims` knows prices, percentages, dates and "done" wording. Teach it what your replies state with a claim kind: a name, a way to find such claims in a text, and optionally what a source has to contain to back one:
+
+```js
+new Agent({ ...options, builtins: { no_unconfirmed_claims: { kinds: [
+  { name: "count", find: /\b(\d+) (?:records?|results?)\b/i },                 // "14 records" needs a 14 in a tool result
+  { name: "status", find: (t) => [...t.matchAll(/\b(removed|suppressed)\b/gi)].map((m) => m[1].toLowerCase()),
+    confirms: (src) => (src?.status ? [String(src.status).toLowerCase()] : []) },  // only a status field backs it
+] } } });
+```
+
+`find` is a RegExp (its first group, or the whole match, lower-cased) or a function returning the claims in a text. A claim is backed when a successful tool output, a commitment or operator text contains it: by default any string or number in the source, whole, or anything `find` picks out of it; `confirms(source)` replaces that rule. Customer text never backs anything. The block reason names the kind and the value, and the simulator's grader applies the same kinds.
+
+**Reviewing a draft you wrote.** `agent.review(session, draft)` runs the reply checks on text that didn't come from the model: a rendered template, a scheduled notice, an outbound email. No model call, nothing changes, and a `review` trace line records the verdict:
+
+```js
+const v = await agent.review(session, renderNotice(data));   // { result, by?, text?, trail }
+if ("block" in v.result) return holdForEdit(v.result.block);  // "Reply states the amount 12 but no tool returned that amount…"
+send(v.text ?? draft);                                        // text is set when a check rewrote it
+```
+
+`session` may be `null`: then only your instructions, journeys and knowledge files can back a claim.
 
 ### Journeys
 
@@ -157,9 +195,9 @@ The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `req
 
 ### Session, respond, chat and forget
 
-The session is plain JSON: `facts`, `commitments` (what the customer was shown and agreed to), `messages`, tool `results`, a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases every turn, for optimistic locking. Start one with `createSession({ facts })` or pass `null`.
+The session is plain JSON: `facts`, `commitments` (what the customer was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), a `failures` count, a `status` (`open`, `handed_off`, `closed`) and a `rev` that increases every turn and on every approval decision, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
-`agent.respond(session, message)` returns `{ reply, session, handoff?, usage }`. `handoff` is `{ summary, reason }`; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.forget(session)` returns a tombstone, `{ v: 1, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
+`agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.forget(session)` returns a tombstone, `{ v: 1, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
 
 The default trace sink, `jsonl()`, writes one masked file per session to `./traces/`. `maskTrace` is exported for your own logs. The session itself holds what the customer typed; store it like other customer data.
 
@@ -249,16 +287,17 @@ trust-layer-agent is narrower. It checks that what the agent says matches what i
 - Affirmatives, negations, "done" wording, refusals and relative dates are English phrase lists. Slash dates are read month first.
 - Units come from field names: `price`, `charge`, `amount`, `fee`, `cost`, `total`, `balance`, `savings`, `increase` and `refund` mean money; `percent` and `pct` mean a percentage. A number in any other field can't confirm "$29"; rename the field or return `"$29"`. Sums and differences aren't computed, so tools should return every number the agent may say.
 - The refusal allowance matches Sonnet's "I can't offer…" refusals; Haiku's phrasing mostly falls outside it.
-- Claims about fit or eligibility aren't checked (see [Results](#results)).
+- Claims about fit or eligibility aren't checked (see [Results](#results)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
+- `no_invented_inputs` matches whole words, case-insensitively. A customer who typed "Springfeld" can be searched for as "Springfeld", not "Springfield".
 - Done wording isn't tied to a specific write: after `open_case` succeeded, "switched to Plus" was allowed (shown in a v4 unit test).
 - Haiku's unneeded handoffs on the original 18 tasks went 4 → 5 → 8 of 72 trials across v2.1, v3 and v4.
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- The logic in `src/` is 1,297 non-blank, non-comment lines, against a 1,300-line cap.
+- The logic in `src/` is 1,398 non-blank, non-comment lines, against a 1,400-line cap.
 - No streaming; each reply is checked whole before it's sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
 - The suite is small, written by the same authors as the fixes, and run once per version.
-- v0.1 has no multi-day journeys, outbound messages, voice or multi-agent setups.
+- `review()` checks a message the app wrote; nothing schedules or sends it. v0.1 has no multi-day journeys, voice or multi-agent setups.
 
 ## Roadmap
 

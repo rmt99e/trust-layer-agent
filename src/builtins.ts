@@ -1,5 +1,6 @@
 import { allow, block, check, handoff, type Check, type ToolInfo } from "./checks.js";
-import { unconfirmed } from "./claims.js";
+import { unconfirmed, type ClaimKind } from "./claims.js";
+import type { Json } from "./session.js";
 
 // untrusted_text_is_data has no check here: bind injection (tools.ts) and fencing customer and
 // tool text as data in the prompt (agent.ts) are structural, so there's nothing left to detect.
@@ -7,9 +8,10 @@ import { unconfirmed } from "./claims.js";
 export interface BuiltinOptions {
   verified_first?: false;
   yes_after_quote?: false | { phrases?: string[] };
-  no_unconfirmed_claims?: false;
+  no_unconfirmed_claims?: false | { kinds?: ClaimKind[] };   // kinds: operator-defined claims, checked after the built-in ones
   handoff_after_failures?: false | { after?: number };
   no_repeated_writes?: false;
+  no_invented_inputs?: false;
 }
 
 const YES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "go ahead", "do it", "please do", "confirm", "confirmed",
@@ -60,9 +62,26 @@ const yesAfterQuote = (phrases?: string[]) => check("yes_after_quote", (e, ctx) 
   return allow();
 });
 
-const noUnconfirmedClaims = check("no_unconfirmed_claims", (e, ctx) => {
-  const why = e.kind === "reply" ? unconfirmed(e.text, ctx) : undefined;
+const noUnconfirmedClaims = (kinds?: ClaimKind[]) => check("no_unconfirmed_claims", (e, ctx) => {
+  const why = e.kind === "reply" ? unconfirmed(e.text, ctx, kinds) : undefined;
   return why ? block(why) : allow();
+});
+
+// Inputs a tool declares fromCustomer must be values the customer gave: each leaf (string or number) appears whole,
+// case-insensitively, in a customer message, or equals a session fact. Tool output is never a source: data a tool
+// discovered is output, not something the customer asked about.
+const leaves = (v: Json | undefined): (string | number)[] => typeof v === "string" || typeof v === "number" ? [v]
+  : Array.isArray(v) ? v.flatMap(leaves) : v && typeof v === "object" ? Object.values(v).flatMap(leaves) : [];
+const noInventedInputs = check("no_invented_inputs", (e, ctx) => {
+  if (e.kind !== "action" || !e.tool.fromCustomer?.length) return allow();
+  const said = ctx.messages.filter((m) => m.role === "customer").map((m) => m.text).join("\n").replace(/\s+/g, " "), known = leaves(ctx.facts as Json).map((f) => String(f).toLowerCase());
+  const gave = (v: string | number) => { const t = String(v).trim().replace(/\s+/g, " ");
+    return !t || known.includes(t.toLowerCase()) || new RegExp(String.raw`(?:^|[^\p{L}\p{N}])${escape(t)}(?=$|[^\p{L}\p{N}])`, "iu").test(said); };
+  for (const field of e.tool.fromCustomer) {
+    const bad = leaves(e.input[field]).find((v) => !gave(v));
+    if (bad !== undefined) return block(`The customer never said "${bad}" (${field} in ${e.tool.name}). Use only values the customer gave, or ask them.`);
+  }
+  return allow();
 });
 
 // A write that already succeeded this turn isn't repeated (e.g. opening another case while redrafting a reply).
@@ -84,15 +103,19 @@ const handoffAfterFailures = (after = 2) => check("handoff_after_failures", (_e,
 });
 
 /** Built-in names a journey may list. untrusted_text_is_data is structural and always on. */
-export const BUILTIN_NAMES = ["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "untrusted_text_is_data"] as const;
+export const BUILTIN_NAMES = ["verified_first", "yes_after_quote", "no_unconfirmed_claims", "handoff_after_failures", "no_repeated_writes", "no_invented_inputs", "untrusted_text_is_data"] as const;
+
+/** The operator-defined claim kinds in effect, for the grader. */
+export const claimKinds = (opts: BuiltinOptions = {}): ClaimKind[] => (opts.no_unconfirmed_claims && opts.no_unconfirmed_claims.kinds) || [];
 
 export function builtinChecks(opts: BuiltinOptions = {}): Check[] {
   return [
     opts.verified_first !== false && verifiedFirst,
     opts.yes_after_quote !== false && yesAfterQuote(opts.yes_after_quote?.phrases),
-    opts.no_unconfirmed_claims !== false && noUnconfirmedClaims,
+    opts.no_unconfirmed_claims !== false && noUnconfirmedClaims(claimKinds(opts)),
     opts.handoff_after_failures !== false && handoffAfterFailures(opts.handoff_after_failures?.after),
     opts.no_repeated_writes !== false && noRepeatedWrites,
+    opts.no_invented_inputs !== false && noInventedInputs,
   ].filter((c): c is Check => Boolean(c));
 }
 

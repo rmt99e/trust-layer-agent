@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent has a 1,300-line cap on logic in `src/` (checks, the agent loop, two model adapters and the simulator), and it is at 1,297. A change that adds a feature needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent has a 1,400-line cap on logic in `src/` (checks, the agent loop, two model adapters and the simulator), and it is at 1,398. A change that adds a feature needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
@@ -45,7 +45,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - **No prices or business values in `src/`.** They come from tools.
 - **Vendor-neutral names.** No real company or product names in code, examples or sample data.
 - **Extension only through tools, checks, journeys and model adapters.** If a use case needs a core change, the interface is wrong; open an issue first. Things that don't fit go on the README roadmap.
-- **Logic-line cap.** `src/` stays under 1,300 non-blank, non-comment lines. Count with:
+- **Logic-line cap.** `src/` stays under 1,400 non-blank, non-comment lines. Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Runtime dependencies stay `zod` and `yaml` only. Adapters use `fetch`, no provider SDKs.
 
@@ -56,7 +56,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - [ ] Behavior changes include a `test --against <snapshot>` diff with trial counts (or say a maintainer should run it).
 - [ ] SPEC.md updated if behavior in the spec changed.
 - [ ] A `CHANGELOG.md` entry under `[Unreleased]`.
-- [ ] Logic-line count still under 1,300.
+- [ ] Logic-line count still under 1,400.
 - [ ] No secrets, personal data or real company names in code, fixtures or traces.
 
 ## Where docs live

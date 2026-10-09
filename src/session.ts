@@ -28,6 +28,18 @@ export interface ToolResult {
 
 export interface Message { role: "customer" | "agent"; text: string; turn: number }
 
+/** An action a check parked for a person to decide. Either decision ends in a ToolResult (`result`). */
+export interface Approval {
+  id: string;                 // "p_<n>"
+  tool: string;
+  input: Record<string, Json>;
+  turn: number;
+  reason: string;             // what the check said
+  by: string;                 // the check that asked
+  status: "pending" | "approved" | "declined";
+  result?: string;            // the ToolResult id once decided
+}
+
 export interface Session {
   v: 1;
   id: string;
@@ -37,6 +49,7 @@ export interface Session {
   commitments: Commitment[];
   results: ToolResult[];
   messages: Message[];
+  approvals: Approval[];
   failures: number;
 }
 
@@ -45,8 +58,11 @@ export interface ForgottenSession { v: 1; id: string; forgotten: true }
 /** Start a session. Facts passed here come from app code (e.g. a logged-in user) and are trusted. */
 export function createSession(opts: { facts?: Record<string, Json> } = {}): Session {
   const id = "s_" + randomUUID().replace(/-/g, "").slice(0, 12);
-  return { v: 1, id, rev: 0, status: "open", facts: { ...opts.facts }, commitments: [], results: [], messages: [], failures: 0 };
+  return { v: 1, id, rev: 0, status: "open", facts: { ...opts.facts }, commitments: [], results: [], messages: [], approvals: [], failures: 0 };
 }
+
+/** A copy of a stored session with every list present (sessions saved before `approvals` existed lack it). */
+export const loadSession = (session: Session): Session => ({ ...structuredClone(session), approvals: session.approvals ?? [] });
 
 /** Drop everything but the id. The app overwrites or deletes its stored copy. */
 export function forget(session: Session): ForgottenSession {

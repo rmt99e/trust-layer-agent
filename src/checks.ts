@@ -1,15 +1,16 @@
-import type { Commitment, Json, Message, Session, ToolResult } from "./session.js";
+import type { Approval, Commitment, Json, Message, Session, ToolResult } from "./session.js";
 import type { Tool } from "./tools.js";
 
-export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies" | "reconcileWith" | "repeatable">;
+export type ToolInfo = Pick<Tool, "name" | "kind" | "bind" | "confirm" | "beforeVerification" | "verifies" | "reconcileWith" | "repeatable" | "fromCustomer">;
 export type CheckEvent = { kind: "action"; tool: ToolInfo; input: Record<string, Json> } | { kind: "reply"; text: string };
-export type CheckResult = { allow: true } | { block: string } | { rewrite: string } | { handoff: string };
+export type CheckResult = { allow: true } | { block: string } | { rewrite: string } | { handoff: string } | { approve: string };
 
 export interface CheckContext {
   facts: Readonly<Record<string, Json>>;
   commitments: readonly Commitment[];
   results: readonly ToolResult[];
   messages: readonly Message[];        // conversation so far; the last is the customer's
+  approvals: readonly Approval[];      // actions parked for a person, pending or decided
   failures: number;
   turn: number;
   tools: readonly ToolInfo[];
@@ -22,12 +23,13 @@ export const allow = (): CheckResult => ({ allow: true });
 export const block = (reason: string): CheckResult => ({ block: reason });
 export const rewrite = (text: string): CheckResult => ({ rewrite: text });
 export const handoff = (summary: string): CheckResult => ({ handoff: summary });
+export const approve = (reason: string): CheckResult => ({ approve: reason });   // actions only: park it for a person
 export const check = (name: string, run: Check["run"]): Check => ({ name, run });
 
 export function contextFrom(session: Session, tools: readonly ToolInfo[], operatorText: readonly string[] = [], now = new Date()): CheckContext {
-  const { facts, commitments, results, messages, failures } = session;
+  const { facts, commitments, results, messages, approvals = [], failures } = session;
   const turn = messages.filter((m) => m.role === "customer").length;
-  return { facts, commitments, results, messages, failures, turn, tools, operatorText, now };
+  return { facts, commitments, results, messages, approvals, failures, turn, tools, operatorText, now };
 }
 
 export interface Verdict { result: CheckResult; by?: string; text?: string; trail: { check: string; result: CheckResult }[] }
@@ -40,6 +42,7 @@ export async function runChecks(event: CheckEvent, ctx: CheckContext, checks: re
     const result = await c.run(event.kind === "reply" ? { kind: "reply", text: text! } : event, ctx);
     trail.push({ check: c.name, result });
     if ("allow" in result) continue;
+    if ("approve" in result && event.kind === "reply") throw new Error(`check "${c.name}" returned approve for a reply; approve applies to actions only`);
     if ("rewrite" in result) {
       if (event.kind === "action") throw new Error(`check "${c.name}" returned rewrite for an action; rewrite applies to replies only`);
       text = result.rewrite;

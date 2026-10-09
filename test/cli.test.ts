@@ -194,4 +194,21 @@ describe("fingerprint covers outcome, reconcileWith and repeatable (v4.1 fix 4)"
   ] as const)("changing %s → config differs", (_n, t) => expect(differs(t)).toBe(true));
   // Allowed (1)
   it("an identical tool → no warning", () => expect(differs(change())).toBe(false));
+  it("fromCustomer is covered", () => expect(differs(change({ fromCustomer: [] }))).toBe(true));
+});
+
+describe("fingerprint covers claim kinds, which JSON alone would drop", () => {
+  const suiteFile = join(mkdtempSync(join(tmpdir(), "tla-fp-")), "suite.js");
+  writeFileSync(suiteFile, "export default {}");
+  const cfg = (kinds: unknown[]) => configOf({ agent: { instructions: "x", builtins: { no_unconfirmed_claims: { kinds } } }, tools: [], agentModel: "m", customerModel: "m" } as any, suiteFile);
+  const base = cfg([{ name: "count", find: /(\d+) records/ }]);
+  const differs = (kinds: unknown[]) => compare({ config: base, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: cfg(kinds), summary: {}, overall: 1, cost: 0 })
+    .some((l) => l === '⚠️  config differs from snapshot "v4": checks');
+  it.each([
+    ["the regex", [{ name: "count", find: /(\d+) results/ }]],
+    ["a function finder", [{ name: "count", find: (t: string) => [t] }]],
+    ["a confirms function", [{ name: "count", find: /(\d+) records/, confirms: () => ["1"] }]],
+    ["kinds removed", []],
+  ] as const)("changing %s → config differs", (_n, kinds) => expect(differs(kinds as unknown[])).toBe(true));
+  it("the same regex → no warning", () => expect(differs([{ name: "count", find: /(\d+) records/ }])).toBe(false));
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { builtinChecks } from "../src/builtins.js";
-import { extractClaims, markShown } from "../src/claims.js";
+import { extractClaims, markShown, unconfirmed, type ClaimKind } from "../src/claims.js";
 import { runChecks } from "../src/checks.js";
 import { ctx, failed, ok, quote, tools } from "./fixtures.js";
 
@@ -243,5 +243,55 @@ describe("markShown", () => {
     expect(k.shownTurn).toBe(2);
     const [untouched] = markShown([quote({ shownTurn: undefined })], "Let me check that for you.", 2);
     expect(untouched.shownTurn).toBeUndefined();
+  });
+});
+
+describe("operator-defined claim kinds", () => {
+  const count: ClaimKind = { name: "count", find: /\b(\d+) (?:records?|listings?)\b/i };
+  const status: ClaimKind = { name: "status", find: (t) => [...t.matchAll(/\b(removed|suppressed)\b/gi)].map((m) => m[1].toLowerCase()) };
+  const verdict = (reply: string, c: ReturnType<typeof ctx>, kinds: ClaimKind[]) => unconfirmed(reply, c, kinds);
+  const reason = (kind: string, v: string) => `Reply states the ${kind} "${v}" but no tool returned it. Use a returned value or don't state it.`;
+
+  it("a RegExp kind: the first group, backed by a number in a tool output", () => {
+    expect(verdict("We found 14 records.", ctx({ results: [ok("get_account", { found: 14 })] }), [count])).toBeUndefined();
+    expect(verdict("We found 15 records.", ctx({ results: [ok("get_account", { found: 14 })] }), [count])).toBe(reason("count", "15"));
+  });
+  it("a function kind: backed by a string anywhere in a tool output, case-insensitively", () => {
+    expect(verdict("Your entry was Removed.", ctx({ results: [ok("get_account", { items: [{ state: "removed" }] })] }), [status])).toBeUndefined();
+    expect(verdict("Your entry was suppressed.", ctx({ results: [ok("get_account", { items: [{ state: "removed" }] })] }), [status])).toBe(reason("status", "suppressed"));
+  });
+  it("operator text and commitment values back a claim; customer text never does", () => {
+    expect(verdict("We keep 2 records.", ctx({ operatorText: ["We keep 2 records per customer."] }), [count])).toBeUndefined();
+    expect(verdict("We keep 2 records.", ctx({ commitments: [quote({ values: { records: 2 } })] }), [count])).toBeUndefined();
+    expect(verdict("We keep 2 records.", ctx({ say: ["c: do you keep 2 records?"] }), [count])).toBe(reason("count", "2"));
+  });
+  it("a custom confirms() decides what a source backs", () => {
+    const strict: ClaimKind = { ...status, confirms: (src) => typeof src === "object" && src && !Array.isArray(src) && src.state === "removed" ? ["removed"] : [] };
+    expect(verdict("It was removed.", ctx({ results: [ok("get_account", { state: "removed" })] }), [strict])).toBeUndefined();
+    expect(verdict("It was removed.", ctx({ results: [ok("get_account", { note: "not removed" })] }), [strict])).toBe(reason("status", "removed"));
+    expect(verdict("It was removed.", ctx({ operatorText: ["Say removed when it is removed."] }), [strict])).toBe(reason("status", "removed"));
+  });
+  it("runs after the built-in kinds, in order, and the built-in check takes kinds from builtins options", async () => {
+    const c = ctx({ results: [ok("get_account", { found: 14 })] });
+    expect(verdict("We found 15 records for $9.", c, [count])).toMatch(/amount 9/);
+    const chain = builtinChecks({ verified_first: false, yes_after_quote: false, handoff_after_failures: false, no_unconfirmed_claims: { kinds: [count] } });
+    expect((await runChecks({ kind: "reply", text: "We found 15 records." }, c, chain)).result).toEqual({ block: reason("count", "15") });
+    expect((await runChecks({ kind: "reply", text: "We found 15 records." }, c, claimsCheck)).result).toEqual({ allow: true });
+  });
+});
+
+describe("done wording while an action awaits a person's approval", () => {
+  const waiting = (status: "pending" | "approved" = "pending") => ({ id: "p_1", tool: "change_plan", input: {}, turn: 1, reason: "Big change.", by: "ask", status });
+  it("is blocked, with the approval named, until the approval is decided", async () => {
+    const c = { ...ctx(), approvals: [waiting()] };
+    expect(await verdict("Your plan has been switched.", c)).toEqual({ block: "Reply says \"has been switched\", but change_plan is waiting for a person's approval. Say it's been requested, not done." });
+    expect(await verdict("I've asked a person to approve the switch; nothing has changed yet.", c)).toEqual({ allow: true });
+    expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [waiting("approved")] })).toEqual({ allow: true });
+  });
+  it("a bare 'all set' is blocked too while the approval is pending", async () => {
+    expect(await verdict("You're all set!", { ...ctx(), approvals: [waiting()] })).toHaveProperty("block");
+  });
+  it("a read awaiting approval doesn't count", async () => {
+    expect(await verdict("Your plan has been switched.", { ...ctx({ results: [ok("change_plan", { status: "active" })] }), approvals: [{ ...waiting(), tool: "get_account" }] })).toEqual({ allow: true });
   });
 });

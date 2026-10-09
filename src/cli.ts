@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // npx trust-layer-agent test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against v1]
 // npx trust-layer-agent snapshot --suite <dir> --name v1
+import { claimKinds } from "./builtins.js";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -44,8 +45,9 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
     agentModel: id(suite.agentModel), customerModel: id(suite.customerModel),
     instructions: hash(a.instructions), journeys: hash(read(a.journeys)), knowledge: hash(read(a.knowledge, /\.(md|txt)$/)),
     tools: hash(suite.tools.map((t) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
-      before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable }))),
-    checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name) }),
+      before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromCustomer: t.fromCustomer }))),
+    checks: hash({ builtins: a.builtins ?? {}, custom: (a.checks ?? []).map((c) => c.name),
+      kinds: claimKinds(a.builtins).map((k) => ({ name: k.name, find: String(k.find), confirms: k.confirms?.toString() })) }),   // JSON drops regexes and functions
     suite: hash(readFileSync(suiteFile, "utf8")),
     library: hash(libraryFiles()),                  // this package's own code: checks, agent loop, simulator, adapters
   };

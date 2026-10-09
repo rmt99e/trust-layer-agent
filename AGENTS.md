@@ -9,13 +9,13 @@ Three nouns (tools, checks, journeys), one verb (`respond`), two commands (`test
 ## Layout
 
 - `src/index.ts`: public exports. `src/sim/simulator.ts` is also exported as `trust-layer-agent/sim`.
-- `src/agent.ts`: `Agent` and the `respond()` loop: model turn, checks on actions and replies, session updates.
+- `src/agent.ts`: `Agent` and the `respond()` loop: model turn, checks on actions and replies, session updates. Also `review()` (reply checks on a draft the app wrote) and `approve()` / `decline()` for actions a check parked.
 - `src/chat.ts`: `agent.chat()` for trying an agent in the terminal.
 - `src/tools.ts`: `read()` / `write()`, input validation, field-level visibility, bound inputs.
-- `src/checks.ts`: the check type and result shape (allow, block, rewrite, handoff), check context, check runner.
-- `src/builtins.ts`: built-in checks (verified_first, yes_after_quote, no_unconfirmed_claims, handoff_after_failures, no_repeated_writes; untrusted_text_is_data is structural, in the agent loop).
-- `src/claims.ts`: deterministic claim extraction and matching, shared by no_unconfirmed_claims and the grader.
-- `src/session.ts`: the session JSON, `createSession()`, `forget()`.
+- `src/checks.ts`: the check type and result shape (allow, block, rewrite, handoff, approve), check context, check runner.
+- `src/builtins.ts`: built-in checks (verified_first, yes_after_quote, no_unconfirmed_claims, handoff_after_failures, no_repeated_writes, no_invented_inputs; untrusted_text_is_data is structural, in the agent loop).
+- `src/claims.ts`: deterministic claim extraction and matching, shared by no_unconfirmed_claims and the grader; `ClaimKind` for operator-defined kinds.
+- `src/session.ts`: the session JSON (including `approvals`), `createSession()`, `loadSession()`, `forget()`.
 - `src/journeys.ts`: journey YAML loading, validation with file and line, guardrails compiled to checks.
 - `src/privacy.ts`: personal-data patterns used by tool visibility and trace masking.
 - `src/trace.ts`: the JSONL trace sink (masked by default).
@@ -57,7 +57,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines in `src/` stay under 1,300 (non-blank, non-comment; 1,297 today). Count with:
+- Logic lines in `src/` stay under 1,400 (non-blank, non-comment; 1,398 today). Count with:
   `cat src/*.ts src/*/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.
 

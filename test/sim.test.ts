@@ -38,6 +38,18 @@ const observed = ({ ctx: c = ctx(), ...o }: Partial<Observed> & { ctx?: ReturnTy
   results: [], blocked: [], handedOff: false, sent: [], writes: new Set(["set_plan"]), ...o, sentCtx: o.sentCtx ?? (o.sent ?? []).map(() => c) });
 const okCall = (tool: string, input: any, output: any = {}) => ({ id: "c", tool, turn: 1, ok: true, input, output });
 
+describe("grader applies the suite's claim kinds", () => {
+  it("fails a sent reply whose custom claim no tool backs, and passes one a tool backs", () => {
+    task("k", "expect: {}");
+    const tk = loadTasks(dir)[0];
+    const kinds = [{ name: "count", find: /\b(\d+) records?\b/i }];
+    const c = ctx({ results: [okCall("set_plan", {}, { found: 14 }) as any] });
+    expect(grade(tk, observed({ sent: ["We found 15 records."], ctx: c, kinds })).claims).toMatchObject({ pass: false, detail: expect.stringContaining('count "15"') });
+    expect(grade(tk, observed({ sent: ["We found 14 records."], ctx: c, kinds })).claims.pass).toBe(true);
+    expect(grade(tk, observed({ sent: ["We found 15 records."], ctx: c })).claims.pass).toBe(true);
+  });
+});
+
 describe("grader", () => {
   const t = (expect: string) => { task("t", `expect:\n${expect}`); return loadTasks(dir)[0]; };
 

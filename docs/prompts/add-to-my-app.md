@@ -85,12 +85,18 @@ STEP 4: agent/agent.js. Export the config separately; the simulator reuses it un
   // later: journeys (file, directory or list), knowledge (.md/.txt policy text), checks: [custom checks]
   export const agent = new Agent({ ...agentConfig, model: "anthropic:<model-name>", tools: makeTools(data) });
 
-Six built-in checks are on by default: verified_first, yes_after_quote, no_unconfirmed_claims (prices, dates,
+Seven built-in checks are on by default: verified_first, yes_after_quote, no_unconfirmed_claims (prices, dates,
 "done" wording, and "it failed" wording after a write that succeeded), handoff_after_failures
-(builtins: { handoff_after_failures: { after: 3 } } tunes it), no_repeated_writes and untrusted_text_is_data
-(structural, always on). A custom check is one function:
+(builtins: { handoff_after_failures: { after: 3 } } tunes it), no_repeated_writes, no_invented_inputs (for tool
+fields declared fromCustomer: ["name"], the value must be in the customer's own words or a fact) and
+untrusted_text_is_data (structural, always on). A custom check is one function:
   check("big_refunds_to_person", (e) => e.kind === "action" && e.tool.name === "refund_invoice" &&
     e.input.amount > 100 ? handoff("Refund over $100 requested.") : allow())
+Use approve("Refund over $100.") instead of handoff when a person should decide that one action while the chat
+goes on: the reply then carries approvals[], and agent.approve(session, id) / agent.decline(session, id, reason)
+settle it later. If replies state counts, statuses or reference numbers, add claim kinds under
+builtins: { no_unconfirmed_claims: { kinds: [{ name, find: /regex/ }] } } so those need a tool result too.
+Messages the app writes itself (a rendered notice) go through agent.review(session, draft) before sending.
 Traces go to ./traces/<sessionId>.jsonl (trace: false turns them off). Every sink receives lines with emails,
 phones, cards, SSNs and addresses already masked; only a sink that sets mask: false gets them raw. A custom sink
 (e.g. a Postgres table) is { write(line), forget(sessionId) }: implement forget so deleting a conversation

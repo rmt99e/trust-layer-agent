@@ -1,4 +1,5 @@
 import { Agent, type AgentOptions, type Usage } from "../agent.js";
+import { claimKinds } from "../builtins.js";
 import { contextFrom } from "../checks.js";
 import { resolveModel } from "../models/resolve.js";
 import { ModelError, type Model, type ModelMessage } from "../models/types.js";
@@ -127,8 +128,9 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
     blocked: events.filter((l) => l.type === "check" && l.event === "action").map((l) => l.tool),
     sent: s.messages.filter((m) => m.role === "agent").map((m) => m.text),
     sentCtx: s.messages.flatMap((m, i) => m.role !== "agent" ? [] : [contextFrom({ ...s, messages: s.messages.slice(0, i),
-      results: s.results.filter((x) => x.turn <= m.turn), commitments: s.commitments.filter((k) => k.turn <= m.turn) }, suite.tools, agent.operatorText, now())]),
-    writes: new Set(suite.tools.filter((t) => t.kind === "write").map((t) => t.name)),
+      results: s.results.filter((x) => x.turn <= m.turn), commitments: s.commitments.filter((k) => k.turn <= m.turn),
+      approvals: (s.approvals ?? []).filter((a) => a.turn <= m.turn) }, suite.tools, agent.operatorText, now())]),
+    writes: new Set(suite.tools.filter((t) => t.kind === "write").map((t) => t.name)), kinds: claimKinds(suite.agent.builtins),
   });
   r.status = r.grade.pass && r.ended !== "max_steps" ? "pass" : "fail";
   return r;

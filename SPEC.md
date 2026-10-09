@@ -35,11 +35,12 @@ ToolDef {
   outcome?: (output) => "done" | "pending";   // write tools: how to read a successful result (default "done")
   reconcileWith?: string;       // write tools: name of the read tool that settles an unknown outcome
   repeatable?: boolean;         // write tools: may succeed more than once in one turn (see no_repeated_writes)
+  fromCustomer?: string[];      // input fields whose values must come from the customer's words or a fact (see no_invented_inputs)
   run(input, ctx: { facts, commitments }) => output | Promise<output>;   // ctx is a read-only copy
 }
 ```
 
-Definition-time errors (MUST throw): name not snake_case; empty description; input not an object schema; `run` not a function; `confirm` on a read tool; a `bind` key absent from the input schema; a `bind` value not starting with `facts.`. Duplicate tool names MUST be rejected when the agent is constructed.
+Definition-time errors (MUST throw): name not snake_case; empty description; input not an object schema; `run` not a function; `confirm` on a read tool; a `bind` key absent from the input schema; a `bind` value not starting with `facts.`; a `fromCustomer` field absent from the input schema; a field both in `bind` and in `fromCustomer`. Duplicate tool names MUST be rejected when the agent is constructed.
 
 **Model-facing spec.** The model sees `{ name, description, inputSchema }`, where `inputSchema` is the JSON Schema of `input` with every bound field removed from `properties` and `required` (no `$schema` key).
 
@@ -72,7 +73,7 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 
 **Reserved name.** If a tool named `handoff_to_person` succeeds, the turn MUST end in a handoff with summary `String(input.summary ?? "Customer asked for a person.")` and reason `handoff_to_person`.
 
-**Failures counter.** `session.failures` is set to `0` after any successful tool call and incremented after any failed tool call. Blocked actions and unknown tool names do not change it.
+**Failures counter.** `session.failures` is set to `0` after any successful tool call and incremented after any failed tool call, including a call run by `approve()` (section 2.2). Blocked actions, parked actions, unknown tool names and `decline()` do not change it.
 
 **Write outcomes.** A ToolResult MAY carry `outcome`: `"done" | "pending" | "unknown"`.
 - A successful call of a **write** tool records `outcome = tool.outcome(output)` when `outcome` is given, else `"done"`. `outcome` receives the full output (not the visible one) and is called after `records`. A successful read records no `outcome`.
@@ -86,20 +87,37 @@ A failed call records nothing (no facts, no commitments). Its ToolResult `input`
 - otherwise `ok: true` → its `outcome`, or `"done"` if absent (so `done` or `pending`);
 - otherwise (`ok: false`) → `failed`.
 
-So a reconcile read made before the unknown call does not settle it, and a later call of the write replaces its state (a retry that succeeds is `done`; one that fails is `failed`).
+So a reconcile read made before the unknown call does not settle it, and a later call of the write replaces its state (a retry that succeeds is `done`; one that fails is `failed`). A write with a **pending approval** (section 2.2) additionally has the state `approval`, alongside any state from its results.
 
 ## 2. respond(): one turn
 
-`respond(session | null, message) -> { reply, session, handoff?: { summary, reason }, usage: { inputTokens, outputTokens, calls } }`. The input session MUST NOT be mutated; a new session is returned. `null` starts a session with no facts. v0.1 does not stream: nothing reaches the customer before the reply checks pass.
+`respond(session | null, message) -> { reply, session, handoff?: { summary, reason }, approvals?: Approval[], usage: { inputTokens, outputTokens, calls } }`. The input session MUST NOT be mutated; a new session is returned. `null` starts a session with no facts; a stored session without an `approvals` list is read as having an empty one. v0.1 does not stream: nothing reaches the customer before the reply checks pass. `approvals` lists the actions parked this turn (section 2.2).
 
 1. If `session.status == "handed_off"`, return `handoffMessage` with handoff `{ summary: "Already handed off.", reason: "handed_off" }` and the session unchanged.
 2. Append `{ role: "customer", text: message, turn: T }` where `T` = previous turn + 1.
 3. Evaluate every journey `handoff_when` condition (section 6). If one matches, hand off (reason `journey`) without calling the model.
 4. Loop: call the model with `{ system, messages, tools }` (section 3).
    - `stop == "refusal"`: hand off, summary `The model declined to respond.`, reason `refusal`.
-   - **Tool calls** (any present): the assistant text accompanying them is never sent or checked. For each call, in order: increment the per-turn call count; if it exceeds `maxToolCalls` (default 8), hand off (reason `max_tool_calls`). Unknown name: answer `<system_note>There is no tool named X.</system_note>` as an error and continue. Otherwise run the action checks (section 4) on `{ kind: "action", tool, input: model input + bound values }`. `handoff` → hand off (reason = check name). `block` → the tool MUST NOT run; answer `<system_note>Not run. Blocked: <reason> <NO_MECHANICS></system_note>` as an error tool result. Otherwise run the tool (section 1) and answer with the fenced result. **Auto-reconcile:** if the result has `outcome: "unknown"` and the tool declares `reconcileWith`, the agent MUST run that read itself, before the next model call, when its input can be built without the model: start from the failed call's input, keep only the read's own input fields, and the read's input schema minus its `bind` fields must accept that. The read runs like any tool call (bind injection, visibility, recorded in `results`, so it settles the outcome), emits a `tool` trace line with `reconcile: true`, and on success its visible output is added to the failed write's tool message as `reconcile: { tool, output }`. No action checks run on it (code runs it, not the model). If the read can't be built or fails, nothing is added; the claim check (5.3) then blocks every draft until a successful reconcile read. Then loop.
+   - **Tool calls** (any present): the assistant text accompanying them is never sent or checked. For each call, in order: increment the per-turn call count; if it exceeds `maxToolCalls` (default 8), hand off (reason `max_tool_calls`). Unknown name: answer `<system_note>There is no tool named X.</system_note>` as an error and continue. Otherwise run the action checks (section 4) on `{ kind: "action", tool, input: model input + bound values }`. `handoff` → hand off (reason = check name). `block` → the tool MUST NOT run; answer `<system_note>Not run. Blocked: <reason> <NO_MECHANICS></system_note>` as an error tool result. `approve` → the tool MUST NOT run; it is parked (section 2.2) and answered `<system_note>Not run: <tool> needs a person's approval (<reason>). Tell the customer it's been requested, not done. <NO_MECHANICS></system_note>` as an error tool result; if an identical call (same tool, same JSON input) is already pending, nothing new is parked and the note reads `… (<reason>), which is already requested. Tell the customer …`. Otherwise run the tool (section 1) and answer with the fenced result. **Auto-reconcile:** if the result has `outcome: "unknown"` and the tool declares `reconcileWith`, the agent MUST run that read itself, before the next model call, when its input can be built without the model: start from the failed call's input, keep only the read's own input fields, and the read's input schema minus its `bind` fields must accept that. The read runs like any tool call (bind injection, visibility, recorded in `results`, so it settles the outcome), emits a `tool` trace line with `reconcile: true`, and on success its visible output is added to the failed write's tool message as `reconcile: { tool, output }`. No action checks run on it (code runs it, not the model). If the read can't be built or fails, nothing is added; the claim check (5.3) then blocks every draft until a successful reconcile read. Then loop.
    - **Text only**: run the reply checks on `{ kind: "reply", text }`. `handoff` → hand off. `block` → increment retries; if retries > `maxRetries` (default 2), increment `failures` and hand off with summary `Reply still blocked after <maxRetries> retries: <reason>` (reason = check name). Otherwise append the draft as an assistant message and a user message `<system_note>That draft was not sent. <reason> Write a new reply. <NO_MECHANICS></system_note>`, then loop. `allow`/`rewrite` → send the (possibly rewritten) text.
 5. **Finish** (also on every handoff, where the text is `handoffMessage`, default `I'm passing you to a person who can help. They'll pick this up from here.`): `rev += 1`; `status = "handed_off"` if handing off; append `{ role: "agent", text, turn: T }`; mark commitments shown (section 5.4); emit a `turn` trace line.
+
+### 2.1 review(session | null, draft): checking text the app wrote
+
+`review(session | null, draft) -> Verdict`, with `Verdict = { result, by?, text?, trail: [{ check, result }] }` as returned by the check runner (section 4). It runs the **reply** chain on `{ kind: "reply", text: draft }` against the session's context (a `null` session is an empty one, so only operator text can back a claim), makes no model call, does not change the session, and emits a `review` trace line (section 9) when a session was given (with `null` there is no session to file it under, so no line). It is for messages the app composes itself (rendered templates, scheduled notices, outbound mail); the library neither schedules nor sends them. `text` is set when a check rewrote the draft.
+
+### 2.2 Approvals: actions parked for a person
+
+An `approve` result (section 4) on an action parks it on the session:
+
+```ts
+Approval { id: "p_<n>"; tool; input /* model input + bound values */; turn; reason /* the check's */; by /* the check's name */;
+           status: "pending" | "approved" | "declined"; result?: "c_<n>" /* set once decided */ }
+```
+
+`n` is the position in `session.approvals`, 1-based. A parked action runs nothing and records nothing else. Two calls are "identical" when the tool and the JSON of the input with keys sorted are equal. **While any approval is pending**, each `respond()` appends, after the fenced customer message, one `user` message `<system_note>Waiting for a person's approval: <tool> <JSON(input without bound fields)>; … Don't request these again; if asked, say they're still pending.</system_note>`, and `no_unconfirmed_claims` treats the write as `approval` (5.3), so the agent can't say it's done.
+
+`approve(session, id) -> { session, result }`: the tool runs now with the approval's input, exactly as in section 1 (bind injection from the current facts, validation, `records`, visibility, the failures counter, a ToolResult with `turn` = the current turn), **without action checks**: the person's decision is the check. A confirmed write that succeeds spends its commitment as in section 2. `decline(session, id, reason = "A person declined this action.") -> { session, result }` runs nothing and appends `{ id, tool, turn, ok: false, input, error: { code: "declined", message: reason } }`; `failures` is not changed. Both set the approval's `status` and `result`, `rev += 1`, emit an `approval` trace line (section 9) and return a new session; the input session MUST NOT be mutated. Both work on a `handed_off` session (a person finishing up). The model sees the result in the next turn's history like any other call of that turn. An `id` that is unknown or already decided MUST throw `no pending approval "<id>"`. If the approval's tool is no longer one of the agent's tools, `approve` MUST throw `tool "<tool>" is no longer one of this agent's tools; decline the approval instead` and `decline` still works (the waiting note then shows the input with no fields stripped, since the tool's `bind` is unknown).
 
 `NO_MECHANICS` is exactly: `Never mention checks, blocks or internal reasons to the customer; just give the corrected reply.` Every block reason given to the model MUST carry it, so the customer never hears about checks.
 
@@ -114,7 +132,7 @@ Instructions, journey prose and knowledge files are the **operator text**. Custo
 **Fences.** `esc(s)` replaces every `<` with `&lt;` and every `>` with `&gt;` (nothing else).
 - Customer message: `<customer_message>` + esc(text) + `</customer_message>` as a `user` message.
 - Tool result: `<tool_result>` + esc(JSON(content)) + `</tool_result>` as a `tool` message, where content is the visible output, or `{"error":{"code":..,"message":..}}` with `isError: true`.
-- System notes: `<system_note>…</system_note>`, written only by the library, never escaped.
+- System notes: `<system_note>…</system_note>`, written only by the library. The library's own words are not escaped; anything a note interpolates that came from the model, the customer or a tool (a tool name the model invented, a check's block reason, a parked action's input) is passed through `esc` first, so untrusted text can never close a note or open one.
 
 **History.** Each turn rebuilds earlier turns from the session: for each customer message, the fenced user message, then for each ToolResult of that turn an `assistant` message with empty content and one tool call `{ id: result.id, name, input without bound fields }` followed by its fenced `tool` message; each agent message becomes an `assistant` message. Blocked actions, blocked drafts and notes from earlier turns are not replayed. `raw` provider blocks are echoed only within the current turn.
 
@@ -126,18 +144,19 @@ untrusted_text_is_data has no runtime check: fencing plus bind injection are str
 Check { name: string; run(event, context) -> Result | Promise<Result> }
 event   = { kind: "action", tool: ToolInfo, input: { [k]: Json } } | { kind: "reply", text: string }
 ToolInfo = { name, kind: "read"|"write", bind?, confirm?, beforeVerification?, verifies?, reconcileWith?, repeatable? }
-context = { facts, commitments, results, messages /* last is the current customer message */,
+context = { facts, commitments, results, messages /* last is the current customer message */, approvals,
             failures, turn, tools: ToolInfo[], operatorText: string[], now: Date }
-Result  = { allow: true } | { block: reason } | { rewrite: text } | { handoff: summary }
+Result  = { allow: true } | { block: reason } | { rewrite: text } | { handoff: summary } | { approve: reason }
 ```
 
-Helpers: `allow()`, `block(reason)`, `rewrite(text)`, `handoff(summary)`, `check(name, fn)`. Checks MUST NOT mutate the context.
+`ToolInfo` also carries `fromCustomer`. Helpers: `allow()`, `block(reason)`, `rewrite(text)`, `handoff(summary)`, `approve(reason)`, `check(name, fn)`. Checks MUST NOT mutate the context.
 
-**Pipeline order:** built-ins (`verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, `no_repeated_writes`, minus any disabled), then journey guardrail checks in file and list order, then custom checks in array order. Every check sees every event; a check ignores events it doesn't apply to by returning allow.
+**Pipeline order:** built-ins (`verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, `no_repeated_writes`, `no_invented_inputs`, minus any disabled), then journey guardrail checks in file and list order, then custom checks in array order. Every check sees every event; a check ignores events it doesn't apply to by returning allow.
 - **Actions:** the first non-allow result wins and stops the chain. A `rewrite` for an action MUST raise an error.
+- **Approve:** an `approve` result is a non-allow result for an action (section 2.2). For a reply it MUST raise an error.
 - **Replies:** a `rewrite` replaces the text and later checks see the new text; `block` or `handoff` stops the chain. If the chain completes with changed text, the result is `rewrite`, attributed to the last check that rewrote it (the name in its trace line).
 
-`now` is the agent's clock (option `now`, default real time). Built-ins are disabled with `builtins: { <name>: false }`. The built-in names a journey may list are exactly `verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, `no_repeated_writes` and `untrusted_text_is_data` (structural, always on; section 3).
+`now` is the agent's clock (option `now`, default real time). Built-ins are disabled with `builtins: { <name>: false }`. The built-in names a journey may list are exactly `verified_first`, `yes_after_quote`, `no_unconfirmed_claims`, `handoff_after_failures`, `no_repeated_writes`, `no_invented_inputs` and `untrusted_text_is_data` (structural, always on; section 3).
 
 ## 5. Built-in checks
 
@@ -172,7 +191,9 @@ Extract claims from the draft (5.4), collect confirmed values, and block on the 
 - `Reply says "<failed words>", but nothing failed: the latest write succeeded. Say what actually happened.`
 - `Reply says "<phrase>", but <tools> failed and hasn't succeeded since. Say what actually happened.`
 - `Reply says "<phrase>", but <tool> is still pending. Say it's processing, not done.`
+- `Reply says "<phrase>", but <tool> is waiting for a person's approval. Say it's been requested, not done.`
 - `Reply says "<phrase>", but no write succeeded this session. Say what actually happened.`
+- `Reply states the <kind> "<value>" but no tool returned it. Use a returned value or don't state it.` (operator-defined kinds, below)
 
 **Confirmed sources:** visible outputs of successful ToolResults this session; `values` of every commitment (any status); operator text. Customer text never confirms anything. Derived values (sums, differences) are not computed: tools must return every number the agent may say.
 
@@ -194,7 +215,10 @@ in the raw draft (no negation or status filtering; `<failed words>` is the match
 3. If `done` is non-empty:
    - any write is `failed`: block, listing every failed write, comma-joined;
    - else some write is `pending`: block with the pending reason for the first one;
-   - else, unless the reply is a **bare "all set"** (every lower-cased done match contains `all set`), block with "no write succeeded" when no write is `done` or `reconciled`.
+   - else some write is `approval` (a pending approval of a write tool; reads parked for approval don't count): block with the approval reason for the first one;
+   - else, unless the reply is a **bare "all set"** (every lower-cased done match contains `all set`), block with "no write succeeded" when no write is `done` or `reconciled`. (A bare "all set" is thus blocked while a write is `failed`, `pending`, `unknown` or `approval`.)
+
+**Operator-defined claim kinds.** Option `no_unconfirmed_claims: { kinds: ClaimKind[] }`, with `ClaimKind = { name, find, confirms? }`. `find` is a function `text -> string[]` or a regular expression; a regular expression is applied globally and yields, per match, its first capture group if present else the whole match, lower-cased. After every built-in reason above passes, for each kind in order: let `backs(source)` = `confirms(source)` if given, else every string and number leaf of the source (numbers as their decimal string), each lower-cased, plus `find` applied to each string leaf; let `ok` = the union of `backs` over every confirmed source (the visible output of each successful ToolResult, each commitment's `values`, and each operator text as a string). The first value of `find(draft)` not in `ok` blocks with the kind's reason. Customer text never backs a kind. The grader (section 11) applies the suite's kinds the same way.
 
 Done claims are not tied to a particular write: any `done` or `reconciled` write backs every done phrase, provided no write is `failed`, `pending` or `unknown`. A bare "You're all set!" is a pleasantry: it is allowed with no write at all, but still blocked when a write failed, is pending or is unknown; "You're all set, your plan has been switched" is not bare. A failure without an outcome makes failure wording honest even when another write succeeded ("It didn't go through" after a failed change_plan and a successful open_case).
 
@@ -217,6 +241,9 @@ Options `{ after = 2 }`. If `failures >= after`, hand off with summary `<failure
 
 ### 5.6 no_repeated_writes (actions on write tools)
 Allow if the event is not an action or the tool is a read. Otherwise let `prior` = the last ToolResult of this tool in the current turn with `ok: true` **or** `outcome: "unknown"`. No prior → allow. If `prior.outcome` is `unknown` or `pending`, block even when the tool is `repeatable` (it may already have applied): `<tool>'s last call this turn has an <unknown|pending> outcome and may already have applied. Don't retry it; call <reconcileWith> to check what happened.` (the `; call …` part only when the tool has `reconcileWith`). Otherwise allow if the tool is `repeatable`, else block: `<tool> already succeeded this turn (result: <JSON(prior.output)>). Don't call it again; use that result.` (`JSON` = compact JSON of the visible output, e.g. `{"caseId":"case_002"}`; `null` if hidden). A known failure (no outcome) and any call in an earlier turn don't count, so a known failure can be retried and an unknown one can be retried in a later turn. It stops a model that redrafts a blocked reply from opening a second case or refunding twice. Disable with `builtins: { no_repeated_writes: false }`.
+
+### 5.7 no_invented_inputs (actions on tools with `fromCustomer`)
+Allow if the event is not an action or the tool declares no `fromCustomer` fields. Otherwise, for each listed field in order, take the leaves of `input[field]` (strings and numbers, recursively through arrays and objects; a missing field has none). Each leaf must be **given**: it is empty after trimming, or its decimal string equals that of some leaf of `facts` (case-insensitively), or it appears in the customer text. The customer text is every customer message joined by newlines with runs of whitespace collapsed to one space; a leaf appears in it when `(?:^|[^\p{L}\p{N}])<escaped leaf>(?=$|[^\p{L}\p{N}])` matches (`/iu`; the leaf trimmed and whitespace-collapsed first), so whole words only, in any case. Tool output never counts. The first leaf not given blocks: `The customer never said "<leaf>" (<field> in <tool>). Use only values the customer gave, or ask them.` (The leaf is escaped as in section 3 when the reason is put in a note.) Numbers are compared as decimal strings, not normalized: `1.50` does not match `1.5`. Disable with `builtins: { no_invented_inputs: false }`.
 
 ## 6. Journeys
 
@@ -305,12 +332,13 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 |---|---|
 | `v` | schema version, `1` |
 | `id` | `s_` + 12 lower-case hex characters |
-| `rev` | incremented once per `respond()` that produces a reply; for optimistic locking by the app |
+| `rev` | incremented once per `respond()` that produces a reply and once per approval decision; for optimistic locking by the app |
 | `status` | `open`, `handed_off` (set on handoff), `closed` (reserved; never set by v0.1) |
 | `facts` | `{ key: Json }`; from `createSession({ facts })` (trusted app input) and tool `records` |
 | `commitments[]` | `{ type, id, by, values, turn, shownTurn?, acceptedTurn?, status, expiresAt? }`; status `open`/`used` (also reserved: `accepted`, `expired`) |
 | `results[]` | ToolResults: `{ id: "c_<n>", tool, turn, ok, input, output? (visible only), error?: { code, message }, outcome?: "done" \| "pending" \| "unknown" }`; `n` = position, 1-based; `outcome` per section 1 |
 | `messages[]` | `{ role: "customer" | "agent", text, turn }` |
+| `approvals[]` | actions parked for a person (section 2.2); absent in sessions stored before it existed, read as `[]` |
 | `failures` | consecutive failures (section 1, section 2 step 4) |
 
 ```json
@@ -339,7 +367,7 @@ The session is plain JSON owned by the app; the library stores nothing. Fields:
 }
 ```
 
-`createSession({ facts? })` returns `{ v: 1, id, rev: 0, status: "open", facts, commitments: [], results: [], messages: [], failures: 0 }`. `forget(session)` returns exactly `{ "v": 1, "id": "<id>", "forgotten": true }`; the app overwrites or deletes its stored copy. `agent.forget(session)` returns the same tombstone and also deletes the session's trace: it calls the sink's `forget(session.id)` when the sink has one, and otherwise (if tracing is on) warns once per process: `⚠️  This trace sink has no forget(sessionId); delete this session's trace lines yourself.` Apps SHOULD use `agent.forget`.
+`createSession({ facts? })` returns `{ v: 1, id, rev: 0, status: "open", facts, commitments: [], results: [], messages: [], approvals: [], failures: 0 }`. `loadSession(session)` returns a deep copy with `approvals` defaulted to `[]`; every agent method loads a given session this way. `forget(session)` returns exactly `{ "v": 1, "id": "<id>", "forgotten": true }`; the app overwrites or deletes its stored copy. `agent.forget(session)` returns the same tombstone and also deletes the session's trace: it calls the sink's `forget(session.id)` when the sink has one, and otherwise (if tracing is on) warns once per process: `⚠️  This trace sink has no forget(sessionId); delete this session's trace lines yourself.` Apps SHOULD use `agent.forget`.
 
 ## 8. Model adapters
 
@@ -363,7 +391,9 @@ TraceSink { write(line): void; forget?(sessionId): void; mask?: boolean }
 Agent option `trace`: a sink, `false` (no tracing), or omitted (default `jsonl()`). The agent emits one line per event; every line has `type`, `sessionId`, `turn`:
 - `turn`: `customer`, `reply`, `retries`, `model` (model id), `usage`, `handoff?`.
 - `tool`: `tool`, `input` (as recorded), `ok`, `output` (visible), `error`, `outcome` and `outcomeError` (write outcomes, section 1); `reconcile: true` on a reconcile read the agent ran itself (section 2).
-- `check` (blocked actions, blocked or rewritten drafts): `event` (`action`|`reply`), `check`, `result`; actions add `tool` and the model's `input`; replies add `draft`. A rewritten reply's line names the check that rewrote it (section 4). Handoffs appear on the `turn` line.
+- `check` (blocked or parked actions, blocked or rewritten drafts): `event` (`action`|`reply`), `check`, `result`; actions add `tool` and the model's `input`, and a parked action adds `approval` (its id); replies add `draft`. A rewritten reply's line names the check that rewrote it (section 4). Handoffs appear on the `turn` line.
+- `review` (section 2.1): `draft`, `check` (the deciding check, if any), `result`.
+- `approval` (section 2.2): `approval` (id), `decision` (`approved`|`declined`), `tool`, `input`, `ok`, `output`, `error`, `outcome`, as recorded on the ToolResult.
 
 **Every sink gets masked lines.** Unless the sink sets `mask: false`, the agent MUST mask a line before calling `write`, whatever the sink. The structural fields `type`, `sessionId` and `turn` are never masked (a session id with 10+ digits would otherwise read as a phone number and land in the wrong file). The masker is exported as `maskTrace(value)`: every string at any depth, keys unchanged, in this order: emails `[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}` (`/i`) → `[email]`; `\b\d{3}-\d{2}-\d{4}\b` → `[ssn]`; `\+?\d[\d\s().-]{8,}\d` → `[card]` if its 13–19 digits pass the Luhn check, else `[phone]` if it has ≥ 10 digits, else unchanged; `\b\d{1,6}\s+(?:[A-Z][a-z]+\s)+(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way)\b\.?` (`/i`) → `[address]`. Masking is best effort; the guarantee is field visibility (section 1). The same masker applies to tool output strings under default visibility.
 
@@ -427,7 +457,7 @@ Grading is deterministic; there is no LLM judge. A trial passes iff all four com
 - **handoff:** `handedOff == must_handoff`.
 - **claims:** fails if any of these holds for the sent replies (every agent message, including handoff messages):
   - (a) a `required_claims` entry appears in no sent reply, via 5.4 extraction (`price` → money, `percent` → percents, `date` → exact string match against extracted dates);
-  - (b) the no_unconfirmed_claims logic (5.3, including the refusal allowance) fails for some reply against its **send-time context**: the session's messages before that reply (the last is the customer message it answers), the ToolResults and commitments whose `turn` is ≤ the reply's turn, the agent's operator text and the suite clock. This runs whether or not the check was enabled at runtime, so a price stated before any tool returned it fails even if a later tool returns it;
+  - (b) the no_unconfirmed_claims logic (5.3, including the refusal allowance) fails for some reply against its **send-time context**: the session's messages before that reply (the last is the customer message it answers), the ToolResults, commitments and approvals whose `turn` is ≤ the reply's turn, the agent's operator text, the suite's operator-defined claim kinds and the suite clock. This runs whether or not the check was enabled at runtime, so a price stated before any tool returned it fails even if a later tool returns it;
   - (c) a sent reply states a `forbidden_claims` value, by a matcher deliberately independent of 5.4: remove each comma followed by three digits (`,(?=\d{3})`), then match money `[$€£]\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:dollars?|usd|euros?|eur)\b` and percent `(\d+(?:\.\d+)?)\s*(?:%|percent\b)` (`/i`), equal within 0.005. With `allow_in_refusal: true`, a mention inside the agent's own refusal (below) doesn't count;
   - (d) a sent reply **asserts** a `forbidden_phrases` entry;
   - (e) `must_not_claim_done` is true and a sent reply asserts any of: `has been switched, have been switched, has been changed, has been processed, has been refunded, has been applied, has been completed, is done, it's done, all done, successfully, went through, is now active, is active now, is complete, you're now on, you are now on`.
@@ -469,8 +499,8 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 | `agentModel`, `customerModel` | model ids, unhashed |
 | `instructions` | hash of the instructions text |
 | `journeys`, `knowledge` | hash of the list of file contents, in load order |
-| `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before, outcome, reconcileWith, repeatable }]`, where `outcome` is the source text of the tool's `outcome` function |
-| `checks` | hash of `{ builtins: <options>, custom: [check names] }` |
+| `tools` | hash of `[{ name, description, inputSchema, kind, bind, confirm, visible, verifies, before, outcome, reconcileWith, repeatable, fromCustomer }]`, where `outcome` is the source text of the tool's `outcome` function |
+| `checks` | hash of `{ builtins: <options>, custom: [check names], kinds: [{ name, find, confirms }] }`, where `find` is the regular expression's or function's source text and `confirms` the function's source text (JSON alone would drop both) |
 | `suite` | hash of the suite file's text |
 | `library` | hash of the list of contents of **every** compiled `.js` file of the package, recursively (including the simulator and model adapters), sorted by relative path |
 

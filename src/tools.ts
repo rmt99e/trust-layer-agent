@@ -21,6 +21,7 @@ export interface ToolDef<I extends Record<string, any> = any, O = any> {
   input: z.ZodObject<any>;
   visible?: string[];
   bind?: Record<string, string>;                         // { accountId: "facts.accountId" }
+  fromCustomer?: string[];                               // inputs whose values must come from the customer's own words or a fact
   confirm?: false | { commitment: string; by: string };  // writes only
   beforeVerification?: boolean;
   verifies?: boolean;
@@ -46,6 +47,10 @@ function define<I extends Record<string, any>, O>(kind: "read" | "write", def: T
   for (const [field, path] of Object.entries(def.bind ?? {})) {
     if (!(field in def.input.shape)) fail(`bind field "${field}" is not in the input schema`);
     if (!path.startsWith("facts.")) fail(`bind "${field}" must point at a session fact, e.g. "facts.accountId"`);
+  }
+  for (const field of def.fromCustomer ?? []) {
+    if (!(field in def.input.shape)) fail(`fromCustomer field "${field}" is not in the input schema`);
+    if (def.bind?.[field]) fail(`"${field}" can't be both bound and fromCustomer`);
   }
   return { ...def, kind };
 }
