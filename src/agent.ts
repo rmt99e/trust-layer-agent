@@ -30,9 +30,11 @@ export interface AgentOptions {
   warn?: (message: string) => void;  // where startup notices go; default console.warn
 }
 export interface Usage { inputTokens: number; outputTokens: number; calls: number }
-/** The model failed mid-turn. `session` holds everything that ran before it did (the user's message, tool results), so a store can keep it. */
+/** The model failed mid-turn. `session` holds everything that ran before it did (the user's message, tool results, parked approvals), so a store can keep it. */
 export class TurnFailed extends Error {
-  constructor(public session: Session, public cause: Error) { super(`turn ${currentTurn(session)} failed: ${cause.message}`); this.name = "TurnFailed"; }
+  constructor(public session: Session, public cause: Error, public approvals: Approval[], public usage: Usage) {
+    super(`turn ${currentTurn(session)} failed: ${cause?.message ?? String(cause)}`); this.name = "TurnFailed";
+  }
 }
 export interface Reply { reply: string; session: Session; handoff?: { summary: string; reason: string }; approvals?: Approval[]; usage: Usage }
 type Ran = Awaited<ReturnType<typeof runTool>>;
@@ -136,7 +138,7 @@ export class Agent {
     const turn = currentTurn(s), status = declined ? "declined" as const : "approved" as const;
     // Approval doesn't re-run the checks, but a confirmed write still needs its commitment to be usable now.
     const stale = !declined && tool?.confirm && this.opts.builtins?.yes_after_quote !== false ? this.staleCommitment(s, tool, a.input) : undefined;
-    const ran: Ran = declined ? this.failedResult(s, a, "declined", declined) : stale ? this.failedResult(s, a, "commitment_unusable", stale)
+    const ran: Ran = declined ? this.failedResult(s, a, "declined", declined, tool) : stale ? this.failedResult(s, a, "commitment_unusable", stale, tool)
       : await runTool(tool!, a.input, s, { strictVisibility: this.opts.strictVisibility });
     s = tool ? this.spend(ran.session, tool, ran.result) : ran.session;
     if (!declined && !stale) s = { ...s, failures: ran.result.ok ? 0 : s.failures + 1 };            // only a call that ran counts as a success or failure
@@ -146,8 +148,8 @@ export class Agent {
   }
 
   /** A ToolResult for a parked action that did not run, appended to the session. */
-  private failedResult(s: Session, a: Approval, code: string, message: string): Ran {
-    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: a.input, error: { code, message } };
+  private failedResult(s: Session, a: Approval, code: string, message: string, tool?: Tool): Ran {
+    const result: ToolResult = { id: nextResultId(s), tool: a.tool, turn: currentTurn(s), ok: false, input: tool ? redactInput(tool, a.input) : a.input, error: { code, message } };
     return { result, session: { ...s, results: [...s.results, result] } };
   }
 
@@ -204,9 +206,10 @@ export class Agent {
       { role: "assistant", content: "", toolCalls: [{ id: r.id, name: r.tool, input: unboundInput(this.byName.get(r.tool) ?? { bind: {} } as Tool, r.input) }] },
       { role: "tool", toolCallId: r.id, name: r.tool, content: fenceTool(r.ok ? r.output : { error: r.error }), isError: !r.ok }];
     const results = (m: { turn: number }, decidedOnes: boolean) => s.results.filter((r) => r.turn === m.turn && decided.has(r.id) === decidedOnes).flatMap(pair);
+    const answered = (turn: number) => s.messages.some((m) => m.role === "agent" && m.turn === turn);   // a failed turn has no reply to replay after
     return s.messages.flatMap((m): ModelMessage[] => m.role === "agent"
       ? [{ role: "assistant", content: m.text }, ...results(m, true)]
-      : [{ role: "user", content: fenceUser(m.text) }, ...results(m, false)]);
+      : [{ role: "user", content: fenceUser(m.text) }, ...results(m, false), ...(answered(m.turn) ? [] : results(m, true))]);
   }
 
   private async turn(session: Session | null, message: string, observe?: Observer): Promise<Reply> {
@@ -218,8 +221,9 @@ export class Agent {
     const emit = (type: string, data: Record<string, unknown>) => this.log(s, turn, type, data, observe);
     const msgs = this.history(s);
     const waiting = s.approvals.filter((a) => a.status === "pending");           // still parked from earlier turns
+    const shownInput = (a: Approval) => { const t = this.byName.get(a.tool) ?? { bind: {} } as Tool; return unboundInput(t, redactInput(t, a.input)); };
     if (waiting.length) msgs.push({ role: "user", content: note(`Waiting for a person's approval: ${waiting.map((a) =>
-      `${a.tool} ${escapeTags(JSON.stringify(unboundInput(this.byName.get(a.tool) ?? { bind: {} } as Tool, a.input)))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
+      `${a.tool} ${escapeTags(JSON.stringify(shownInput(a)))}`).join("; ")}. Don't request these again; if asked, say they're still pending.`) });
     const tools = this.opts.tools.map(toolSpec);
     const parked: Approval[] = [];
     let calls = 0, retries = 0;
@@ -240,8 +244,8 @@ export class Agent {
       if (summary) return handoffNow(summary, "journey");
     }
     for (;;) {
-      const res = await this.model.generate({ system: this.system, messages: msgs, tools })
-        .catch((e: Error) => { throw new TurnFailed({ ...s, rev: s.rev + 1 }, e); });        // what ran stays in the session
+      const res = await Promise.resolve().then(() => this.model.generate({ system: this.system, messages: msgs, tools }))
+        .catch((e: Error) => { throw new TurnFailed({ ...s, rev: s.rev + 1 }, e, parked, usage); });   // what ran stays in the session
       usage.calls++; usage.inputTokens += res.usage?.inputTokens ?? 0; usage.outputTokens += res.usage?.outputTokens ?? 0;
       if (res.stop === "refusal") return handoffNow("The model declined to respond.", "refusal");
       if (res.toolCalls.length) {

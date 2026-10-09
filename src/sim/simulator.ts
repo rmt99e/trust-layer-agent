@@ -112,6 +112,7 @@ async function runTrial(suite: Suite, task: Task, trial: number, models: { agent
     }
   } catch (e) {
     const cause = e instanceof TurnFailed ? e.cause : e;
+    if (e instanceof TurnFailed) r.cost += cost(models.agent.id, e.usage, "agent");
     if (cause instanceof ModelError) return { ...r, status: "infra", error: cause.message };
     throw e;
   }

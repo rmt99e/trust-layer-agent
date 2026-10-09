@@ -60,7 +60,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 (1,209 today); the simulator and CLI stay under 450 (395 today). Count with:
+- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 (1,218 today); the simulator and CLI stay under 450 (396 today). Count with:
   `cat $(ls src/*.ts src/models/*.ts src/stores/*.ts | grep -v cli.ts) | grep -Ev '^\s*($|//|/?\*)' | wc -l`
   `cat src/cli.ts src/sim/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.

@@ -55,7 +55,10 @@ function define<S extends Shape, O>(kind: "read" | "write", def: ToolDef<S, O>):
     if (!(field in def.input.shape)) fail(`fromUser field "${field}" is not in the input schema`);
     if (def.bind?.[field]) fail(`"${field}" can't be both bound and fromUser`);
   }
-  for (const field of def.secret ?? []) if (!(field in def.input.shape)) fail(`secret field "${field}" is not in the input schema`);
+  for (const field of def.secret ?? []) {
+    if (!(field in def.input.shape)) fail(`secret field "${field}" is not in the input schema`);
+    if (def.bind?.[field] || (def.confirm && def.confirm.by === field)) fail(`secret field "${field}" can't be bound or a confirm.by field`);
+  }
   const confirm = def.confirm ?? (def.name === HANDOFF_TOOL ? false : undefined);   // the reserved handoff write needs no yes
   return { ...def, ...(confirm !== undefined && { confirm }), kind };
 }
@@ -123,6 +126,8 @@ export async function runTool(tool: Tool, modelInput: unknown, session: Session,
     if (value === undefined) return failed("missing_fact", `This call needs ${path}, which isn't known yet.`);
     raw[field] = value;                                   // overrides anything the model sent
   }
+  const placeholder = tool.secret?.find((k) => raw[k] === REDACTED);                 // the model echoing history, not a value
+  if (placeholder) return failed("invalid_input", `${placeholder}: "${REDACTED}" is a placeholder for an earlier call's value, not a value; ask for it again.`);
   const parsed = tool.input.safeParse(raw);
   if (!parsed.success) return failed("invalid_input", parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; "));
 

@@ -87,7 +87,7 @@ make them pass before moving on.
    STOP: show me pass counts for every table in steps 1 to 5, allowed and attack rows separately, and each
    deviation you had to resolve.
 6. The agent loop, respond(session, message) returning { reply, session, handoff?, approvals?, usage }, and rejecting
-   with TurnFailed { session, cause } when the model fails mid-turn (the session so far, rev + 1, nothing traced). History rebuilt
+   with TurnFailed { session, cause, approvals, usage } when the model fails mid-turn (the session so far, rev + 1, no turn trace line). History rebuilt
    from the session with bound fields stripped. User text and tool output fenced as data with angle
    brackets escaped, and the system prompt's data rule copied exactly. System notes outside the fences. A
    blocked action returned to the model as a "Not run. Blocked: ..." error. A blocked reply retried up to

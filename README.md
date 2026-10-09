@@ -216,7 +216,7 @@ Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `
 - **`reconcileWith`** (writes): the read tool that settles an unknown outcome, e.g. `"get_account"` on `change_plan`. It must name a read tool of the same agent, or `new Agent()` throws.
 - **`repeatable: true`** (writes): lets a write succeed more than once in a turn.
 - **`fromUser`**: input fields whose values must come from the user's own words or a session fact, e.g. `["name", "city"]` on a search tool. Checked by `no_invented_inputs`; a field can't be both bound and `fromUser`.
-- **`secret`**: input fields that must not outlive the call, e.g. `["pin"]` on a verify tool. `run` gets the real value; the session, the traces and the model's history keep `[redacted]`.
+- **`secret`**: input fields that must not outlive the call, e.g. `["pin"]` on a verify tool. `run` gets the real value; the session, the traces and the model's history keep `[redacted]`. A simulation task can't `compare` such a field.
 
 A successful write tool named `handoff_to_person` ends the turn as a handoff.
 

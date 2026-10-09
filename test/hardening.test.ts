@@ -240,6 +240,28 @@ describe("a turn that fails after a tool ran", () => {
     const r = await bound.respond(saved.id, "did it go through?");
     expect([r.session.rev, ((await store.load(saved.id)) as Session).rev]).toEqual([2, 2]);
   });
+  it("carries the approvals parked before the failure and the usage so far; a model that throws synchronously is caught too", async () => {
+    let n = 0;
+    const model: Model = { id: "fake:sync", generate: () => { if (++n === 2) throw new Error("sync"); return Promise.resolve({ text: "", stop: "tool_calls", toolCalls: [{ id: "t1", name: "charge_card", input: { amount: 5 } }], usage: { inputTokens: 7, outputTokens: 3 } }); } };
+    const a = agent(model, [charge], { checks: [check("big", (e) => (e.kind === "action" ? approve("over the limit") : allow()))] });
+    const err = await a.respond(session(), "charge me 5").catch((e) => e);
+    expect(err).toBeInstanceOf(TurnFailed);
+    expect([err.approvals.map((p: any) => p.id), err.session.approvals.length, err.usage]).toEqual([["p_1"], 1, { inputTokens: 7, outputTokens: 3, calls: 1 }]);
+  });
+  it("a result a person decided during a failed turn is still replayed to the model next turn", async () => {
+    const model = flaky(), a = agent(model, [charge], { checks: [check("big", (e) => (e.kind === "action" ? approve("over the limit") : allow()))] });
+    const err = await a.respond(session(), "charge me 5").catch((e) => e);
+    const { session: s } = await a.approve(err.session, "p_1");
+    await a.respond(s, "did it go through?").catch((e) => e);
+    const replayed = model.requests[2].messages;
+    expect(replayed.findIndex((m: any) => m.role === "tool")).toBeGreaterThan(replayed.findIndex((m: any) => m.role === "user"));
+    expect(JSON.stringify(replayed)).toContain(`{\\"charged\\":true}`);
+  });
+  it("withStore: a save that fails after TurnFailed throws the save's error with the TurnFailed as cause", async () => {
+    const inner = memoryStore(), store = { load: inner.load, save: async () => { throw new Error("db down"); } };
+    const err = await withStore(agent(flaky(), [charge]), store).respond(null, "charge me 5").catch((e) => e);
+    expect([err.message, err.cause]).toEqual(["db down", expect.any(TurnFailed)]);
+  });
   it("a check that throws fails closed: the turn hands off naming the check, with reason check_error; review() lets it propagate", async () => {
     const flakyCheck = check("flaky", () => { throw new Error("db down"); });
     const a = agent(scripted(["Hello."]), [charge], { checks: [flakyCheck] });
@@ -281,7 +303,31 @@ describe("secret inputs", () => {
     const { session: s, result } = await a.approve(t1.session, "p_1");
     expect([s.approvals[0].input, result.input, seen]).toEqual([{ amount: 5, cvv: "[redacted]" }, { amount: 5, cvv: "[redacted]" }, ["123"]]);
   });
-  it("must name a field the schema has", () => {
+  it("decline() redacts the record and the failed result it appends", async () => {
+    const a = agent(scripted([{ call: "pay", input: { amount: 5, cvv: "123" } }, "Requested."]), [pay],
+      { checks: [check("big", (e) => (e.kind === "action" ? approve("needs a person") : allow()))] });
+    const t1 = await a.respond(session(), "pay 5");
+    const { session: s, result } = await a.decline(t1.session, "p_1");
+    expect([s.approvals[0].input.cvv, result.input.cvv, lines.at(-1).input.cvv]).toEqual(["[redacted]", "[redacted]", "[redacted]"]);
+  });
+  it("the waiting note shows the model the pending input with the secret redacted", async () => {
+    const model = scripted([{ call: "pay", input: { amount: 5, cvv: "123" } }, "Requested.", "Still pending."]);
+    const a = agent(model, [pay], { checks: [check("big", (e) => (e.kind === "action" ? approve("needs a person") : allow()))] });
+    const t1 = await a.respond(session(), "pay 5");
+    await a.respond(t1.session, "done yet?");
+    const noteMsg = model.requests[2].messages.find((m: any) => typeof m.content === "string" && m.content.includes("Waiting for a person"));
+    expect(noteMsg?.content).toContain('pay {"amount":5,"cvv":"[redacted]"}');
+    expect(noteMsg?.content).not.toContain("123");
+  });
+  it("the placeholder echoed back by the model is refused before validation, so run() never sees it", async () => {
+    const a = agent(scripted([call({ accountId: "a_1", pin: "[redacted]" }), "Sorry."]), [verify]);
+    const r = await a.respond(session(), "hi");
+    expect(r.session.results[0]).toMatchObject({ ok: false, error: { code: "invalid_input", message: `pin: "[redacted]" is a placeholder for an earlier call's value, not a value; ask for it again.` } });
+    expect(seen).toEqual([]);
+  });
+  it("must name a field the schema has, and can't be bound or the confirm.by field", () => {
     expect(() => read({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["b"] as any, run: () => 1 })).toThrow(/secret field "b" is not in the input schema/);
+    expect(() => read({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["a"], bind: { a: "facts.a" }, run: () => 1 })).toThrow(/can't be bound or a confirm.by field/);
+    expect(() => write({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["a"], confirm: { commitment: "q", by: "a" }, run: () => 1 })).toThrow(/can't be bound or a confirm.by field/);
   });
 });
