@@ -75,6 +75,14 @@ describe("Agent", () => {
     expect(t2.session.rev).toBe(2);
   });
 
+  it("a write called in the same turn as its quote, before any reply, is blocked with the note the README quotes", async () => {
+    const { agent, model } = agentWith([{ calls: [{ call: "quote_plan_change", input: { planId: "plus" } }, { call: "change_plan", input: { quoteId: "q_1" } }] },
+      "Plus is $29/month, plus a one-time $4.12 today. Shall I switch you?"]);
+    const r = await agent.respond(loggedIn(), "Switch me to Plus.");
+    expect(model.requests[1].messages.at(-1)!.content).toBe("<system_note>Not run. Blocked: Before change_plan, tell the user exactly what will happen and wait for a clear yes. " +
+      "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.</system_note>");
+    expect(r.session.results.map((x) => x.tool)).toEqual(["quote_plan_change"]);
+  });
   it("an action blocked by verified_first doesn't run and the model gets { blocked }", async () => {
     getAccount.mockClear();
     const { agent, model } = agentWith([{ call: "get_account" }, "I need to verify you first. What's your account id and PIN?"]);
