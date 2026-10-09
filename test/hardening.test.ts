@@ -337,11 +337,13 @@ describe("secret inputs", () => {
   });
   it("a reconcile read gets the real input, not the redacted record", async () => {
     const got: unknown[] = [];
-    const status = read({ name: "pay_status", description: "Status.", input: z.object({ cvv: z.string() }), run: (i) => { got.push(i); return { paid: true }; } });
+    const status = read({ name: "pay_status", description: "Status.", input: z.object({ cvv: z.string() }), secret: ["cvv"], run: (i) => { got.push(i); return { paid: true }; } });
     const risky = write({ name: "pay", description: "Pay.", input: z.object({ cvv: z.string() }), secret: ["cvv"], confirm: false, reconcileWith: "pay_status",
       run: () => { throw new ToolError("timeout", "x", { outcome: "unknown" }); } });
     const r = await agent(scripted([{ call: "pay", input: { cvv: "123" } }, "It's paid."]), [risky, status]).respond(session(), "pay");
-    expect([got, r.session.results.map((x) => [x.tool, x.ok, x.input.cvv])]).toEqual([[{ cvv: "123" }], [["pay", false, "[redacted]"], ["pay_status", true, "123"]]]);
+    expect([got, r.session.results.map((x) => [x.tool, x.ok, x.input.cvv])]).toEqual([[{ cvv: "123" }], [["pay", false, "[redacted]"], ["pay_status", true, "[redacted]"]]]);
+    const leaky = read({ name: "pay_status", description: "Status.", input: z.object({ cvv: z.string() }), run: () => ({}) });
+    expect(() => agent(scripted([]), [risky, leaky])).toThrow(/reconcileWith "pay_status" takes secret field "cvv" but doesn't declare it secret/);
   });
   it("must name a field the schema has, and can't be bound or the confirm.by field", () => {
     expect(() => read({ name: "x", description: "x", input: z.object({ a: z.string() }), secret: ["b"] as any, run: () => 1 })).toThrow(/secret field "b" is not in the input schema/);

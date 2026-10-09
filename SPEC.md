@@ -41,7 +41,7 @@ ToolDef {
 }
 ```
 
-Definition-time errors (MUST throw): name not snake_case; empty description; input not an object schema; `run` not a function; `confirm` on a read tool; a `bind` key absent from the input schema; a `bind` value not starting with `facts.`; a `fromUser` field absent from the input schema; a field both in `bind` and in `fromUser`; a `secret` field absent from the input schema. Duplicate tool names MUST be rejected when the agent is constructed. A tool named `handoff_to_person` whose `confirm` is unset gets `confirm: false`: the reserved handoff write needs no yes.
+Definition-time errors (MUST throw): name not snake_case; empty description; input not an object schema; `run` not a function; `confirm` on a read tool; a `bind` key absent from the input schema; a `bind` value not starting with `facts.`; a `fromUser` field absent from the input schema; a field both in `bind` and in `fromUser`; a `secret` field absent from the input schema. Duplicate tool names MUST be rejected when the agent is constructed, and so MUST a `reconcileWith` read that takes one of the write's `secret` fields without declaring it `secret` itself (the read is fed the real value). A tool named `handoff_to_person` whose `confirm` is unset gets `confirm: false`: the reserved handoff write needs no yes.
 
 **Model-facing spec.** The model sees `{ name, description, inputSchema }`, where `inputSchema` is the JSON Schema of `input` with every bound field removed from `properties` and `required` (no `$schema` key).
 

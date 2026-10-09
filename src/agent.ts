@@ -75,6 +75,8 @@ export class Agent {
     for (const t of opts.tools.filter((t) => t.reconcileWith)) {          // the read that settles an unknown outcome must exist
       const r = this.byName.get(t.reconcileWith!);
       if (!r || r.kind !== "read") throw new TypeError(`tool "${t.name}": reconcileWith "${t.reconcileWith}" ${r ? "is a write tool; it must name a read tool" : "isn't one of this agent's tools"}`);
+      const leak = (t.secret ?? []).find((k) => k in r.input.shape && !r.secret?.includes(k));     // the read gets the real value; it must keep it secret too
+      if (leak) throw new TypeError(`tool "${t.name}": reconcileWith "${r.name}" takes secret field "${leak}" but doesn't declare it secret`);
     }
     this.infos = opts.tools.map(toolInfo);
     this.model = resolveModel(opts.model);
