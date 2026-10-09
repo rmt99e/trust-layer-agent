@@ -55,7 +55,7 @@ describe("Agent", () => {
     expect(JSON.stringify(t2.session.messages)).not.toContain("has been processed");
     const blocked = traceLines(t2.session).find((l) => l.type === "check" && l.event === "reply");
     expect(blocked).toMatchObject({ check: "no_unconfirmed_claims", draft: "Your refund has been processed." });
-    expect(blocked.result.block).toContain("refund_order failed");
+    expect(blocked.result.block).toBe(`Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`);   // quoted in the README
   });
 
   it("happy path: verify, quote shown, yes, write, confirmation", async () => {

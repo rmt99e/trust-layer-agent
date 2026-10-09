@@ -1,19 +1,84 @@
 # trust-layer-agent
 
+> A trust layer for LLM agents that act on someone's behalf. Every tool call is checked before it runs, and every reply is checked before it is sent, against what actually happened.
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
-trust-layer-agent is a trust layer for LLM agents that act on someone's behalf. It is a TypeScript library (Node 20+) that sits between the model and your tools: every tool call is checked before it runs, and every reply is checked before it's sent, against what your systems actually returned and what the user actually agreed to. It also ships a simulator and a `test` command that run simulated users against your agent and report pass^k.
+[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [The two examples](#the-two-examples) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [License](#license)
 
-It fits any agent that both does things and says things. An agent that changes an account, places an order, files a request or sends a notice can act without consent, or describe what happened wrongly: a change the user never agreed to, "done" when the tool failed, a price or a date no tool returned, a search for something nobody asked for. This library makes each of those a rule in code. A write runs only after a clear yes, and a write tied to a quote also needs that quote to have been shown. A reply may state only what a tool result or your own instructions back. An action a person should decide is parked, not run or refused, and the conversation goes on. A blocked draft is discarded and the model writes again, up to two more times by default, before the conversation is handed to a person.
+## What it is
 
-Customer support is one journey it was built on, and the fullest example in the repo. Internal operations with approvals is the second. The same tools, checks, journeys and session carry both.
+trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things: they read and change records through tools, and they tell a person what they did. It sits between the model and your tools.
 
-[Example](#example) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [The two examples](#the-two-examples) · [Testing your agent](#testing-your-agent) · [Results](#results) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+The model proposes a tool call; the library decides whether it may run. The model drafts a reply; the library decides whether it may be sent. Both decisions are made by deterministic code against the session: what tools returned, what the user said, what the user agreed to, what is waiting on a person. A refused call is answered with the reason, and a refused draft is sent back to the model with the reason, so the model corrects itself. After a few failed drafts the conversation goes to a person.
 
-## Example
+It is not a prompt framework and not a text classifier. The rules are code, so they hold whether or not the model follows its instructions, and they can be tested without a model. Customer support is the journey it was built on and the fullest example in the repo; an internal purchasing desk with approvals is the second. The same primitives carry both.
 
-This is what happens when a tool fails and the model drafts a reply claiming success:
+## Why
+
+An agent with tools can fail in four ways that a prompt cannot reliably prevent. Each one below is quoted from the library's own output in the test suite, which drives the agent with a scripted model, so every line here is reproduced on every CI run ([test/builtins.test.ts](test/builtins.test.ts), [test/agent.test.ts](test/agent.test.ts), [test/examples.test.ts](test/examples.test.ts)).
+
+**It acts before the user agreed.** The model called `change_plan` right after fetching a quote, without showing it or hearing a yes. The call did not run; the model was told why:
+
+> `Not run. Blocked: Before change_plan, tell the user exactly what will happen and wait for a clear yes.`
+
+**It says something happened that didn't.** `refund_order` failed. The model drafted a reply anyway:
+
+> draft: `Your refund has been processed.`
+> reason: `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
+
+The draft was discarded. The reply that went out: `Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.`
+
+**It searches for things nobody asked about.** The user wrote "We need some chairs." The model called the catalog search with a query of its own:
+
+> `Not run. Blocked: The user never said "office seating" (query in search_catalog). Use only values the user gave, or ask them.`
+
+**It decides what a person should decide.** Ten standing desks come to $4,200, over the team's $500 limit. Instead of placing the order or refusing it, one custom check parks it for a person while the conversation continues. The model is told:
+
+> `Not run: place_order needs a person's approval (Order of $4200 is over the team's $500 limit for orders without approval.). Tell the user it's been requested, not done.`
+
+Its next draft, "I've placed the order for 10 standing desks.", was refused by a claim kind the example defines for order status words:
+
+> `Reply states the status "placed" but no tool returned it. Use a returned value or don't state it.`
+
+The reply that went out: `I've requested the order; purchasing has to approve anything over $500, so nothing has been placed yet.` The parked action is on the session; `agent.approve(session, "p_1")` runs it later with the recorded input, and the model sees the result next turn.
+
+None of these depend on the model's judgement. They depend on the session.
+
+## How a turn works
+
+```
+user message ──► model ──► tool call? ──► action checks ──► allow ──► tool runs ──► result to model ──┐
+                   ▲                          │                                                      │
+                   │                          ├── block:   not run, reason to model ─────────────────┤
+                   │                          ├── approve: parked for a person, reason to model ─────┤
+                   │                          └── handoff: turn ends, person takes over              │
+                   │                                                                                 │
+                   └───────────────────────────────────────── model called again ◄───────────────────┘
+
+                 model ──► reply text ──► reply checks ──► allow / rewrite ──► sent, session saved
+                                              │
+                                              ├── block: draft discarded, reason to model, model writes again (up to maxRetries)
+                                              └── handoff: turn ends, person takes over
+```
+
+Everything the checks consult is in one JSON object, the **session**: `facts` (trusted, set by your app or recorded by tools), `commitments` (quotes shown and accepted), `results` (every tool call, with visible output only), `messages`, `approvals` (actions parked for a person), `failures`. Your app stores it; the library never does, though a store contract and a Postgres adapter are included.
+
+You write four kinds of thing:
+
+| | What it is | Enforced? |
+|---|---|---|
+| **Tools** | Your functions wrapped with `read()` or `write()`: a schema, which output fields the model may see, which inputs are bound from facts, which must come from the user's words, what a successful call records. | Yes, structurally |
+| **Checks** | One function type over actions and replies, returning `allow`, `block`, `rewrite`, `handoff` or `approve`. Seven are built in and on by default. | Yes |
+| **Journeys** | YAML: a goal, guidance and done-conditions that go into the prompt, plus `guardrails` that compile to checks. | Only the guardrails |
+| **Knowledge** | Operator-authored text files added to the prompt. Numbers and dates in them count as backed when the model repeats them. | Prompt only |
+
+And you call one thing, `agent.respond(session, message)`, or let `withStore(agent, store)` do the loading and saving by session id. Two commands, `test` and `snapshot`, run simulated users against the agent and pin the results.
+
+## Quick look
+
+The refund exchange above, as the terminal shows it (`chat()` prints every tool call, blocked action and blocked draft inline):
 
 ```
 you   > Please refund order 123.
@@ -27,7 +92,7 @@ you   > yes
 agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
 ```
 
-`no_unconfirmed_claims` blocked the draft because `refund_order` failed. The model received the reason and wrote a second draft, which was sent. The trace records the blocked draft:
+The trace sink records the refused draft as one JSON line:
 
 ```json
 {"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
