@@ -300,7 +300,7 @@ export class Agent {
               emit("check", { event: "action", tool: call.name, input: shown, check: v.by, result: v.result, approval: a.id });
             }
             answer(note(`Not run: ${tool.name} needs a person's approval (${escapeTags(v.result.approve)})${same ? ", which is already requested" : ""}. ` +
-              `Tell the user it's been requested, not done. ${NO_MECHANICS}`), true);
+              `Tell the user it's been requested, not done, and keep helping; don't hand off for this. ${NO_MECHANICS}`), true);
             continue;
           }
           const r = await runTool(tool, modelInput, s, { strictVisibility: this.opts.strictVisibility, now: this.now() });
