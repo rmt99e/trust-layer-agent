@@ -6,7 +6,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- package.json keywords drop `customer-support`; the repository description and topics say what the package does, a trust layer for any agent that acts on someone's behalf. Customer support and purchasing remain the two worked examples.
 
 ## [0.2.0] - 2026-10-13
 
