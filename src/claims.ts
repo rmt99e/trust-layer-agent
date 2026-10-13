@@ -2,7 +2,7 @@
 import type { CheckContext, ToolInfo } from "./checks.js";
 import { leaves, normNumber, type Commitment, type Json, type ToolResult } from "./session.js";
 
-export interface Claims { money: number[]; percents: number[]; dates: string[]; relative: string[]; done: string[] }
+export interface Claims { money: number[]; percents: number[]; bare: number[]; dates: string[]; relative: string[]; done: string[] }
 
 /** Escape a string for use inside a RegExp. */
 export const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -17,6 +17,25 @@ const RELATIVE = /\b(today|tonight|tomorrow|yesterday|next (?:week|month|year|mo
 // "none of your settings have been changed". Clauses split on punctuation and "but", so "No, it's done" and
 // "No problem, your plan has been switched" keep their claims; "no problem"/"no worries" are interjections, never negations.
 const NEGATED = /\b(?:not|never|no longer|nothing|none|no)\b|n't\b/i;
+// A done word or kind match in a conditional or future clause states nothing yet: "it will be placed once they approve it".
+const HYPOTHETICAL = /\b(?:if|once|when|as soon as|will|would|before|until|unless|so (?:someone|the team|they|we|you)|to (?:make sure|check|confirm|verify))\b|'ll\b/i;
+const LEADING = /^\s*(?:if|once(?! (?:again|more))|when|as soon as|unless|until|before)\b/i;   // a clause that sets a condition for the next one
+const PERFECT = /^(?:(?:has|have) been|i(?:'ve| have)|went through|(?:has|have) gone|switched)\b/i;   // past or perfect: a leading clause doesn't excuse it
+const clausesBefore = (text: string, i: number) => (text.slice(0, i).split(/[.!?;\n]/).pop() ?? "").split(/[:,]|\bbut\b/i);
+/**
+ * Whether a match at i states nothing because its sentence makes it conditional or future. Its own clause is checked up to
+ * the match; a present-tense form ("it's done") is also excused when the clause right before it opens with a condition
+ * ("If you say yes, it's done"). A perfect-tense claim is excused only by a word right before it ("until it has been
+ * processed"), so "Once you confirm, your plan has been switched" still claims. With no `matched` (a claim kind's
+ * single word, tense unknown) only the own clause counts.
+ */
+const hypothetical = (text: string, i: number, matched?: string) => {
+  const cs = clausesBefore(text, i), own = cs.at(-1)!, prev = cs.at(-2);          // split() always yields one clause
+  if (matched !== undefined && PERFECT.test(matched)) return HYPOTHETICAL.test(own.split(/\s+/).slice(-3).join(" "));
+  return HYPOTHETICAL.test(own) || (matched !== undefined && !!prev && LEADING.test(prev));
+};
+// A number stated bare ("total 4,200"): not a part of a date, time, id, range, fraction or another number's decimals.
+const BARE = new RegExp(String.raw`(?<![\w.,$€£#-])(?<!\d[:/])${NUM}(?![\w%-])(?![:/]\d)(?!\.\d)`, "g");   // `,` too: "$4,200" must not resume at "200"
 const INTERJECTION = /^\s*no (?:problem|worries|worry)\b/i;
 const clauseOf = (text: string, i: number) => (text.slice(0, i).split(/[.!?;:,\n]|\bbut\b/i).pop() ?? "").replace(INTERJECTION, "");
 // "You're all set staying on Starter" reports that nothing changed: status, not a claim that something was done.
@@ -47,8 +66,11 @@ export function extractClaims(text: string): Claims {
       .map((m) => (m[3] ? `${m[3]}-` : "") + md(+m[1], m[2])),
   ];
   const isStatus = (m: RegExpMatchArray) => /all set/i.test(m[0]) && STATUS_AFTER.test(text.slice(m.index! + m[0].length));
-  const done = all(DONE).filter((m) => !NEGATED.test(clauseOf(text, m.index!)) && !isStatus(m)).map((m) => m[0].toLowerCase());
-  return { money, percents, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done };
+  const done = all(DONE).filter((m) => !NEGATED.test(clauseOf(text, m.index!)) && !isStatus(m) && !hypothetical(text, m.index!, m[0])).map((m) => m[0].toLowerCase());
+  const worded = [...all(new RegExp(String.raw`\b${MONTH}\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?`, "gi")), ...all(new RegExp(String.raw`\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?${MONTH}(?:,?\s+\d{4})?`, "gi"))]
+    .map((m) => [m.index!, m.index! + m[0].length]);                                   // "March 3, 2026": its parts aren't bare numbers
+  const bare = all(BARE).filter((m) => !worded.some(([a, b]) => m.index! >= a && m.index! < b)).map((m) => normNumber(m[0]));
+  return { money, percents, bare, dates, relative: all(RELATIVE).map((m) => m[0].toLowerCase()), done };
 }
 
 // A number's kind, from the name of the field holding it. Unknown fields hold plain numbers.
@@ -152,13 +174,14 @@ export function unconfirmed(text: string, ctx: CheckContext, kinds: readonly Cla
  */
 export interface ClaimKind {
   name: string;                                   // in the block reason: Reply states the <name> "<value>"…
-  find: RegExp | ((text: string) => string[]);    // claims in a text; a RegExp yields its first group (else the match), lower-cased, skipping negated clauses
+  find: RegExp | ((text: string) => string[]);    // claims in a text; a RegExp yields its first group (else the match), lower-cased, skipping negated and conditional clauses
   confirms?: (source: Json) => string[];          // what one source backs; default: each string or number in it, whole and lower-cased, plus find() over it
 }
-// A RegExp kind skips a match whose own clause negates it ("it hasn't been ordered yet"), the same rule as done words.
+// A RegExp kind skips a match whose own clause negates it ("it hasn't been ordered yet") or whose sentence makes it
+// conditional or future ("it will be placed once they approve it"), the same rules as done words.
 const finder = ({ find }: ClaimKind) => typeof find === "function" ? find
   : (text: string) => [...text.matchAll(new RegExp(find.source, find.flags.replace("g", "") + "g"))]
-    .filter((m) => !NEGATED.test(clauseOf(text, m.index!))).map((m) => (m[1] ?? m[0]).toLowerCase());
+    .filter((m) => !NEGATED.test(clauseOf(text, m.index!)) && !hypothetical(text, m.index!)).map((m) => (m[1] ?? m[0]).toLowerCase());
 
 /** Mark open commitments whose id or values appear in a sent reply as shown on this turn. */
 export function markShown(commitments: Commitment[], reply: string, turn: number): Commitment[] {
@@ -166,7 +189,8 @@ export function markShown(commitments: Commitment[], reply: string, turn: number
   return commitments.map((k) => {
     const v = confirmedValues([k.values as Json]);
     const named = new RegExp(String.raw`(?<![\w])${escapeRegExp(k.id)}(?![\w])`).test(reply);   // q_1 isn't shown by "q_10"
-    const shown = named || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n));
+    const shown = named || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n))
+      || c.bare.some((n) => v.money.has(n));                     // a price stated without its currency sign ("total 4,200") still shows the quote
     return k.shownTurn === undefined && k.status === "open" && shown ? { ...k, shownTurn: turn } : k;
   });
 }

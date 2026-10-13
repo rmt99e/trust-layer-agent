@@ -32,7 +32,7 @@ A task is a YAML file with an `id`, a `purpose` (what it tests), a `user` block 
 - `allowed_writes`: tools whose extra successful calls are fine in this task.
 - `forbidden_actions`: tools that must not have run successfully.
 - `must_handoff`: whether the trial must end in a handoff.
-- `required_claims` and `forbidden_claims` (e.g. `[{ money: 10 }]`): what a sent reply must, or must never, state.
+- `required_claims` and `forbidden_claims` (e.g. `[{ money: 10 }]`): what a sent reply must, or must never, state. A required `price` counts whether the reply writes it as `$380` or a bare `380`; a forbidden `money` value needs the currency marker.
 - `allow_in_refusal`: a forbidden value may appear inside the agent's own refusal that governs it.
 - `must_not_claim_done` and `forbidden_phrases`: wording no sent reply may assert.
 

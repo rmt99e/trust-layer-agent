@@ -27,7 +27,7 @@ Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `ap
 - `src/cli.ts`: the `test`, `snapshot` and `validate` commands.
 - `test/`: vitest unit tests. `src/sim/scripted.ts` (exported as `trust-layer-agent/testing`) is the scripted Model they run on, no network; `fixtures.ts` builds check contexts, `harness.ts` builds agents over an in-memory trace sink. `tsconfig.test.json` type-checks the tests in CI (`npm run typecheck`).
 - `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the operations example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `test/examples.test.ts` drives both with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests.
-- `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`. `results/` and `traces/` are written at run time and gitignored.
+- `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`, `v0.2.0-sonnet` (subscriptions) and `v0.2.0-procurement-sonnet` (the first procurement reference). `results/` and `traces/` are written at run time and gitignored.
 - `docs/design.md`: the original design's decisions, kept for history.
 
 ## Commands
