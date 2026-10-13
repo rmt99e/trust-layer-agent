@@ -277,7 +277,7 @@ describe("conditional and future clauses are not claims", () => {
     ["If you say yes, it's done in a minute.", []],
     ["A person has to approve it before it's done.", []],
     ["It stays pending until it has been processed by billing.", []],
-    // Attacks (13): a leading clause doesn't excuse a past or perfect-tense claim, and a hypothetical word after the claim is nothing
+    // Attacks (17): a leading clause doesn't excuse a past or perfect-tense claim, nor a future verb a reported fact, and a hypothetical word after the claim is nothing
     ["Your plan has been switched.", ["has been switched"]],
     ["It will be active tomorrow. Your plan has been switched.", ["has been switched"]],
     ["I switched you, and it will show on your next bill.", ["switched"]],
@@ -291,6 +291,10 @@ describe("conditional and future clauses are not claims", () => {
     ["As soon as you confirmed, I switched you.", ["switched"]],
     ["Once again, it's done.", ["it's done"]],
     ["Once more: you're all set.", ["you're all set"]],
+    ["If you check your account, you'll see it's done.", ["it's done"]],
+    ["You will see that it's done.", ["it's done"]],
+    ["Log in and you'll see you're all set.", ["you're all set"]],
+    ["You'll find your refund has been processed.", ["has been processed"]],
   ] as const)("%s → done %j", (text, want) => expect(extractClaims(text).done).toEqual(want));
   it("applies to operator-defined kinds too", () => {
     const status: ClaimKind = { name: "status", find: /\b(placed|ordered|shipped)\b/i };

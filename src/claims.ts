@@ -21,6 +21,7 @@ const NEGATED = /\b(?:not|never|no longer|nothing|none|no)\b|n't\b/i;
 const HYPOTHETICAL = /\b(?:if|once|when|as soon as|will|would|before|until|unless|so (?:someone|the team|they|we|you)|to (?:make sure|check|confirm|verify))\b|'ll\b/i;
 const LEADING = /^\s*(?:if|once(?! (?:again|more))|when|as soon as|unless|until|before)\b/i;   // a clause that sets a condition for the next one
 const PERFECT = /^(?:(?:has|have) been|i(?:'ve| have)|went through|(?:has|have) gone|switched)\b/i;   // past or perfect: a leading clause doesn't excuse it
+const REPORTS = /\b(?:see|find|notice)\b/i;                                       // "you'll see it's done" reports a fact, whatever the tense around it
 const clausesBefore = (text: string, i: number) => (text.slice(0, i).split(/[.!?;\n]/).pop() ?? "").split(/[:,]|\bbut\b/i);
 /**
  * Whether a match at i states nothing because its sentence makes it conditional or future. Its own clause is checked up to
@@ -31,6 +32,7 @@ const clausesBefore = (text: string, i: number) => (text.slice(0, i).split(/[.!?
  */
 const hypothetical = (text: string, i: number, matched?: string) => {
   const cs = clausesBefore(text, i), own = cs.at(-1)!, prev = cs.at(-2);          // split() always yields one clause
+  if (REPORTS.test(own)) return false;
   if (matched !== undefined && PERFECT.test(matched)) return HYPOTHETICAL.test(own.split(/\s+/).slice(-3).join(" "));
   return HYPOTHETICAL.test(own) || (matched !== undefined && !!prev && LEADING.test(prev));
 };

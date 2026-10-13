@@ -12,7 +12,7 @@ Both shipped suites, Sonnet 5.5 as agent and as simulated user, k=4, graded by t
 | subscriptions (22 tasks) | 100% (22/22) | 88/88 | 0 | 0.16 | $5.13 |
 | procurement (4 tasks) | 100% (4/4) | 16/16 | 0 | 0.00 | $0.58 |
 
-Pinned as `snapshots/v0.2.0-sonnet.json` and `snapshots/v0.2.0-procurement-sonnet.json`.
+Pinned as `snapshots/v0.2.0-sonnet.json` and `snapshots/v0.2.0-procurement-sonnet.json`. The procurement snapshot's library fingerprint predates one later narrowing of the conditional-clause rule (a perception verb such as "you'll see" cancels the excuse, SPEC §5.4), made after a review found the miss; no procurement reply in that run used such a verb, so its results stand, and `test --against` will report the library difference until it is retaken.
 
 **What the procurement runs found.** The first real-model run of the procurement suite scored 50% (2 of 4 tasks, 13/16 trials) and exposed two library gaps, both fixed in this release with attack rows and re-measured:
 
