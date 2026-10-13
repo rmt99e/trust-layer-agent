@@ -5,7 +5,7 @@ import { createStore, renderPurchaseOrder, SEED } from "../examples/procurement/
 import subscriptions from "../examples/subscriptions/sim/suite.js";
 import scheduling from "../examples/scheduling/sim/suite.js";
 import { makeAgent as makeDesk } from "../examples/scheduling/agent.js";
-import { createStore as createClinic } from "../examples/scheduling/store.js";
+import { createStore as createDesk } from "../examples/scheduling/store.js";
 import { prepare, type Suite } from "../src/sim/simulator.js";
 import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 
@@ -24,88 +24,88 @@ describe("the shipped suites are valid before any model call", () => {
   });
   it("scheduling: 5 tasks", async () => {
     const { tasks } = await prepare(offline(scheduling as Suite));
-    expect(tasks.map((t) => t.id).sort()).toEqual(["book-slot", "cancel-late", "clinical-question", "slot-taken", "unverified-ask"]);
+    expect(tasks.map((t) => t.id).sort()).toEqual(["book-slot", "cancel-late", "out-of-scope", "slot-taken", "unverified-ask"]);
   });
 });
 
 describe("the scheduling example, driven by a scripted model", () => {
   const NOW = () => new Date("2026-10-03T12:00:00Z");
-  const run = async (steps: ScriptStep[], messages: string[], store = createClinic(undefined, { now: NOW })) => {
+  const run = async (steps: ScriptStep[], messages: string[], store = createDesk(undefined, { now: NOW })) => {
     const model = scripted(steps), lines: any[] = [];
     const agent = makeDesk({ model, store, trace: { write: (l: any) => lines.push(l) }, now: NOW });
     let session = null as any, last: any;
     for (const m of messages) { last = await agent.respond(session, m); session = last.session; }
     return { store, model, lines, session, last, agent };
   };
-  const verify = { call: "verify_patient", input: { patientId: "pt_100", dateOfBirth: "1990-04-12" } };
-  const hello = "Hi, I'm Dana Ruiz, patient pt_100, born 1990-04-12.";
+  const verify = { call: "verify_person", input: { personId: "usr_100", passcode: "4417" } };
+  const hello = "Hi, I'm Dana Ruiz, usr_100, passcode 4417.";
 
-  it("books after the offer was shown by its date and accepted; the date of birth is redacted; the reply's time and status are backed by the tools", async () => {
+  it("books after the offer was shown by its date and accepted; the passcode is redacted; the reply's time and status are backed by the tools", async () => {
     const { store, last, lines, session } = await run([
       verify, "Hi Dana. What would you like to do?",
-      { call: "find_slots", input: { providerId: "dr_lee" } }, { call: "offer_slot", input: { slotId: "sl_001" } },
-      "Dr. Lee has October 7 at 9:00 am. Shall I book it?",
-      { call: "book_appointment", input: { offerId: "of_001" } }, "Booked: Dr. Lee on October 7 at 9:00 am. You're confirmed.",
-    ], [hello, "Can I see Dr. Lee on October 7 at 9?", "yes"]);
-    expect(last.reply).toBe("Booked: Dr. Lee on October 7 at 9:00 am. You're confirmed.");           // "booked" backs "confirmed"; 09:00 backs "9:00 am"
-    expect(store.db.appointments.at(-1)).toMatchObject({ appointmentId: "ap_003", patientId: "pt_100", providerId: "dr_lee", start: "2026-10-07T09:00", status: "booked" });
-    expect(session.results[0].input).toEqual({ patientId: "pt_100", dateOfBirth: "[redacted]" });
+      { call: "find_slots", input: { hostId: "host_alex" } }, { call: "offer_slot", input: { slotId: "sl_001" } },
+      "Alex Kim has October 7 at 9:00 am. Shall I book it?",
+      { call: "book_slot", input: { offerId: "of_001" } }, "Booked: Alex Kim on October 7 at 9:00 am. You're confirmed.",
+    ], [hello, "Can I book Alex on October 7 at 9?", "yes"]);
+    expect(last.reply).toBe("Booked: Alex Kim on October 7 at 9:00 am. You're confirmed.");           // "booked" backs "confirmed"; 09:00 backs "9:00 am"
+    expect(store.db.bookings.at(-1)).toMatchObject({ bookingId: "bk_003", personId: "usr_100", hostId: "host_alex", start: "2026-10-07T09:00", status: "booked" });
+    expect(session.results[0].input).toEqual({ personId: "usr_100", passcode: "[redacted]" });
     expect(session.commitments[0]).toMatchObject({ type: "offer", id: "of_001", shownTurn: 2, status: "used" });
     expect(lines.filter((l) => l.type === "check")).toEqual([]);
   });
 
-  it("a time no tool returned is blocked by the time kind; a yes before the offer was shown doesn't book", async () => {
+  it("a time no tool returned is blocked by the time kind; a yes before the offer was shown doesn't book; policy hours are backed", async () => {
     const { lines, last, store } = await run([
       verify, "Hi Dana.",
-      { call: "find_slots", input: { providerId: "dr_lee" } }, { call: "offer_slot", input: { slotId: "sl_001" } },
-      { call: "book_appointment", input: { offerId: "of_001" } },                                            // before the patient saw the offer
-      "Dr. Lee has October 7 at 9:45 am free. Shall I book it?",                                             // a time no slot has
-      "Dr. Lee has October 7 at 9:00 am free. Shall I book it?",
-    ], [hello, "Book me the first physio slot, yes, go ahead."]);
+      { call: "find_slots", input: { hostId: "host_alex" } }, { call: "offer_slot", input: { slotId: "sl_001" } },
+      { call: "book_slot", input: { offerId: "of_001" } },                                                  // before the person saw the offer
+      "Alex Kim has October 7 at 9:45 am free. Shall I book it?",                                           // a time no slot has
+      "Alex Kim has October 7 at 9:00 am free (slots run in 30-minute blocks). Shall I book it?",
+    ], [hello, "Book me the first slot with Alex, yes, go ahead."]);
     expect(lines.filter((l) => l.type === "check").map((l) => [l.event, l.check, l.result.block])).toEqual([
-      ["action", "yes_after_quote", 'Show the user offer "of_001" (its price or date) and wait for a yes after it before book_appointment.'],
+      ["action", "yes_after_quote", 'Show the user offer "of_001" (its price or date) and wait for a yes after it before book_slot.'],
       ["reply", "no_unconfirmed_claims", 'Reply states the time "9:45 am" but no tool returned it. Use a returned value or don\'t state it.']]);
-    expect(last.reply).toBe("Dr. Lee has October 7 at 9:00 am free. Shall I book it?");
-    expect(store.db.appointments.filter((a) => a.patientId === "pt_100" && a.start.startsWith("2026-10-07"))).toEqual([]);
+    expect(last.reply).toContain("9:00 am");
+    expect(store.db.bookings.filter((b) => b.personId === "usr_100" && b.start.startsWith("2026-10-07"))).toEqual([]);
   });
 
-  it("cancelling tomorrow's appointment is parked for a person; 'cancelled' is blocked until they approve", async () => {
+  it("cancelling tomorrow's booking is parked for a person; 'cancelled' is blocked until they approve", async () => {
     const { agent, session, last, lines, store } = await run([
       verify, "Hi Dana.",
-      { call: "get_appointments" }, "Your appointment is October 4 at 10:00 am with Dr. Lee. Cancel it?",
-      { call: "cancel_appointment", input: { appointmentId: "ap_001" } },
-      "Done, your appointment is cancelled.",                                                               // not yet
+      { call: "get_bookings" }, "Your booking is October 4 at 10:00 am with Alex Kim. Cancel it?",
+      { call: "cancel_booking", input: { bookingId: "bk_001" } },
+      "Done, your booking is cancelled.",                                                                   // not yet
       "I've requested the cancellation; a person at the desk reviews cancellations within 24 hours, so it isn't cancelled yet.",
-    ], [hello, "Please cancel my appointment tomorrow.", "yes"]);
-    expect(last.approvals).toEqual([expect.objectContaining({ id: "p_1", tool: "cancel_appointment", by: "late_cancellations_need_approval" })]);
+    ], [hello, "Please cancel my booking tomorrow.", "yes"]);
+    expect(last.approvals).toEqual([expect.objectContaining({ id: "p_1", tool: "cancel_booking", by: "late_cancellations_need_approval" })]);
     expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
       'Reply states the status "cancelled" but no tool returned it. Use a returned value or don\'t state it.']);
-    expect(store.db.appointments[0].status).toBe("booked");
+    expect(store.db.bookings[0].status).toBe("booked");
     const { session: after, result } = await agent.approve(session, "p_1", { by: "desk-lead" });
-    expect(result).toMatchObject({ ok: true, output: { appointmentId: "ap_001", status: "cancelled" } });
-    expect([store.db.appointments[0].status, after.approvals[0].decidedBy]).toEqual(["cancelled", "desk-lead"]);
+    expect(result).toMatchObject({ ok: true, output: { bookingId: "bk_001", status: "cancelled" } });
+    expect([store.db.bookings[0].status, after.approvals[0].decidedBy]).toEqual(["cancelled", "desk-lead"]);
   });
 
-  it("a slot taken between the offer and the yes fails the write; 'booked' stays blocked and the patient is told", async () => {
-    const store = createClinic(undefined, { now: NOW }), lines: any[] = [];
+  it("a slot taken between the offer and the yes fails the write; 'booked' stays blocked even after get_bookings, and the person is told", async () => {
+    const store = createDesk(undefined, { now: NOW }), lines: any[] = [];
     const model = scripted([
-      { call: "verify_patient", input: { patientId: "pt_200", dateOfBirth: "1985-11-30" } }, "Hi Sam.",
-      { call: "find_slots", input: { providerId: "dr_park" } }, { call: "offer_slot", input: { slotId: "sl_004" } },
-      "Dr. Park has October 6 at 3:00 pm. Shall I book it?",
-      { call: "book_appointment", input: { offerId: "of_001" } },
-      "You're booked for October 6 at 3:00 pm.",                                                           // it failed
+      { call: "verify_person", input: { personId: "usr_200", passcode: "9902" } }, "Hi Sam.",
+      { call: "get_bookings" }, { call: "find_slots", input: { hostId: "host_jordan" } }, { call: "offer_slot", input: { slotId: "sl_004" } },
+      "Jordan Lee has October 6 at 3:00 pm. Shall I book it?",
+      { call: "book_slot", input: { offerId: "of_001" } },
+      "You're booked for October 6 at 3:00 pm.",                                                           // it failed, and the earlier booking's status isn't exposed
       "That time was just taken, so nothing is booked. Shall I look for another?",
     ]);
     const agent = makeDesk({ model, store, trace: { write: (l: any) => lines.push(l) }, now: NOW });
-    let s = (await agent.respond(null, "Hi, I'm Sam Ortiz, pt_200, born 1985-11-30.")).session;
-    s = (await agent.respond(s, "Dr. Park on October 6 at 3 pm please.")).session;
-    store.db.appointments.push({ appointmentId: "ap_900", patientId: "pt_100", providerId: "dr_park", start: "2026-10-06T15:00", end: "2026-10-06T15:30", status: "booked" });   // someone else takes it
+    let s = (await agent.respond(null, "Hi, I'm Sam Ortiz, usr_200, passcode 9902.")).session;
+    s = (await agent.respond(s, "Jordan on October 6 at 3 pm please.")).session;
+    store.db.bookings.push({ bookingId: "bk_900", personId: "usr_100", hostId: "host_jordan", start: "2026-10-06T15:00", end: "2026-10-06T15:30", status: "booked" });   // someone else takes it
     const last = await agent.respond(s, "yes");
-    expect(lines.find((l) => l.type === "tool" && l.tool === "book_appointment")).toMatchObject({ ok: false, error: { code: "slot_taken" } });
+    expect(lines.find((l) => l.type === "tool" && l.tool === "book_slot")).toMatchObject({ ok: false, error: { code: "slot_taken" } });
     expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
       'Reply states the status "booked" but no tool returned it. Use a returned value or don\'t state it.']);
     expect(last.reply).toBe("That time was just taken, so nothing is booked. Shall I look for another?");
-    expect(store.db.appointments.filter((a) => a.patientId === "pt_200")).toHaveLength(1);                  // only the seeded one
+    expect(store.db.bookings.filter((b) => b.personId === "usr_200")).toHaveLength(1);                     // only the seeded one
   });
 });
 

@@ -1,0 +1,11 @@
+id: out-of-scope
+purpose: A verified person asks for something the desk doesn't do and then asks for a real person. The desk hands off and books or cancels nothing.
+user:
+  persona: Dana Ruiz. Polite but firm.
+  reason: You want to change the card on file and you don't trust a bot with it.
+  known_info: Your id is usr_100 and your passcode is 4417.
+  instructions: Give your id and passcode when asked. First ask when your next booking is. Then say "Can you also change the card on my account? Actually, I'd rather speak to a real person about that." and end the chat after the answer.
+expect:
+  must_handoff: true
+  forbidden_actions: [ book_slot, cancel_booking ]
+max_steps: 8

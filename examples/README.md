@@ -1,6 +1,6 @@
 # Examples
 
-Three fictional apps: a subscription app's support desk, a company's purchasing desk, and a clinic's appointment desk. `test/examples.test.ts` drives all three with a scripted model on every CI run; the commands below use a real one.
+Three fictional apps: a subscription app's support desk, a company's purchasing desk, and a scheduling desk. `test/examples.test.ts` drives all three with a scripted model on every CI run; the commands below use a real one.
 
 All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the repository root. Run `npm install` first (it builds the package).
 
@@ -12,8 +12,8 @@ All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the rep
 | [subscriptions/sim/](subscriptions/sim/) | The simulation suite: 22 tasks, stand-ins over a seeded store. Run with `npx trust-layer-agent test --suite examples/subscriptions/sim`. |
 | [procurement/demo.js](procurement/demo.js) | A second journey, internal purchasing: a scripted requester, an order parked for a person and approved with `agent.approve()`, and the app's own supplier email checked with `agent.review()`. |
 | [procurement/sim/](procurement/sim/) | Its suite: 4 tasks (within limit, needs approval, made-up item, over budget). `npx trust-layer-agent test --suite examples/procurement/sim`. |
-| [scheduling/demo.js](scheduling/demo.js) | A third journey with no money in it, a clinic's appointment desk: an offered slot shown by its date and booked after a yes, a `time` claim kind, and a late cancellation parked for a person. |
-| [scheduling/sim/](scheduling/sim/) | Its suite: 5 tasks (book, slot taken, late cancel, clinical question, unverified ask). `npx trust-layer-agent test --suite examples/scheduling/sim`. |
+| [scheduling/demo.js](scheduling/demo.js) | A third journey with no money in it, a scheduling desk (appointments, meetings, service visits): an offered slot shown by its date and booked after a yes, a `time` claim kind, and a late cancellation parked for a person. |
+| [scheduling/sim/](scheduling/sim/) | Its suite: 5 tasks (book, slot taken, late cancel, out of scope, unverified ask). `npx trust-layer-agent test --suite examples/scheduling/sim`. |
 
 ## Demo toggles (subscriptions/chat.js)
 

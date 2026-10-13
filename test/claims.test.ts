@@ -320,8 +320,9 @@ describe("markShown: an offer with no price is shown by its date", () => {
     ["I can offer 2026-10-07 at 09:00 with Dr. Lee.", slot, true],
     ["How about the 7th of October, 9 in the morning?", slot, true],
     ["Your reference is 2026-10-07-A.", slot, true],
-    // Attacks (3): another date, no date, the right date on a commitment that has no dates
+    // Attacks (4): another date, the wrong year, no date, the right date on a commitment that has no dates
     ["Today is October 3. What time suits you?", slot, false],
+    ["October 7, 2025 is long gone.", slot, false],
     ["Dr. Lee has a slot free. Shall I book it?", slot, false],
     ["October 7 works for me too.", { monthlyPrice: 29 }, false],
   ])("%s with %j → shown %s", (reply, values, want) => expect(shownBy(reply, values)).toBe(want));

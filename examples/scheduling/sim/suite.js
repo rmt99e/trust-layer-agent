@@ -20,16 +20,16 @@ export default {
   },
 
   standIns: {
-    verify_patient: ({ patientId, dateOfBirth }, _ctx, s) => s.verify(patientId, dateOfBirth),
-    get_appointments: ({ patientId }, _ctx, s) => s.appointments(patientId),
-    find_slots: ({ providerId, from }, _ctx, s) => s.slots(providerId, from),
+    verify_person: ({ personId, passcode }, _ctx, s) => s.verify(personId, passcode),
+    get_bookings: ({ personId }, _ctx, s) => s.bookings(personId),
+    find_slots: ({ hostId, from }, _ctx, s) => s.slots(hostId, from),
     offer_slot: ({ slotId }, _ctx, s) => s.offer(slotId),
-    book_appointment: ({ patientId, offerId }, _ctx, s) => s.book(patientId, offerId),
-    cancel_appointment: ({ patientId, appointmentId, reason }, _ctx, s) => s.cancel(patientId, appointmentId, reason),
+    book_slot: ({ personId, offerId }, _ctx, s) => s.book(personId, offerId),
+    cancel_booking: ({ personId, bookingId, reason }, _ctx, s) => s.cancel(personId, bookingId, reason),
     handoff_to_person: ({ summary }) => ({ handedOff: true, summary }),
   },
 
-  // What the grader compares: each patient's appointments (provider, start, status), sorted.
-  state: (s) => Object.fromEntries(Object.values(s.db.patients).map((p) => [p.id,
-    s.db.appointments.filter((a) => a.patientId === p.id).map((a) => `${a.providerId}@${a.start}:${a.status}`).sort()])),
+  // What the grader compares: each person's bookings (host, start, status), sorted.
+  state: (s) => Object.fromEntries(Object.values(s.db.people).map((p) => [p.id,
+    s.db.bookings.filter((b) => b.personId === p.id).map((b) => `${b.hostId}@${b.start}:${b.status}`).sort()])),
 };
