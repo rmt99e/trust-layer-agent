@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, check, allow, createSession, read, write, z } from "../src/index.js";
 import { loadJourneys } from "../src/journeys.js";
-import { scripted, type Step } from "../src/sim/scripted.js";
+import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 
 const PLAN_CHANGE = join(import.meta.dirname, "journeys", "plan-change.yaml");
 const TOOLS = ["verify_customer", "get_account", "get_usage", "get_eligible_plans", "quote_plan_change", "change_plan", "add_usage_pack", "open_case"];
@@ -59,7 +59,7 @@ describe("journeys", () => {
       "id: refunds", "goal: Answer refund questions.", "guidance:", "  - Refunds are available for 30 days; the restocking fee is $4.99.",
       "guardrails:", "  - no_unconfirmed_claims",
     ].join("\n"));
-    const steps: Step[] = ["There's a $4.99 restocking fee."];
+    const steps: ScriptStep[] = ["There's a $4.99 restocking fee."];
     const model = scripted(steps);
     const agent = new Agent({ model, instructions: "Help.", tools: [stub("get_account")], trace: false, journeys: f });
     const r = await agent.respond(createSession({ facts: { verified: true } }), "Is there a fee?");

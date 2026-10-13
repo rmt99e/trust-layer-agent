@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // npx trust-layer-agent test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against v1]
 // npx trust-layer-agent snapshot --suite <dir> --name v1
-// npx trust-layer-agent validate --suite <dir> [--tasks a,b]      (no model call, no key)
+// npx trust-layer-agent validate --suite <dir> [--tasks a,b] [--agent-model provider:model]      (no model call, no key)
 import { claimKinds } from "./builtins.js";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";

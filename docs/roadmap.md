@@ -4,7 +4,7 @@ What is planned, in rough order. Items move here from issues and pull-request di
 
 
 1. Fit and eligibility decisions in tool output, with the write gated on them: for example, a quote returns `fitsUsage`, and a check blocks `change_plan` on a quote that doesn't fit.
-2. Terse done wording. "Done, refunded." or "Refunded." is not a done claim today: the rule needs "has been", "I've" or a listed phrase before the verb, so a bare participle passes. Tightening it needs allowed rows first ("a refunded invoice", "refunded orders show here"), the same way negated clauses got theirs.
+2. Terse done wording. "Done, refunded." or "Refunded." is not a done claim today: the rule needs "has been" or "I've" before the verb, or one of the standalone phrases ("you're all set", "went through", …; `switched` is the only bare participle listed), so "Refunded." passes while "Switched." doesn't. Tightening it needs allowed rows first ("a refunded invoice", "refunded orders show here"), the same way negated clauses got theirs.
 3. A Python port, following [SPEC.md](SPEC.md).
 4. Streaming. The trade-off: words would appear before they're checked.
 5. More model adapters.

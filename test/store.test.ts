@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, allow, approve, check, createSession, forget, memoryStore, read, StaleSession, withStore, write, z, type Session, type SessionStore, type SessionV1 } from "../src/index.js";
 import { postgres } from "../src/stores/postgres.js";
-import { scripted, type Step } from "../src/sim/scripted.js";
+import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
 
 const plan = read({ name: "get_plan", description: "Plan.", input: z.object({}), run: () => ({ plan: "Basic", monthlyPrice: 9 }) });
 const refund = write({ name: "refund_order", description: "Refund.", input: z.object({ orderId: z.string() }), confirm: false, run: ({ orderId }) => ({ orderId, refunded: true }) });
 const askFirst = check("ask_first", (e) => (e.kind === "action" && e.tool.name === "refund_order" ? approve("Refunds are reviewed.") : allow()));
-const agentWith = (steps: Step[]) =>
+const agentWith = (steps: ScriptStep[]) =>
   new Agent({ model: scripted(steps), instructions: "You help.", tools: [plan, refund], checks: [askFirst], builtins: { verified_first: false }, trace: false });
 
 /** The locking rule every store must follow, run against any implementation. */

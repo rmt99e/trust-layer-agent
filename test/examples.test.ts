@@ -4,7 +4,7 @@ import { makeAgent } from "../examples/procurement/agent.js";
 import { createStore, renderPurchaseOrder, SEED } from "../examples/procurement/store.js";
 import subscriptions from "../examples/subscriptions/sim/suite.js";
 import { prepare, type Suite } from "../src/sim/simulator.js";
-import { scripted, type Step } from "../src/sim/scripted.js";
+import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
 
@@ -22,7 +22,7 @@ describe("the shipped suites are valid before any model call", () => {
 });
 
 describe("the procurement example, driven by a scripted model", () => {
-  const run = async (steps: Step[], messages: string[]) => {
+  const run = async (steps: ScriptStep[], messages: string[]) => {
     const store = createStore(), model = scripted(steps), lines: any[] = [];
     const agent = makeAgent({ model, store, trace: { write: (l: any) => lines.push(l) } });
     let session = null as any, last: any;

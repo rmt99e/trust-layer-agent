@@ -260,3 +260,9 @@ describe("the package exports a testing entry for the scripted model", () => {
     expect(m.requests).toHaveLength(2);
   });
 });
+
+describe("validate refuses a --tasks id that names no task", () => {
+  it("fails instead of printing 0 tasks: valid", async () => {
+    await expect(main(["validate", "--suite", "examples/procurement/sim", "--tasks", "over-budget,over-budgte"])).rejects.toThrow("--tasks names no task: over-budgte");
+  });
+});

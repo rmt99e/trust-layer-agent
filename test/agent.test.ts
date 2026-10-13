@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, allow, approve, check, createSession, jsonl, read, rewrite, ToolError, write, z, type Session, type Tool } from "../src/index.js";
-import { scripted, type Step } from "../src/sim/scripted.js";
+import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 
 let dir: string;
 beforeEach(() => {
@@ -31,7 +31,7 @@ const tools = {
     run: () => ({ status: "active", effectiveDate: "2026-11-01" }) }),
 };
 
-const agentWith = (steps: Step[], toolList: Tool[] = Object.values(tools), extra = {}) => {
+const agentWith = (steps: ScriptStep[], toolList: Tool[] = Object.values(tools), extra = {}) => {
   const model = scripted(steps);
   return { model, agent: new Agent({ model, instructions: "You help customers with their plans.", tools: toolList, trace: jsonl({ dir }), ...extra }) };
 };
@@ -279,7 +279,7 @@ describe("Agent", () => {
     const checkChange = read({ name: "check_change", description: "Check a change by ticket.", input: z.object({ ticket: z.string() }), run: () => ({ plan: "plus" }) });
     const broken = write({ name: "change_plan", description: "Change plan.", input: z.object({}), confirm: false,
       outcome: () => { throw new Error("outcome parser crashed"); }, reconcileWith: "check_change", run: () => ({ status: "active" }) });
-    const run = async (steps: Step[]) => {
+    const run = async (steps: ScriptStep[]) => {
       lines.length = 0;
       const agent = new Agent({ model: scripted(steps), instructions: "x", tools: [tools.account, checkChange, broken], trace: { write: (l) => lines.push(l) } });
       return agent.respond(loggedIn(), "Switch me, yes.");
@@ -301,7 +301,7 @@ describe("Agent", () => {
     const timeout = (reconcileWith: string) => write({ name: "change_plan", description: "Change plan.", input: z.object({ accountId: z.string() }),
       bind: { accountId: "facts.accountId" }, confirm: false, reconcileWith, run: () => { throw new ToolError("timeout", "No response.", { outcome: "unknown" }); } });
     const checkChange = read({ name: "check_change", description: "Check by ticket.", input: z.object({ ticket: z.string() }), run: () => ({ plan: "plus" }) });
-    const go = async (steps: Step[], reconcileWith = "check_change", extra: any[] = []) => {
+    const go = async (steps: ScriptStep[], reconcileWith = "check_change", extra: any[] = []) => {
       lines.length = 0;
       const model = scripted(steps);
       const agent = new Agent({ model, instructions: "x", tools: [tools.account, checkChange, timeout(reconcileWith), ...extra], trace: { write: (l) => lines.push(l) } });
@@ -376,8 +376,8 @@ describe("approve: an action parked for a person", () => {
   const refundRun = vi.fn(({ orderId, amount }: { orderId: string; amount: number }) => ({ refunded: amount, orderId }));
   const refund = write({ name: "refund_order", description: "Refund an order.", input: z.object({ orderId: z.string(), amount: z.number() }), run: refundRun });
   const bigRefunds = check("big_refunds", (e) => (e.kind === "action" && e.tool.name === "refund_order" && (e.input.amount as number) > 100 ? approve("Refund over $100.") : allow()));
-  const ask = (steps: Step[]) => agentWith(steps, [refund], { checks: [bigRefunds] });
-  const parkIt = async (steps: Step[] = []) => {
+  const ask = (steps: ScriptStep[]) => agentWith(steps, [refund], { checks: [bigRefunds] });
+  const parkIt = async (steps: ScriptStep[] = []) => {
     const { agent, model } = ask(["I can refund order 123 in full. Shall I go ahead?", { call: "refund_order", input: { orderId: "123", amount: 150 } },
       "Your refund has been processed.", "I've requested the refund; a person has to approve it, so nothing has changed yet.", ...steps]);
     const t1 = await agent.respond(loggedIn(), "Please refund order 123, it was 150 dollars.");
@@ -495,6 +495,7 @@ describe("approve: an action parked for a person", () => {
 
 describe("the README's model-free testing snippet", () => {
   it("holds as written: the write is blocked without a yes, the done claim is refused, the third draft is sent", async () => {
+    const { scripted } = await import("trust-layer-agent/testing");                        // the path adopters use, via the vitest alias
     const refund = write({ name: "refund_order", description: "Refund an order.", input: z.object({ orderId: z.string() }), run: () => ({ refunded: true }) });
     const model = scripted([{ call: "refund_order", input: { orderId: "123" } }, "Your refund has been processed.", "I can refund that order. Shall I go ahead?"]);
     const r = await new Agent({ model, instructions: "You help.", tools: [refund], trace: false }).respond(loggedIn(), "refund order 123");

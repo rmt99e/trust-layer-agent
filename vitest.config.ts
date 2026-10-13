@@ -6,5 +6,6 @@ export default defineConfig({
   resolve: { alias: [
     { find: /^trust-layer-agent$/, replacement: fileURLToPath(new URL("./src/index.ts", import.meta.url)) },
     { find: /^trust-layer-agent\/postgres$/, replacement: fileURLToPath(new URL("./src/stores/postgres.ts", import.meta.url)) },
+    { find: /^trust-layer-agent\/testing$/, replacement: fileURLToPath(new URL("./src/sim/scripted.ts", import.meta.url)) },
   ] },
 });

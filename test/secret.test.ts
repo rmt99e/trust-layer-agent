@@ -1,7 +1,7 @@
 // `secret` input fields: real for run(), records() and the checks; [redacted] everywhere the session, traces or history keep them.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { allow, approve, block, check, read, ToolError, write, z } from "../src/index.js";
-import { scripted, type Step } from "../src/sim/scripted.js";
+import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 import { agent, lines, session } from "./harness.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); lines.length = 0; });
@@ -11,7 +11,7 @@ describe("secret inputs", () => {
   const verify = read({ name: "verify_user", description: "Verify.", input: z.object({ accountId: z.string(), pin: z.string() }), secret: ["pin"],
     records: (_o, i) => { seen.push(i.pin); return {}; }, run: ({ pin }) => { seen.push(pin); return { verified: pin === "4417" }; } });
   const pay = write({ name: "pay", description: "Pay.", input: z.object({ amount: z.number(), cvv: z.string() }), secret: ["cvv"], confirm: false, run: ({ cvv }) => { seen.push(cvv); return { paid: true }; } });
-  const call = (input: Record<string, unknown>): Step => ({ call: "verify_user", input });
+  const call = (input: Record<string, unknown>): ScriptStep => ({ call: "verify_user", input });
   beforeEach(() => { seen.length = 0; lines.length = 0; });
   it("is [redacted] in the ToolResult, the trace line and the replayed history; run() and records() get the real value", async () => {
     const model = scripted([call({ accountId: "a_1", pin: "4417" }), "Verified.", "Still here."]), a = agent(model, [verify]);
