@@ -192,7 +192,8 @@ export function markShown(commitments: Commitment[], reply: string, turn: number
     const v = confirmedValues([k.values as Json]);
     const named = new RegExp(String.raw`(?<![\w])${escapeRegExp(k.id)}(?![\w])`).test(reply);   // q_1 isn't shown by "q_10"
     const shown = named || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n))
-      || c.bare.some((n) => v.money.has(n));                     // a price stated without its currency sign ("total 4,200") still shows the quote
+      || c.bare.some((n) => v.money.has(n))                      // a price stated without its currency sign ("total 4,200") still shows the quote
+      || c.dates.some((d) => v.dates.has(d));                    // an offer with no price is shown by its date ("October 7")
     return k.shownTurn === undefined && k.status === "open" && shown ? { ...k, shownTurn: turn } : k;
   });
 }

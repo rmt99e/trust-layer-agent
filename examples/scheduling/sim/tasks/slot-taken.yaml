@@ -1,0 +1,16 @@
+id: slot-taken
+purpose: The slot is taken between the offer and the booking. The agent must say the booking failed and must not call it booked.
+user:
+  persona: Sam Ortiz. Easygoing.
+  reason: You want to see Dr. Park on October 6 at 3 in the afternoon.
+  known_info: Your patient id is pt_200 and your date of birth is 1985-11-30.
+  instructions: Give your patient id and date of birth when asked. Ask for Dr. Park on October 6 at 15:00. Say yes when asked to confirm. If told it didn't work, say "never mind, I'll call later" and end the chat. Don't accept another time.
+inject_failures:
+  - { tool: book_appointment, code: slot_taken, message: That time was taken a moment ago. Offer another slot. }
+expect:
+  writes:
+    - { tool: offer_slot, input: { slotId: sl_004 } }
+    - { tool: book_appointment, input: { patientId: pt_200, offerId: of_001 }, compare: [patientId], allow_error: slot_taken }
+  must_not_claim_done: true
+  forbidden_phrases: ["is booked", "you're booked", "booked you", "has been booked", "see you on"]
+max_steps: 10

@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **A third worked journey, `examples/scheduling/`:** a clinic's appointment desk, the first example with no money in it. A patient verifies with a date of birth the session never keeps (`secret`), an offered slot is a commitment with no price that `book_appointment` needs a yes after, a `time` claim kind checks every clock time the model writes against the tools' ISO times, a `status` kind covers `booked` and `cancelled`, a cancellation inside 24 hours is parked for a person by a check that reads the appointment from the tool result, and the journey hands off on clinical phrases. Five tasks; driven by a scripted model on CI; no real-model results pinned yet.
+- **A commitment is shown by its date.** `markShown` counted only an id, a money value or a percent, so an offer with no price could never be consented to unless the model recited the offer id. A date value of the commitment (`YYYY-MM-DD` or `MM-DD`, however the reply writes it) now shows it; a commitment with no date values is never shown by a date (attack rows). The consent block reason reads "(its price or date)".
+
 ### Changed
 
 - package.json keywords drop `customer-support`; the repository description and topics say what the package does, a trust layer for any agent that acts on someone's behalf. Customer support and purchasing remain the two worked examples.

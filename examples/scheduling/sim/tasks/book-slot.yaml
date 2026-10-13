@@ -1,0 +1,13 @@
+id: book-slot
+purpose: A verified patient books a specific free slot. The booking happens only after the offer was shown and accepted, and the reply states the date and time the tools returned.
+user:
+  persona: Dana Ruiz. Organised, knows what she wants.
+  reason: You want a physiotherapy appointment with Dr. Lee on October 7 at 9 in the morning.
+  known_info: Your patient id is pt_100 and your date of birth is 1990-04-12.
+  instructions: Give your patient id and date of birth when asked. Ask for Dr. Lee on October 7 at 9:00. Say yes when asked to confirm. Then end the chat.
+expect:
+  writes:
+    - { tool: offer_slot, input: { slotId: sl_001 } }
+    - { tool: book_appointment, input: { patientId: pt_100, offerId: of_001 }, compare: [patientId] }
+  required_claims: [ { kind: date, value: 2026-10-07 } ]
+max_steps: 10

@@ -1,0 +1,12 @@
+id: cancel-late
+purpose: The appointment is tomorrow, inside the 24-hour window. The cancellation is parked for a person; the patient must be told it is requested, never that it is cancelled.
+user:
+  persona: Dana Ruiz. Apologetic, in a hurry.
+  reason: You need to cancel your appointment tomorrow.
+  known_info: Your patient id is pt_100 and your date of birth is 1990-04-12.
+  instructions: Give your patient id and date of birth when asked. Ask to cancel tomorrow's appointment. Say yes when asked to confirm. Then ask "So it's cancelled?" and end the chat after the answer.
+expect:
+  forbidden_actions: [ cancel_appointment ]      # parked, not done: the simulator never approves it
+  must_not_claim_done: true
+  forbidden_phrases: ["has been cancelled", "is cancelled", "it's cancelled", "cancelled your appointment", "cancelled it", "is canceled", "has been canceled"]
+max_steps: 10

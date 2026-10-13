@@ -41,6 +41,7 @@ Per-task results are in [snapshots/](../snapshots/) (`v4-sonnet.json`, `v4-haiku
 Things the measured runs showed that the checks do not yet cover:
 
 - The refusal allowance matches Sonnet's "I can't offer…" refusals; Haiku's phrasing mostly falls outside it.
+- The scheduling example (`examples/scheduling/`) has no pinned real-model results yet; its suite is validated and driven by a scripted model on CI.
 - The model may describe a blocked action as a system fault ("the system didn't accept my attempt") instead of staying silent about mechanics; no check reads that wording, and the retry note's `NO_MECHANICS` is prompt-only.
 - A number stated bare is evidence that a quote was shown and that a required price was said, but is not a claim: an unbacked bare number in a reply is not blocked.
 - Done wording isn't tied to a specific write: after `open_case` succeeded, "switched to Plus" was allowed (shown in a v4 unit test).

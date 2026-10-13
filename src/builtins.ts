@@ -59,7 +59,7 @@ const yesAfterQuote = (phrases?: string[]) => check("yes_after_quote", (e, ctx) 
   if (k.status !== "open") return block(`${c.commitment} "${id}" was already used. Create a new one.`);
   if (k.expiresAt && new Date(k.expiresAt) <= ctx.now) return block(`${c.commitment} "${id}" has expired. Create a new one and show it.`);
   if (k.shownTurn === undefined || k.shownTurn >= ctx.turn)
-    return block(`Show the user ${c.commitment} "${id}" (its price) and wait for a yes after it before ${e.tool.name}.`);
+    return block(`Show the user ${c.commitment} "${id}" (its price or date) and wait for a yes after it before ${e.tool.name}.`);
   return allow();
 });
 

@@ -39,6 +39,7 @@ You write three things: tools (functions wrapped with `read()` or `write()`, eac
 - [examples/subscriptions/knowledge/policy.md](examples/subscriptions/knowledge/policy.md): the policy the agent follows.
 - [examples/subscriptions/sim/suite.js](examples/subscriptions/sim/suite.js): the simulation suite: seeded store, stand-in tools, graded state.
 - [examples/subscriptions/sim/tasks/](examples/subscriptions/sim/tasks/): simulation tasks (persona, goal, expected writes and claims).
+- [examples/scheduling/](examples/scheduling/): the third journey, a clinic's appointment desk with no money in it: an offer commitment shown by its date, a `time` claim kind over the tools' ISO times, a late-cancellation `approve()` check, a date of birth kept `secret`. `sim/` has 5 tasks.
 - [examples/procurement/](examples/procurement/): the second journey, internal purchasing: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two claim kinds, and `agent.review()` on the app's own supplier email. `sim/` has 4 tasks.
 
 ## Optional
