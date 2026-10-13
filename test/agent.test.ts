@@ -393,7 +393,7 @@ describe("approve: an action parked for a person", () => {
     expect(t2.session.approvals).toEqual([parked]);
     expect(t2.reply).toBe("I've requested the refund; a person has to approve it, so nothing has changed yet.");
     expect(model.requests[2].messages.at(-1)).toMatchObject({ role: "tool", isError: true, content:
-      "<system_note>Not run: refund_order needs a person's approval (Refund over $100.). Tell the user it's been requested, not done. " +
+      "<system_note>Not run: refund_order needs a person's approval (Refund over $100.). Tell the user it's been requested, not done, and keep helping; don't hand off for this. " +
       "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.</system_note>" });
     const lines = traceLines(t2.session).filter((l) => l.type === "check");
     expect(lines[0]).toMatchObject({ event: "action", tool: "refund_order", check: "big_refunds", result: { approve: "Refund over $100." }, approval: "p_1" });

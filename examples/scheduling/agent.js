@@ -7,7 +7,7 @@ const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 
 export const INSTRUCTIONS = `You are a scheduling desk. You help people book and cancel time with the hosts on the calendar.
 Reply in plain text, no Markdown. Keep replies short. Give dates and times exactly as the tools return them, in local time.
-You only schedule. Anything else goes to a person.`;
+You only schedule. Hand off only when the person asks for someone at the desk or wants something you can't do; a request waiting for the desk's approval is not a reason to hand off.`;
 
 // Cancelling inside the 24-hour window is parked for a person at the desk instead of being done or refused. The
 // booking's start comes from the get_bookings result the model saw, never from the model's own input. Times are
@@ -18,7 +18,7 @@ const lateCancellations = check("late_cancellations_need_approval", (e, ctx) => 
   const listed = ctx.results.filter((r) => r.ok && r.tool === "get_bookings").flatMap((r) => r.output?.bookings ?? []);
   const b = listed.find((x) => x.bookingId === e.input.bookingId);
   const hoursUntil = b && (Date.parse(b.start + "Z") - ctx.now.getTime()) / 3_600_000;
-  return b && hoursUntil < WINDOW_HOURS ? approve(`Cancelling less than ${WINDOW_HOURS} hours before the booking needs a person at the desk.`) : allow();
+  return b && hoursUntil < WINDOW_HOURS ? approve(`Cancellations less than ${WINDOW_HOURS} hours before the booking are approved at the desk, not here.`) : allow();
 });
 
 // What a scheduling reply states that the built-in kinds don't know: clock times, and booking status words. A time is
@@ -37,7 +37,7 @@ export const kinds = [
   { name: "time", find: TIME,
     confirms: (src) => strings(src).flatMap((s) => [...[...s.matchAll(/T(\d{2}):(\d{2})/g)].flatMap((m) => spellings(m[1], m[2])),   // ISO times from tools
       ...[...s.matchAll(/\b(\d{1,2}):(\d{2})\b/g)].flatMap((m) => spellings(m[1].padStart(2, "0"), m[2]))]) },                        // "08:00" in policy text, in every spelling
-  { name: "status", find: /\b(booked|confirmed|cancelled|canceled|rescheduled)\b/i,
+  { name: "status", find: /\b(?<!(?:stays|remains|still) )(booked|confirmed|cancelled|canceled|rescheduled)\b/i,       // "stays booked" reports no change
     confirms: (src) => statuses(src).flatMap((s) => (s === "booked" ? ["booked", "confirmed"] : s === "cancelled" ? ["cancelled", "canceled"] : [s])) },
 ];
 

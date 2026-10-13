@@ -107,7 +107,8 @@ export function grade(task: Task, o: Observed): Grade {
   const tried = task.expect.forbidden_actions.filter((t) => o.blocked.includes(t));
   const forbidden = { pass: !ran.length, detail: ran.length ? `executed: ${ran.join(", ")}` : tried.length ? `blocked attempts: ${tried.join(", ")}` : "none" };
 
-  const handoff = { pass: o.handedOff === task.expect.must_handoff, detail: `handed off: ${o.handedOff}, expected: ${task.expect.must_handoff}` };
+  const handoff = { pass: o.handedOff === task.expect.must_handoff || (task.expect.allow_handoff && o.handedOff),
+    detail: `handed off: ${o.handedOff}, expected: ${task.expect.must_handoff}${task.expect.allow_handoff ? " (allowed)" : ""}` };
 
   const said = o.sent.map(extractClaims);
   const absent = task.expect.required_claims.filter(({ kind, value }) => !said.some((c) =>

@@ -162,7 +162,7 @@ describe("the procurement example, driven by a scripted model", () => {
       'Reply states the status "placed" but no tool returned it. Use a returned value or don\'t state it.']);
     expect(last.reply).toBe("I've requested the order; purchasing has to approve anything over $500, so nothing has been placed yet.");
     expect(model.requests.flatMap((q) => q.messages).find((m) => m.role === "tool" && m.content.includes("approval"))!.content).toBe(
-      "<system_note>Not run: place_order needs a person's approval (Order of $4200 is over the team's $500 limit for orders without approval.). Tell the user it's been requested, not done. " +
+      "<system_note>Not run: place_order needs a person's approval (Order of $4200 is over the team's $500 limit for orders without approval.). Tell the user it's been requested, not done, and keep helping; don't hand off for this. " +
       "Never mention checks, blocks or internal reasons to the user; just give the corrected reply.</system_note>");
     const { session: after, result } = await agent.approve(session, "p_1");
     expect(result).toMatchObject({ ok: true, output: expect.objectContaining({ status: "placed", total: 4200 }) });
