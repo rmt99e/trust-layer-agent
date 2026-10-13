@@ -54,7 +54,7 @@ describe("the scheduling example, driven by a scripted model", () => {
     expect(lines.filter((l) => l.type === "check")).toEqual([]);
   });
 
-  it("a time no tool returned is blocked by the time kind; a yes before the offer was shown doesn't book; policy hours are backed", async () => {
+  it("a time no tool returned is blocked by the time kind; a yes before the offer was shown doesn't book", async () => {
     const { lines, last, store } = await run([
       verify, "Hi Dana.",
       { call: "find_slots", input: { hostId: "host_alex" } }, { call: "offer_slot", input: { slotId: "sl_001" } },

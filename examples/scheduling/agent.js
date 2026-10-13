@@ -36,7 +36,7 @@ const TIME = /\b(\d{1,2}(?::\d{2})?\s?(?:am|pm)|\d{1,2}:\d{2})\b/gi;            
 export const kinds = [
   { name: "time", find: TIME,
     confirms: (src) => strings(src).flatMap((s) => [...[...s.matchAll(/T(\d{2}):(\d{2})/g)].flatMap((m) => spellings(m[1], m[2])),   // ISO times from tools
-      ...[...s.matchAll(TIME)].map((m) => m[1].toLowerCase())]) },                                                                    // times written in policy text
+      ...[...s.matchAll(/\b(\d{1,2}):(\d{2})\b/g)].flatMap((m) => spellings(m[1].padStart(2, "0"), m[2]))]) },                        // "08:00" in policy text, in every spelling
   { name: "status", find: /\b(booked|confirmed|cancelled|canceled|rescheduled)\b/i,
     confirms: (src) => statuses(src).flatMap((s) => (s === "booked" ? ["booked", "confirmed"] : s === "cancelled" ? ["cancelled", "canceled"] : [s])) },
 ];
