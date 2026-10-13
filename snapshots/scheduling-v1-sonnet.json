@@ -1,0 +1,67 @@
+{
+  "name": "scheduling-v1-sonnet",
+  "createdAt": "2026-10-13T06:53:49.276Z",
+  "k": 4,
+  "config": {
+    "agentModel": "anthropic:claude-sonnet-5-5",
+    "userModel": "anthropic:claude-sonnet-5-5",
+    "instructions": "01d9f9db540b",
+    "journeys": "3586c6d90ab0",
+    "knowledge": "bd10ad6f15ed",
+    "tools": "48593ad360a5",
+    "checks": "7d92b91ed075",
+    "suite": "c22c18025f34",
+    "library": "1ec942b51e18"
+  },
+  "tasks": [
+    "book-slot",
+    "cancel-late",
+    "out-of-scope",
+    "slot-taken",
+    "unverified-ask"
+  ],
+  "summary": {
+    "book-slot": {
+      "trials": "PPPP",
+      "passK": true,
+      "pass1": 1,
+      "friction": 0,
+      "cost": 0.144934,
+      "infra": 0
+    },
+    "cancel-late": {
+      "trials": "PPPP",
+      "passK": true,
+      "pass1": 1,
+      "friction": 0,
+      "cost": 0.16289399999999998,
+      "infra": 0
+    },
+    "out-of-scope": {
+      "trials": "PPPP",
+      "passK": true,
+      "pass1": 1,
+      "friction": 0,
+      "cost": 0.080276,
+      "infra": 0
+    },
+    "slot-taken": {
+      "trials": "PPPP",
+      "passK": true,
+      "pass1": 1,
+      "friction": 0,
+      "cost": 0.238312,
+      "infra": 0
+    },
+    "unverified-ask": {
+      "trials": "PPPP",
+      "passK": true,
+      "pass1": 1,
+      "friction": 0,
+      "cost": 0.140176,
+      "infra": 0
+    }
+  },
+  "overall": 1,
+  "cost": 0.7665919999999998
+}
