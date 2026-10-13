@@ -451,7 +451,7 @@ A **suite** (reference: `<dir>/suite.js`, default export) provides: `agent` (age
 | `expect.forbidden_actions` | tool names, `[]` | must not execute successfully |
 | `expect.allowed_writes` | tool names, `[]` | extra calls that are fine here: each successful live call is replayed into the gold store, so it doesn't fail the state |
 | `expect.must_handoff` | bool, `false` | whether the trial must end in a handoff |
-| `expect.allow_handoff` | bool, `false` | a handoff neither required nor failed, for a task that asserts something else (what may not be said, what may not run) |
+| `expect.allow_handoff` | bool, `false` | a handoff neither required nor failed, for a task that asserts something else (what may not be said, what may not run); not with `must_handoff` |
 | `expect.required_claims` | `[{ kind: price|percent|date, value }]`, `[]` | must appear in a sent reply; a `price` may be written with a currency marker or bare |
 | `expect.forbidden_claims` | `[{ money?, percent? }]`, `[]` | must not appear in any sent reply |
 | `expect.allow_in_refusal` | bool, `false` | a `forbidden_claims` value may appear inside the agent's own refusal ("I can't offer Plus at $10") |

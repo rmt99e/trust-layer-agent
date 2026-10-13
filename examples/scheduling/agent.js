@@ -18,7 +18,7 @@ const lateCancellations = check("late_cancellations_need_approval", (e, ctx) => 
   const listed = ctx.results.filter((r) => r.ok && r.tool === "get_bookings").flatMap((r) => r.output?.bookings ?? []);
   const b = listed.find((x) => x.bookingId === e.input.bookingId);
   const hoursUntil = b && (Date.parse(b.start + "Z") - ctx.now.getTime()) / 3_600_000;
-  return b && hoursUntil < WINDOW_HOURS ? approve(`Cancellations less than ${WINDOW_HOURS} hours before the booking are approved at the desk; the request is on its way.`) : allow();
+  return b && hoursUntil < WINDOW_HOURS ? approve(`Cancellations less than ${WINDOW_HOURS} hours before the booking are approved at the desk, not here.`) : allow();
 });
 
 // What a scheduling reply states that the built-in kinds don't know: clock times, and booking status words. A time is

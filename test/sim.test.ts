@@ -74,6 +74,7 @@ describe("grader", () => {
     expect(grade(tk, observed()).handoff.pass).toBe(false);
     const any = t("  allow_handoff: true");
     expect([grade(any, observed({ handedOff: true })).handoff, grade(any, observed()).handoff.pass]).toEqual([{ pass: true, detail: "handed off: true, expected: false (allowed)" }, true]);
+    expect(() => t("  must_handoff: true\n  allow_handoff: true")).toThrow(/must_handoff and allow_handoff can't both be true/);
   });
 
   it("claims: required claims must appear in sent replies, after normalization; unbacked claims fail", () => {

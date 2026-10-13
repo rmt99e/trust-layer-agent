@@ -14,14 +14,14 @@ const TaskFile = z.object({
     writes: z.array(z.object({ tool: str, input: record.default({}), compare: z.array(str).default([]), allow_error: str.optional() }).strict()).default([]),
     forbidden_actions: z.array(str).default([]),
     must_handoff: z.boolean().default(false),
-    allow_handoff: z.boolean().default(false),          // a handoff neither required nor failed: the task asserts something else
+    allow_handoff: z.boolean().default(false),          // a handoff neither required nor failed: the task asserts something else (not with must_handoff)
     required_claims: z.array(z.object({ kind: z.enum(["price", "percent", "date"]), value: z.union([z.number(), str]) }).strict()).default([]),
     forbidden_claims: z.array(z.object({ money: z.number().optional(), percent: z.number().optional() }).strict()).default([]),
     allow_in_refusal: z.boolean().default(false),                       // forbidden values may appear inside a refusal that governs them
     must_not_claim_done: z.boolean().default(false),                    // no sent reply may say an action happened
     forbidden_phrases: z.array(str).default([]),                        // phrases no sent reply may assert (negated/conditional uses are fine)
     allowed_writes: z.array(str).default([]),                           // extra writes that are fine here; replayed into the expected state
-  }).strict(),
+  }).strict().refine((e) => !(e.must_handoff && e.allow_handoff), { message: "must_handoff and allow_handoff can't both be true" }),
   max_steps: z.number().int().positive().default(20),                   // user turns before the run counts as a fail
 }).strict();
 
