@@ -111,7 +111,7 @@ export function grade(task: Task, o: Observed): Grade {
 
   const said = o.sent.map(extractClaims);
   const absent = task.expect.required_claims.filter(({ kind, value }) => !said.some((c) =>
-    kind === "date" ? c.dates.includes(String(value)) : (kind === "price" ? c.money : c.percents).includes(normNumber(value))));
+    kind === "date" ? c.dates.includes(String(value)) : (kind === "price" ? [...c.money, ...c.bare] : c.percents).includes(normNumber(value))));   // a price may be stated bare, as markShown accepts it
   const unbacked = o.sent.map((t, i) => unconfirmed(t, o.sentCtx[i], o.kinds)).filter(Boolean);
   const r = task.expect.allow_in_refusal;
   const banned = task.expect.forbidden_claims.flatMap((f) => [...(f.money !== undefined && o.sent.some((t) => says(t, MONEY, f.money!, r)) ? [`$${f.money}`] : []),

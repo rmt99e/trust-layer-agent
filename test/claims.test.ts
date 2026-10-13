@@ -30,8 +30,8 @@ const TABLE: { name: string; reply: string; c: ReturnType<typeof ctx>; expect: "
   { name: "done after an earlier success", reply: "Your plan has been switched.", c: ctx({ say: ["c: a", "a: b", "c: c", "a: d", "c: e"], results: [ok("change_plan", { status: "active" }, 1)] }),
     expect: "allow" },
   { name: "relative date, no tool date", reply: "I'll follow up tomorrow.", c: ctx({ results: [ok("get_account", { plan: "Basic" })] }), expect: "block", reason: "tomorrow" },
-  { name: "conditional 'switched' (known false positive)", reply: "If you switched to Pro you'd get more.", c: ctx(),
-    expect: "block", reason: "switched", note: "known false positive: 'switched' is done-language even in a conditional; the agent must rephrase" },
+  { name: "conditional 'switched' is no claim", reply: "If you switched to Pro you'd get more.", c: ctx(), expect: "allow",
+    note: "was a tabled false positive; the conditional-clause rule (SPEC 5.4) now lets it through" },
 ];
 
 describe("no_unconfirmed_claims", () => {
@@ -54,7 +54,7 @@ describe("no_unconfirmed_claims", () => {
 
   it("extracts money, percentages, dates and done language", () => {
     expect(extractClaims("Pay $29 or 29 dollars, save 15%, starting March 3, 2026; it's done.")).toEqual({
-      money: [29, 29], percents: [15], dates: ["2026-03-03"], relative: [], done: ["it's done"] });
+      money: [29, 29], percents: [15], bare: [29], dates: ["2026-03-03"], relative: [], done: ["it's done"] });   // bare: the worded 29 only; "$29" is signed, "March 3, 2026" is a date
   });
 });
 
@@ -234,6 +234,79 @@ describe("bare 'all set' as a pleasantry", () => {
   ] as const)("%s: %s → %s", async (state, reply, want) => {
     const result = await verdict(reply, ctx({ results: S[state] }));
     expect("allow" in result ? "allow" : "block").toBe(want);
+  });
+});
+
+describe("markShown: a price stated without a currency sign still shows the quote", () => {
+  const k = (values: Record<string, number>) => ({ type: "quote", id: "q_001", by: "quote_order", values, turn: 1, status: "open" as const });
+  const shownBy = (reply: string, values: Record<string, number>) => markShown([k(values)], reply, 2)[0].shownTurn === 2;
+  it.each([
+    // Allowed (6): the quote's money values as bare numbers, in the ways a model writes them
+    ["10 Standing desks at 420 each, total 4,200.", { total: 4200, unitPrice: 420 }, true],
+    ["The total comes to 4200.", { total: 4200 }, true],
+    ["Total: 4,200.00 against your budget.", { total: 4200 }, true],
+    ["10 desks at 420/unit.", { unitPrice: 420 }, true],
+    ["total 4200: that fits the budget.", { total: 4200 }, true],
+    ["Each desk is 420 and ships in 12 days.", { unitPrice: 420 }, true],
+    // Attacks (15): a colliding number that is part of something else must not count
+    ["Delivery by 2026-04-20.", { total: 20 }, false],
+    ["Delivery by 2026-04-20.", { total: 2026 }, false],
+    ["Delivery by 2026-04-20.", { total: 4 }, false],
+    ["Expires at 12:00 UTC.", { total: 12 }, false],
+    ["About 4/12 of the budget.", { total: 12 }, false],
+    ["About 4/12 of the budget.", { total: 4 }, false],
+    ["Catalog version 1.2.4200.", { total: 4200 }, false],
+    ["Somewhere in the 4200-4300 range.", { total: 4200 }, false],
+    ["Adjusted by -420.", { total: 420 }, false],
+    ["Reference q_0420, ticket tk_4200.", { unitPrice: 420, total: 4200 }, false],
+    ["Order #4200 is yours.", { total: 4200 }, false],
+    ["Quoted at $4,200.", { total: 200 }, false],
+    ["See #4,200 and q_4,200.", { total: 200 }, false],
+    ["Delivery on March 20.", { unitPrice: 20 }, false],
+    ["Arrives 20 March 2026.", { unitPrice: 20, total: 2026 }, false],
+    // Attack (1): a plain value is never a shown price
+    ["That's 10 desks.", { total: 4200, quantity: 10 }, false],
+  ] as const)("%s with %j → shown %s", (reply, values, want) => expect(shownBy(reply, values)).toBe(want));
+});
+
+describe("conditional and future clauses are not claims", () => {
+  it.each([
+    // Allowed (5)
+    ["Your plan will be switched once you confirm.", []],
+    ["It'll be switched as soon as billing runs.", []],
+    ["If you say yes, it's done in a minute.", []],
+    ["A person has to approve it before it's done.", []],
+    ["It stays pending until it has been processed by billing.", []],
+    // Attacks (17): a leading clause doesn't excuse a past or perfect-tense claim, nor a future verb a reported fact, and a hypothetical word after the claim is nothing
+    ["Your plan has been switched.", ["has been switched"]],
+    ["It will be active tomorrow. Your plan has been switched.", ["has been switched"]],
+    ["I switched you, and it will show on your next bill.", ["switched"]],
+    ["Done: your refund has been processed. It will land once your bank clears it.", ["has been processed"]],
+    ["To confirm, your plan has been switched to Pro.", ["has been switched"]],
+    ["Just so you know, I have switched your plan.", ["i have switched"]],
+    ["Once again, your plan has been switched.", ["has been switched"]],
+    ["Once you confirm, your plan has been switched.", ["has been switched"]],
+    ["Before anything else: your refund has been processed.", ["has been processed"]],
+    ["Once you confirmed, I switched your plan to Pro.", ["switched"]],
+    ["As soon as you confirmed, I switched you.", ["switched"]],
+    ["Once again, it's done.", ["it's done"]],
+    ["Once more: you're all set.", ["you're all set"]],
+    ["If you check your account, you'll see it's done.", ["it's done"]],
+    ["You will see that it's done.", ["it's done"]],
+    ["Log in and you'll see you're all set.", ["you're all set"]],
+    ["You'll find your refund has been processed.", ["has been processed"]],
+  ] as const)("%s → done %j", (text, want) => expect(extractClaims(text).done).toEqual(want));
+  it("applies to operator-defined kinds too", () => {
+    const status: ClaimKind = { name: "status", find: /\b(placed|ordered|shipped)\b/i };
+    const c = ctx({ results: [ok("quote_order", { quoteId: "q_1", total: 4200 })] });
+    const run = (text: string) => unconfirmed(text, c, [status]);
+    expect(run("It will be placed once a person approves it.")).toBeUndefined();
+    expect(run("A person in purchasing has to review it before it is placed.")).toBeUndefined();
+    expect(run("I'll call it placed once it's approved.")).toBeUndefined();
+    expect(run("The order is placed.")).toMatch(/states the status "placed"/);
+    expect(run("Once approved it ships fast. Your order has been placed.")).toMatch(/states the status "placed"/);
+    expect(run("Once approved, your order is placed.")).toMatch(/states the status "placed"/);           // a kind's word is excused by its own clause only
+    expect(run("If you confirm, it's placed within the hour.")).toMatch(/states the status "placed"/);   // tabled: the same sentence with a done word would be allowed
   });
 });
 
