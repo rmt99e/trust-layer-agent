@@ -14,6 +14,12 @@ The reference for the `test` and `snapshot` commands and for suites. The README 
 
 `snapshot --suite <dir> --name <name>` pins the latest results with fingerprints of the models, instructions, journeys, knowledge, tools, checks and library code, and refuses if any of them changed since the last `test`.
 
+`validate --suite <dir> [--tasks a,b]` runs only what `test` checks before its first model call: stand-ins match the tools, every task is valid and names real tools, each expected write applies to the seed, both models are priced. No model is built, so no key is needed; put it in CI next to your unit tests.
+
+## Unit tests without a model
+
+`trust-layer-agent/testing` exports `scripted(steps, { id?, usage?, fail? })`, the model the library's own tests run on. Each step is a reply string or a tool call (`{ call, input }`, or `{ calls: [...] }` for several at once); the model replays them in order, records every request in `requests`, and throws once the script runs out. Drive `agent.respond()` with it and assert on the session and your trace sink: which writes ran, what was blocked, what the model was told.
+
 ## What a suite exports
 
 A suite is a `suite.js` that exports the agent options, your tools, a stand-in `run` per tool over a fresh seeded store, `createStore()`, a `state()` function for the grader, the tasks directory, the agent and user models, and prices. `createStore()` and `state()` may be async, so the store can be a seeded test database. See [examples/subscriptions/sim/suite.js](../examples/subscriptions/sim/suite.js).

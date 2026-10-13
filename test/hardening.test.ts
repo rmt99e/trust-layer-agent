@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { allow, approve, check, createSession, handoff, jsonl, loadSession, read, ToolError, write, z, type Session } from "../src/index.js";
 import { runTool } from "../src/tools.js";
-import { scripted } from "./fake-model.js";
+import { scripted } from "../src/sim/scripted.js";
 import { agent, lines, raw, session } from "./harness.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); lines.length = 0; });

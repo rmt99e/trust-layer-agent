@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, check, allow, createSession, read, write, z } from "../src/index.js";
 import { loadJourneys } from "../src/journeys.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type Step } from "../src/sim/scripted.js";
 
 const PLAN_CHANGE = join(import.meta.dirname, "journeys", "plan-change.yaml");
 const TOOLS = ["verify_customer", "get_account", "get_usage", "get_eligible_plans", "quote_plan_change", "change_plan", "add_usage_pack", "open_case"];

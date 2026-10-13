@@ -1,7 +1,7 @@
 // A turn the model fails: what survives, and what the next turn does with it.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { allow, approve, check, memoryStore, TurnFailed, withStore, write, z, type Model, type Session } from "../src/index.js";
-import { scripted } from "./fake-model.js";
+import { scripted } from "../src/sim/scripted.js";
 import { agent, lines, session } from "./harness.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); lines.length = 0; });

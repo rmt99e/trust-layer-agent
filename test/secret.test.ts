@@ -1,7 +1,7 @@
 // `secret` input fields: real for run(), records() and the checks; [redacted] everywhere the session, traces or history keep them.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { allow, approve, block, check, read, ToolError, write, z } from "../src/index.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type Step } from "../src/sim/scripted.js";
 import { agent, lines, session } from "./harness.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); lines.length = 0; });

@@ -4,7 +4,7 @@ import { makeAgent } from "../examples/procurement/agent.js";
 import { createStore, renderPurchaseOrder, SEED } from "../examples/procurement/store.js";
 import subscriptions from "../examples/subscriptions/sim/suite.js";
 import { prepare, type Suite } from "../src/sim/simulator.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type Step } from "../src/sim/scripted.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
 

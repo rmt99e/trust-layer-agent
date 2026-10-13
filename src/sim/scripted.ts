@@ -1,4 +1,5 @@
-import type { Model, ModelRequest, ModelResponse } from "../src/models/types.js";
+// A model that replays a fixed script, for tests that need no network and no key. Exported as `trust-layer-agent/testing`.
+import type { Model, ModelRequest, ModelResponse } from "../models/types.js";
 
 /** One scripted model step: a draft reply, or one or more tool calls. */
 export type Step = string | { call: string; input?: Record<string, unknown> } | { calls: { call: string; input?: Record<string, unknown> }[] };

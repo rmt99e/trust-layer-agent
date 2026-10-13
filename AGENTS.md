@@ -4,7 +4,7 @@ Notes for coding agents working on this repo. For using the package in an app, r
 
 trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
 
-Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `resume`, `forget`, `chat`), two commands (`test`, `snapshot`).
+Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `resume`, `forget`, `chat`), three commands (`test`, `snapshot`, `validate`).
 
 ## Layout
 
@@ -23,9 +23,9 @@ Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `ap
 - `src/store.ts`: the `SessionStore` contract (load/save with optimistic locking), `memoryStore()`, `withStore()` (the agent's verbs by session id), `StaleSession`.
 - `src/stores/postgres.ts`: the Postgres store + trace sink over an app-supplied query function; exported as `trust-layer-agent/postgres`.
 - `src/models/`: `types.ts` (the Model interface), `anthropic.ts`, `openai-compatible.ts`, `resolve.ts` ("provider:model" strings).
-- `src/sim/`: `task.ts` (task files), `simulator.ts` (simulated user, stand-in tools, trials), `grade.ts` (deterministic grading).
-- `src/cli.ts`: the `test` and `snapshot` commands.
-- `test/`: vitest unit tests. `fake-model.ts` is a scripted Model (no network); `fixtures.ts` builds check contexts. `tsconfig.test.json` type-checks the tests in CI (`npm run typecheck`).
+- `src/sim/`: `task.ts` (task files), `simulator.ts` (validation, simulated user, stand-in tools, trials), `grade.ts` (deterministic grading), `scripted.ts` (the scripted test model).
+- `src/cli.ts`: the `test`, `snapshot` and `validate` commands.
+- `test/`: vitest unit tests. `src/sim/scripted.ts` (exported as `trust-layer-agent/testing`) is the scripted Model they run on, no network; `fixtures.ts` builds check contexts, `harness.ts` builds agents over an in-memory trace sink. `tsconfig.test.json` type-checks the tests in CI (`npm run typecheck`).
 - `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the operations example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `test/examples.test.ts` drives both with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests.
 - `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`. `results/` and `traces/` are written at run time and gitignored.
 - `docs/design.md`: the original design's decisions, kept for history.
@@ -54,13 +54,14 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 - Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass→fail against the snapshot; 2 on errors (including an unknown `--against` name, which fails before any model call).
 - Report pass^k with trial counts (passing trials / total), not a bare percentage.
 - `snapshot` needs `--suite` and `--name`. It pins the newest result to `snapshots/<name>.json` and refuses if the configuration changed since that run.
+- `validate --suite <dir>` runs the pre-run checks only, with no model call and no key; it is free and safe to run anytime.
 - `node dist/cli.js ...` works the same as `npx trust-layer-agent ...`.
 - Never run `test`, `smoke` or the examples without the user's go-ahead: each makes paid API calls.
 
 ## Hard constraints
 
 - Runtime dependencies: `zod` and `yaml` only. No model provider SDKs; adapters call HTTP APIs with `fetch`.
-- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300; the simulator and CLI stay under 450. Count with:
+- Logic lines (non-blank, non-comment) have two caps: the library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300; the simulator, CLI and scripted test model stay under 450. Count with:
   `cat $(ls src/*.ts src/models/*.ts src/stores/*.ts | grep -v cli.ts) | grep -Ev '^\s*($|//|/?\*)' | wc -l`
   `cat src/cli.ts src/sim/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Node 20+. ESM only. Published as compiled JavaScript with `.d.ts` types, so plain-JS apps import it with no build step.

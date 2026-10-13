@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, allow, approve, check, createSession, forget, memoryStore, read, StaleSession, withStore, write, z, type Session, type SessionStore, type SessionV1 } from "../src/index.js";
 import { postgres } from "../src/stores/postgres.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type Step } from "../src/sim/scripted.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
 

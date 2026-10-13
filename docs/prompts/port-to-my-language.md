@@ -98,7 +98,7 @@ make them pass before moving on.
    its id and its type; rev + 1 per turn; a handed-off session returns the handoff message without calling
    the model.
    SPEC: 2, 3. Source: src/agent.ts. Tests: test/agent.test.ts, driven by a scripted fake model (port
-   test/fake-model.ts), including the open_case-redraft case for no_repeated_writes. No network in these tests.
+   src/sim/scripted.ts, exported as trust-layer-agent/testing), including the open_case-redraft case for no_repeated_writes. No network in these tests.
 7. One model adapter over plain HTTP: the Model interface (id, generate), ModelError, a single retry on 429, 5xx
    or a network error, no sampling parameters unless passed in extra, "provider:model" strings with keys read
    from the environment, and raw provider blocks echoed back within a turn.

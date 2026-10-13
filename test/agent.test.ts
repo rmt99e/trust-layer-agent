@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Agent, allow, approve, check, createSession, jsonl, read, rewrite, ToolError, write, z, type Session, type Tool } from "../src/index.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type Step } from "../src/sim/scripted.js";
 
 let dir: string;
 beforeEach(() => {
@@ -490,5 +490,16 @@ describe("approve: an action parked for a person", () => {
     const { approvals, ...old } = loggedIn();
     const t = await agent.respond(old as Session, "hi");
     expect(t.session.approvals).toEqual([]);
+  });
+});
+
+describe("the README's model-free testing snippet", () => {
+  it("holds as written: the write is blocked without a yes, the done claim is refused, the third draft is sent", async () => {
+    const refund = write({ name: "refund_order", description: "Refund an order.", input: z.object({ orderId: z.string() }), run: () => ({ refunded: true }) });
+    const model = scripted([{ call: "refund_order", input: { orderId: "123" } }, "Your refund has been processed.", "I can refund that order. Shall I go ahead?"]);
+    const r = await new Agent({ model, instructions: "You help.", tools: [refund], trace: false }).respond(loggedIn(), "refund order 123");
+    expect(r.session.results.some((x) => x.tool === "refund_order" && x.ok)).toBe(false);
+    expect(r.reply).toBe("I can refund that order. Shall I go ahead?");
+    expect(model.requests.length).toBe(3);
   });
 });

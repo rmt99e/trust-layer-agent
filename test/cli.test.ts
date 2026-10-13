@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compare, configOf, estimatePerTrial, gate, libraryFiles, main, overall, pickSnapshot, summarize, type Run } from "../src/cli.js";
@@ -79,14 +79,14 @@ describe("library fingerprint", () => {
 describe("cost estimate", () => {
   it("prices the last run's tokens at the current models' prices", () => {
     const t = { ...trial("a", "pass"), tokens: { agent: { input: 100_000, output: 10_000 }, user: { input: 20_000, output: 2_000 } } };
-    const prices = { big: { input: 2, output: 10 }, small: { input: 1, output: 5 } };
-    const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, userModel: "big" } as unknown as Suite);
-    expect(at("big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + user 0.06
-    expect(at("small")).toBeCloseTo(0.1 + 0.05 + 0.06);        // switching the agent model halves its part
+    const prices = { "anthropic:big": { input: 2, output: 10 }, "anthropic:small": { input: 1, output: 5 } };
+    const at = (agentModel: string) => estimatePerTrial([t], { prices, agentModel, userModel: "anthropic:big" } as unknown as Suite);
+    expect(at("anthropic:big")).toBeCloseTo(0.2 + 0.1 + 0.04 + 0.02);    // agent 0.30 + user 0.06
+    expect(at("anthropic:small")).toBeCloseTo(0.1 + 0.05 + 0.06);        // switching the agent model halves its part
   });
   it("prices a results file written before the user role by mean cost instead of crashing", () => {
     const old = { ...trial("a", "pass"), cost: 0.5, tokens: { agent: { input: 1, output: 1 }, customer: { input: 1, output: 1 } } } as any;
-    expect(estimatePerTrial([old], { prices: {}, agentModel: "m", userModel: "m" } as unknown as Suite)).toBe(0.5);
+    expect(estimatePerTrial([old], { prices: {}, agentModel: "anthropic:m", userModel: "anthropic:m" } as unknown as Suite)).toBe(0.5);
   });
 });
 
@@ -184,7 +184,7 @@ describe("fingerprint covers outcome, reconcileWith, repeatable, fromUser and se
   const get = read({ name: "get_account", description: "x", input: z.object({}), run: () => ({}) });
   const change = (o: Record<string, unknown> = {}) => write({ name: "change_plan", description: "x", input: z.object({}), confirm: false,
     outcome: (r: any) => (r.status === "pending" ? "pending" : "done"), reconcileWith: "get_account", run: () => ({}), ...o });
-  const cfg = (t: ReturnType<typeof change>) => configOf({ agent: { instructions: "x" }, tools: [get, t], agentModel: "m", userModel: "m" } as any, suiteFile);
+  const cfg = (t: ReturnType<typeof change>) => configOf({ agent: { instructions: "x" }, tools: [get, t], agentModel: "anthropic:m", userModel: "anthropic:m" } as any, suiteFile);
   const base = cfg(change());
   const differs = (t: ReturnType<typeof change>) => compare({ config: base, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: cfg(t), summary: {}, overall: 1, cost: 0 })
     .some((l) => l === '⚠️  config differs from snapshot "v4": tools');
@@ -208,7 +208,7 @@ describe("fingerprint covers outcome, reconcileWith, repeatable, fromUser and se
 describe("fingerprint covers claim kinds, which JSON alone would drop", () => {
   const suiteFile = join(mkdtempSync(join(tmpdir(), "tla-fp-")), "suite.js");
   writeFileSync(suiteFile, "export default {}");
-  const cfg = (kinds: readonly unknown[]) => configOf({ agent: { instructions: "x", builtins: { no_unconfirmed_claims: { kinds } } }, tools: [], agentModel: "m", userModel: "m" } as any, suiteFile);
+  const cfg = (kinds: readonly unknown[]) => configOf({ agent: { instructions: "x", builtins: { no_unconfirmed_claims: { kinds } } }, tools: [], agentModel: "anthropic:m", userModel: "anthropic:m" } as any, suiteFile);
   const base = cfg([{ name: "count", find: /(\d+) records/ }]);
   const differs = (kinds: readonly unknown[]) => compare({ config: base, summary: {}, overall: 1, cost: 0, name: "v4" }, { config: cfg(kinds), summary: {}, overall: 1, cost: 0 })
     .some((l) => l === '⚠️  config differs from snapshot "v4": checks');
@@ -229,7 +229,34 @@ describe("the CLI refuses bad numbers and unknown commands", () => {
     await expect(main(["test", "--suite", dir, "--k"])).rejects.toThrow("--k needs a number (got nothing)");
     await expect(main(["test", "--suite", dir, "--k", "0"])).rejects.toThrow("--k needs a whole number of trials, at least 1 (got 0)");
     await expect(main(["test", "--suite", dir, "--min-pass", "2"])).rejects.toThrow('--min-pass needs a number from 0 to 1 (got "2")');
-    await expect(main(["bogus"])).rejects.toThrow(/^usage: trust-layer-agent test\|snapshot/);
+    await expect(main(["bogus"])).rejects.toThrow(/^usage: trust-layer-agent test\|snapshot\|validate/);
   });
 });
 
+
+describe("validate: what test checks before any model call, with no key", () => {
+  it("passes the shipped procurement suite and names its tasks, tools and models", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await main(["validate", "--suite", "examples/procurement/sim"]);
+    expect(log.mock.calls[0][0]).toMatch(/examples\/procurement\/sim\/suite\.js: 4 tasks, 8 tools, models anthropic:[\w.-]+ \/ anthropic:[\w.-]+: valid$/);
+    log.mockRestore(); vi.unstubAllEnvs();
+  });
+  it("fails on a suite whose stand-ins don't match its tools, before any model is built", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tla-validate-"));
+    writeFileSync(join(dir, "suite.js"), 'export default { tools: [], standIns: { ghost: () => ({}) }, tasks: ".", seed: {}, createStore: () => ({}), state: () => ({}), agentModel: "anthropic:m", userModel: "anthropic:m", prices: {} };');
+    await expect(main(["validate", "--suite", dir])).rejects.toThrow('stand-in "ghost" names no tool');
+  });
+});
+
+describe("the package exports a testing entry for the scripted model", () => {
+  it("maps trust-layer-agent/testing to the built scripted module", async () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(pkg.exports["./testing"]).toEqual({ types: "./dist/sim/scripted.d.ts", import: "./dist/sim/scripted.js" });
+    const { scripted } = await import("../src/sim/scripted.js");
+    const m = scripted(["Hi.", { call: "get_plan" }]);
+    expect(await m.generate({ system: "", messages: [], tools: [] })).toMatchObject({ text: "Hi.", stop: "end" });
+    expect(await m.generate({ system: "", messages: [], tools: [] })).toMatchObject({ stop: "tool_calls", toolCalls: [{ id: "t_1", name: "get_plan", input: {} }] });
+    expect(m.requests).toHaveLength(2);
+  });
+});

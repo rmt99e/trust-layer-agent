@@ -1,6 +1,6 @@
 // Shared helpers for the agent-level test files: an agent over an in-memory trace sink, a logged-in session, raw model responses.
 import { Agent, createSession, type Model, type ModelResponse } from "../src/index.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type Step } from "../src/sim/scripted.js";
 
 export const session = () => createSession({ facts: { verified: true, accountId: "acc_1" } });
 /** A model whose steps may also be raw responses, for stop reasons the scripted model can't express. */
