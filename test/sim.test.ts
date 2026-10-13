@@ -6,7 +6,7 @@ import { Agent, createSession, ModelError, read, ToolError, write, z } from "../
 import { canonical, grade, type Observed } from "../src/sim/grade.js";
 import { prepare, runSuite, type Suite } from "../src/sim/simulator.js";
 import { loadTasks } from "../src/sim/task.js";
-import { scripted, type Step } from "./fake-model.js";
+import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 import { ctx } from "./fixtures.js";
 
 // A tiny domain: one account, a balance, a "set_plan" write.
@@ -28,7 +28,7 @@ const standIns: Suite["standIns"] = {
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "tla-sim-")); vi.spyOn(console, "warn").mockImplementation(() => {}); });
 const task = (id: string, body: string) => writeFileSync(join(dir, `${id}.yaml`), `id: ${id}\npurpose: test\nuser:\n  persona: p\n  reason: r\n  known_info: k\n  instructions: i\n${body}`);
-const suite = (agent: Step[], user: Step[], over: Partial<Suite> = {}): Suite => ({
+const suite = (agent: ScriptStep[], user: ScriptStep[], over: Partial<Suite> = {}): Suite => ({
   agent: { instructions: "Help." }, tools, standIns, seed: SEED, createStore: makeStore, state: (s: any) => s.db, tasks: dir,
   agentModel: scripted(agent, { id: "fake:agent" }), userModel: scripted(user, { id: "fake:user" }),
   prices: { "fake:agent": { input: 1, output: 1 }, "fake:user": { input: 1, output: 1 } }, now: "2026-10-03T12:00:00Z", ...over,
@@ -223,5 +223,18 @@ describe("injectable clock", () => {
     };
     expect(await run("2026-10-03T12:00:00Z")).toContain("<tool_result>");
     expect(await run("2026-10-05T12:00:00Z")).toContain("has expired");
+  });
+});
+
+describe("validateSuite needs no key", () => {
+  it("validates a suite whose models are provider strings with the key unset, and still rejects an unpriced or malformed model", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    const { validateSuite } = await import("../src/sim/simulator.js");
+    task("keyless", "expect: {}");
+    const base = suite([], ["hello"], { agentModel: "anthropic:m", userModel: "anthropic:m", prices: { "anthropic:m": { input: 1, output: 1 } } });
+    expect((await validateSuite(base)).length).toBeGreaterThan(0);
+    await expect(validateSuite({ ...base, prices: {} })).rejects.toThrow('no price for model "anthropic:m" in suite.prices');
+    await expect(validateSuite({ ...base, agentModel: "nope" })).rejects.toThrow('model "nope": use "anthropic:<model>" or "openai-compatible:<model>"');
+    vi.unstubAllEnvs();
   });
 });

@@ -8,7 +8,7 @@ Copy everything inside the block into your coding agent, from the app's root fol
 
 ````text
 Add trust-layer-agent to this app. You write three things (tools, checks, journeys), call one function
-(agent.respond) and run two commands (test, snapshot).
+(agent.respond) and run three commands (test, snapshot, validate).
 Extend only through tools, checks, journeys and model adapters; never patch the package. It ships as plain ESM
 JavaScript with types: no build step in plain-JS apps, and TS apps get the types. Use only names the installed
 package exports (node_modules/trust-layer-agent/dist/index.d.ts): Agent, read, write, z, ToolError, check,
@@ -162,6 +162,11 @@ with file:line.
     - handoff_when: { user_says: ["real person", "human", "speak to someone"], summary: Customer asked for a person. }
 
 STOP.
+
+STEP 6b: Unit tests for the tools and checks, with no model: import { scripted } from "trust-layer-agent/testing",
+script the model's steps (a reply string or { call, input }), run agent.respond, and assert on the session (which
+writes ran, what the trace sink saw). Cover: a write attempted before a yes, a reply claiming a number no tool
+returned, a bound field the model tried to set. STOP.
 
 STEP 7: Simulations in agent/sim/. seed.js exports SEED and createStore(seed, { now }): an in-memory clone of the
 seed whose methods mirror the data functions the tools wrap. Never use the production database. Write 5 tasks

@@ -1,6 +1,6 @@
 # Testing your agent
 
-The reference for the `test` and `snapshot` commands and for suites. The README has the short version; [SPEC.md](../SPEC.md) §10–12 is normative for task files, grading and snapshots.
+The reference for the `test`, `snapshot` and `validate` commands and for suites. The README has the short version; [SPEC.md](../SPEC.md) §10–12 is normative for task files, grading and snapshots.
 
 ## `test` flags
 
@@ -13,6 +13,12 @@ The reference for the `test` and `snapshot` commands and for suites. The README 
 - Exit codes: 0 when the gate passes; 1 when pass^k is below `--min-pass` or a task flipped pass→fail against the snapshot; 2 on errors (a bad flag value, an unknown command, a suite that fails validation).
 
 `snapshot --suite <dir> --name <name>` pins the latest results with fingerprints of the models, instructions, journeys, knowledge, tools, checks and library code, and refuses if any of them changed since the last `test`.
+
+`validate --suite <dir> [--tasks a,b] [--agent-model provider:model]` runs only what `test` checks before its first model call: stand-ins match the tools, every task is valid and names real tools, each expected write applies to the seed, both models are priced. No model is built, so no key is needed; put it in CI next to your unit tests. A `--tasks` id that names no task is an error, so a typo can't pass as "0 tasks: valid".
+
+## Unit tests without a model
+
+`trust-layer-agent/testing` exports `scripted(steps, { id?, usage?, fail? })`, the model the library's own tests run on. Each step is a reply string or a tool call (`{ call, input }`, or `{ calls: [...] }` for several at once); the model replays them in order, records every request in `requests`, and throws once the script runs out. Drive `agent.respond()` with it and assert on the session and your trace sink: which writes ran, what was blocked, what the model was told.
 
 ## What a suite exports
 

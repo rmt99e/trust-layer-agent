@@ -360,6 +360,7 @@ node --env-file=.env examples/procurement/demo.js     # a scripted requester, th
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4
 npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v1
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v1 --min-pass 0.9
+npx trust-layer-agent validate --suite examples/subscriptions/sim          # the pre-run checks only: no model call, no key
 ```
 
 `test` prints a cost estimate, runs every task k times, prints a per-task table, writes `results/<timestamp>.json`, and diffs against the newest snapshot or the one named by `--against` (flipped tasks, friction, cost and changed config).
@@ -383,7 +384,20 @@ expect:
 max_steps: 12
 ```
 
-A suite is a `suite.js` that exports your agent options, your tools, a stand-in `run` per tool over a fresh seeded store, the tasks directory and the models. The flags, the suite shape, the other `expect` fields and the exact pass^k rule are in [docs/testing.md](docs/testing.md); the task format is normative in [SPEC.md](SPEC.md).
+A suite is a `suite.js` that exports your agent options, your tools, a stand-in `run` per tool over a fresh seeded store, the tasks directory and the models. `validate` runs everything `test` checks before its first model call (stand-ins match the tools, every task names real tools and its expected writes apply to the seed, both models are priced) and exits, so a CI job can gate task files for free. The flags, the suite shape, the other `expect` fields and the exact pass^k rule are in [docs/testing.md](docs/testing.md); the task format is normative in [SPEC.md](SPEC.md).
+
+Your own unit tests need no model either. `trust-layer-agent/testing` exports the scripted model the library's tests run on: a list of steps, each a reply or a tool call, that records every request it receives.
+
+```js
+import { scripted } from "trust-layer-agent/testing";
+
+const model = scripted([{ call: "refund_order", input: { orderId: "123" } }, "Your refund has been processed.", "I can refund that order. Shall I go ahead?"]);
+const r = await new Agent({ ...options, model }).respond(session, "refund order 123");
+// no yes was given, so the write was blocked, and "Your refund has been processed." never passed the claim check:
+assert(!r.session.results.some((x) => x.tool === "refund_order" && x.ok));
+assert(r.reply === "I can refund that order. Shall I go ahead?");
+assert(model.requests.length === 3);   // the blocked call, the blocked draft, the reply that was sent
+```
 
 ## How it differs from guardrail tools
 

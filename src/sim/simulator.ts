@@ -1,7 +1,7 @@
 import { Agent, TurnFailed, type AgentOptions, type Usage } from "../agent.js";
 import { claimKinds } from "../builtins.js";
 import { contextFrom, toolInfo } from "../checks.js";
-import { resolveModel } from "../models/resolve.js";
+import { modelId, resolveModel } from "../models/resolve.js";
 import { ModelError, type Model, type ModelMessage } from "../models/types.js";
 import { createSession, type Session } from "../session.js";
 import { ToolError, type Tool } from "../tools.js";
@@ -36,23 +36,29 @@ Instructions: ${t.user.instructions}
 Write only your next message: one to three short sentences, plain text. Share information only when asked or when your instructions say to. Never invent facts.
 When your goal is met or you've decided to stop, reply with only ###STOP###. If you're told a person will take over, reply ###TRANSFER###. If you'd need facts you don't have, reply ###OUT-OF-SCOPE###.`;
 
-/** Check stand-ins against the real tools and every task against the seed, before any model call. */
-export async function prepare(suite: Suite, only?: string[]) {
+/** Everything `test` checks before any model call, with no key needed: stand-ins match the tools, tasks are valid and name real tools, expected writes apply to the seed, both models are priced. */
+export async function validateSuite(suite: Suite, only?: string[]) {
   const names = new Set(suite.tools.map((t) => t.name));
   const unknown = Object.keys(suite.standIns).filter((n) => !names.has(n));
   const uncovered = [...names].filter((n) => !suite.standIns[n]);
   if (unknown.length || uncovered.length) throw new Error(`stand-ins don't match the tools: ${[
     ...unknown.map((n) => `stand-in "${n}" names no tool`), ...uncovered.map((n) => `tool "${n}" has no stand-in`)].join("; ")}`);
-  const tasks = loadTasks(suite.tasks).filter((t) => !only || only.includes(t.id));
+  const all = loadTasks(suite.tasks), tasks = all.filter((t) => !only || only.includes(t.id));
+  const missing = only?.filter((id) => !all.some((t) => t.id === id));
+  if (missing?.length) throw new Error(`--tasks names no task: ${missing.join(", ")}`);     // a typo must not pass a gate as "0 tasks: valid"
   for (const t of tasks) {
     const named = [...t.expect.writes.map((w) => w.tool), ...t.expect.forbidden_actions, ...t.expect.allowed_writes, ...t.inject_failures.map((f) => f.tool)];
     const bad = named.find((n) => !names.has(n));
     if (bad) throw new Error(`task ${t.id}: unknown tool "${bad}"`);
     await applyExpected(t, await suite.createStore(seedFor(t, suite.seed), { now: () => new Date() }), suite.standIns);
   }
-  const models = { agent: resolveModel(suite.agentModel), user: resolveModel(suite.userModel) };
-  for (const m of Object.values(models)) if (!suite.prices[m.id]) throw new Error(`no price for model "${m.id}" in suite.prices`);
-  return { tasks, models };
+  for (const m of [suite.agentModel, suite.userModel]) if (!suite.prices[modelId(m)]) throw new Error(`no price for model "${modelId(m)}" in suite.prices`);
+  return tasks;
+}
+/** Validate, then resolve both models (which needs their keys). */
+export async function prepare(suite: Suite, only?: string[]) {
+  const tasks = await validateSuite(suite, only);
+  return { tasks, models: { agent: resolveModel(suite.agentModel), user: resolveModel(suite.userModel) } };
 }
 
 /** Run every task k times. Stops early once accumulated cost passes maxCost. */

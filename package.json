@@ -37,6 +37,10 @@
     "./postgres": {
       "types": "./dist/stores/postgres.d.ts",
       "import": "./dist/stores/postgres.js"
+    },
+    "./testing": {
+      "types": "./dist/sim/scripted.d.ts",
+      "import": "./dist/sim/scripted.js"
     }
   },
   "bin": {

@@ -14,7 +14,7 @@ This document is language-neutral. The TypeScript package (`src/`) is the refere
 - Numbers are compared after normalization to the cent: `norm(x) = round(parseFloat(strip(x)) * 100) / 100`, where `strip` removes every character except digits, `.` and `-`.
 - "Turn" = the number of user messages in the session so far. The agent's reply to user message *n* has turn *n*.
 
-The surface: three nouns (**tools**, **checks**, **journeys**), the agent verbs (**respond**, **review**, **approve**, **decline**, **resume**, **forget**, **chat**), two commands (**test**, **snapshot**). Extension happens only through five points: tools, checks, journeys, model adapters and session stores.
+The surface: three nouns (**tools**, **checks**, **journeys**), the agent verbs (**respond**, **review**, **approve**, **decline**, **resume**, **forget**, **chat**), three commands (**test**, **snapshot**, **validate**). Extension happens only through five points: tools, checks, journeys, model adapters and session stores.
 
 ## 1. Tools
 
@@ -508,7 +508,7 @@ Grading is deterministic; there is no LLM judge. A trial passes iff all four com
 
 ## 12. Commands and snapshots
 
-Both commands load `<dir>/suite.js` (default export) and read `.env` from the working directory if present.
+The commands load `<dir>/suite.js` (default export) and read `.env` from the working directory if present.
 
 `test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against <name>]`, in order (a numeric flag whose value is missing, not a number or negative, `--min-pass` above 1, or `--k` not a whole number of at least 1, is an error before any model call; an unknown command is an error with the usage line; both exit 2):
 1. Resolve the snapshot to compare against: `snapshots/<name>.json` for `--against <name>`, else the newest `snapshots/*.json` by modification time, else none. A missing named snapshot MUST fail here, before any model call: `--against <name>: no snapshot at <path>`.
@@ -537,6 +537,10 @@ Both commands load `<dir>/suite.js` (default export) and read `.env` from the wo
 | `library` | hash of the list of contents of **every** compiled `.js` file of the package, recursively (including the simulator and model adapters), sorted by relative path |
 
 `snapshot --suite <dir> --name <name>` requires `--name` (`--name is required`) and an existing results file (`no results yet: run \`test\` first`); it MUST refuse with `the configuration changed since the last test run; run \`test\` again before snapshotting` if the newest results' `config` differs from the current fingerprint. It writes `snapshots/<name>.json` = `{ name, createdAt, k, config, tasks: [ids], summary, overall, cost }`.
+
+`validate --suite <dir> [--tasks a,b] [--agent-model provider:model]` runs the pre-run validation of `test` (section 10: stand-ins match the tools, every task is valid and names real tools, each expected write applies to the seed) plus the price check for both models, **without resolving a model**, so it needs no key; a model given as a string MUST still fail if its shape is not `anthropic:<model>` or `openai-compatible:<model>`, and `--tasks` naming an id no task has MUST fail with `--tasks names no task: <ids>` (for `test` too), so a typo can't pass a gate as `0 tasks: valid`. It prints `<suite.js>: <n> tasks, <m> tools, models <agent id> / <user id>: valid` and exits 0; any problem is an error (exit 2).
+
+**Testing helper.** The package exports `trust-layer-agent/testing` with `scripted(steps, { id?, usage?, fail? })`: a `Model` that replays a fixed script, each step a reply string, `{ call, input? }` or `{ calls: [{ call, input? }] }`, records every request it receives in `requests`, assigns tool call ids `t_<n>`, reports `stop` `end` for a reply and `tool_calls` for calls, rejects with `fail` on every call when given, and throws `scripted model: script ran out after <n> steps` past the end; its default `id` is `scripted`. The reference tests run on it; a port SHOULD ship the same.
 
 ## 13. Conformance
 

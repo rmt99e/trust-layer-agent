@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300; the simulator and CLI stay under 450. A change that adds a feature near a cap needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300; the simulator, CLI and scripted test model stay under 450. A change that adds a feature near a cap needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
@@ -48,7 +48,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - **No prices or business values in `src/`.** They come from tools.
 - **Vendor-neutral names.** No real company or product names in code, examples or sample data.
 - **Extension only through tools, checks, journeys, model adapters and session stores.** If a use case needs a core change, the interface is wrong; open an issue first. Things that don't fit go in docs/roadmap.md.
-- **Logic-line caps.** The library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 non-blank, non-comment lines; the simulator and CLI under 450. Count with:
+- **Logic-line caps.** The library (`src/` without `src/sim/` and `src/cli.ts`) stays under 1,300 non-blank, non-comment lines; the simulator, CLI and scripted test model under 450. Count with:
   `cat $(ls src/*.ts src/models/*.ts src/stores/*.ts | grep -v cli.ts) | grep -Ev '^\s*($|//|/?\*)' | wc -l`
   `cat src/cli.ts src/sim/*.ts | grep -Ev '^\s*($|//|/?\*)' | wc -l`
 - Runtime dependencies stay `zod` and `yaml` only. Adapters use `fetch`, no provider SDKs.
@@ -60,7 +60,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 - [ ] Behavior changes include a `test --against <snapshot>` diff with trial counts (or say a maintainer should run it).
 - [ ] SPEC.md updated if behavior in the spec changed.
 - [ ] A `CHANGELOG.md` entry under `[Unreleased]`.
-- [ ] Logic-line counts still under their caps (library 1,300; simulator and CLI 450).
+- [ ] Logic-line counts still under their caps (library 1,300; simulator, CLI and test model 450).
 - [ ] No secrets, personal data or real company names in code, fixtures or traces.
 
 ## Where docs live

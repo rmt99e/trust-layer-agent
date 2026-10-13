@@ -1,7 +1,7 @@
 // Who did what, when, under which provider request; and a person handing a conversation back.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { allow, approve, check, handoff, TurnFailed, write, z, type Model } from "../src/index.js";
-import { scripted } from "./fake-model.js";
+import { scripted } from "../src/sim/scripted.js";
 import { agent, lines, session } from "./harness.js";
 
 beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); lines.length = 0; });

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // npx trust-layer-agent test --suite <dir> [--k 4] [--tasks a,b] [--agent-model provider:model] [--max-cost 10] [--min-pass 1] [--against v1]
 // npx trust-layer-agent snapshot --suite <dir> --name v1
+// npx trust-layer-agent validate --suite <dir> [--tasks a,b] [--agent-model provider:model]      (no model call, no key)
 import { claimKinds } from "./builtins.js";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -8,7 +9,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { listFiles } from "./files.js";
 import type { Model } from "./models/types.js";
-import { runSuite, type Suite, type Trial } from "./sim/simulator.js";
+import { runSuite, validateSuite, type Suite, type Trial } from "./sim/simulator.js";
+import { modelId } from "./models/resolve.js";
 import { loadTasks } from "./sim/task.js";
 import { toolSpec, type Tool } from "./tools.js";
 import type { ClaimKind } from "./claims.js";
@@ -52,7 +54,6 @@ export function configOf(suite: Suite, suiteFile: string): Record<string, string
   };
 }
 
-const modelId = (m: string | Model) => (typeof m === "string" ? m : m.id);
 // Every declaration that changes behavior, with function bodies as source text (JSON would drop them).
 const toolFingerprint = (t: Tool) => ({ ...toolSpec(t), kind: t.kind, bind: t.bind, confirm: t.confirm, visible: t.visible, verifies: t.verifies,
   before: t.beforeVerification, outcome: t.outcome?.toString(), reconcileWith: t.reconcileWith, repeatable: t.repeatable, fromUser: t.fromUser, secret: t.secret });
@@ -110,7 +111,7 @@ export function pickSnapshot(dir: string, name?: string): string | undefined {
 export async function main([cmd, ...args]: string[]) {
   const flag = (n: string, d?: string) => (args.includes(`--${n}`) ? args[args.indexOf(`--${n}`) + 1] : d);
   try { process.loadEnvFile(); } catch { /* no .env: keys come from the environment */ }
-  if (cmd !== "test" && cmd !== "snapshot") throw new Error("usage: trust-layer-agent test|snapshot --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--against v1] [--name v1]");
+  if (cmd !== "test" && cmd !== "snapshot" && cmd !== "validate") throw new Error("usage: trust-layer-agent test|snapshot|validate --suite <dir> [--k 4] [--tasks a,b] [--agent-model m] [--max-cost 10] [--min-pass 1] [--against v1] [--name v1]");
   const num = (n: string, d: string, max = Infinity) => {
     const raw = flag(n, d), v = Number(raw);
     if (raw === undefined || !Number.isFinite(v) || v < 0 || v > max) throw new Error(`--${n} needs a number${max < Infinity ? ` from 0 to ${max}` : ""} (got ${raw === undefined ? "nothing" : `"${raw}"`})`);
@@ -120,6 +121,10 @@ export async function main([cmd, ...args]: string[]) {
   const suite: Suite = (await import(pathToFileURL(suiteFile).href)).default;
   if (flag("agent-model")) suite.agentModel = flag("agent-model")!;
 
+  if (cmd === "validate") {                                           // what `test` checks before its first model call, and nothing more
+    const tasks = await validateSuite(suite, flag("tasks")?.split(","));
+    return console.log(`${suiteFile}: ${tasks.length} tasks, ${suite.tools.length} tools, models ${modelId(suite.agentModel)} / ${modelId(suite.userModel)}: valid`);
+  }
   if (cmd === "snapshot") {
     const name = flag("name"), last = newest("results");
     if (!name || !last) throw new Error(name ? "no results yet: run `test` first" : "--name is required");
