@@ -46,7 +46,7 @@ Simulations cost real money. They need `ANTHROPIC_API_KEY` in `.env` (copy `.env
 ```sh
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --tasks usage-pack,change-fails
-npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v4-sonnet --min-pass 1
+npx trust-layer-agent test --suite examples/subscriptions/sim --k 4 --against v0.2.0-sonnet --min-pass 1
 npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 ```
 

@@ -2,11 +2,15 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 0.1.0.
 
-`v1` to `v4` are internal milestones (git tags), not releases. **0.1.0** (git tag `v0.1.0`, 2026-10-05) is the first public release, on GitHub only: nothing is on npm yet, so install from GitHub and a `prepare` script builds the package. The next release will be **0.2.0**, because the `user` rename below breaks 0.1.0 journey and task files.
+`v1` to `v4` are internal milestones (git tags), not releases. Releases are GitHub tags; nothing is on npm yet, so install from GitHub and a `prepare` script builds the package. **0.2.0** breaks 0.1.0 journey and task files through the `user` rename below; sessions stored by 0.1.0 load unchanged.
 
 ## [Unreleased]
 
-Everything here is unreleased work since 0.1.0 and ships as 0.2.0.
+Nothing yet.
+
+## [0.2.0] - 2026-10-13
+
+The trust layer for any agent that acts on someone's behalf: approvals, stores, owned sessions, an auditable record, secrets kept out of it, model-free testing, and two claim-rule fixes found by the first real-model runs of the second example. Measured on the shipped code: subscriptions 21/22 tasks at k = 4 (87/88 trials, the one miss an unneeded handoff, no false claim), procurement 4/4 (16/16); docs/results.md has the runs.
 
 ### Added
 
@@ -17,7 +21,7 @@ Everything here is unreleased work since 0.1.0 and ships as 0.2.0.
 - **Inputs from the user.** `fromUser` on a tool and the built-in check `no_invented_inputs`: listed input fields must hold values the user gave (whole-word, case-insensitive, in a user message) or a session fact. Tool output never counts, so a tool can't search for something it only discovered.
 - **Operator-defined claim kinds.** `builtins: { no_unconfirmed_claims: { kinds: [{ name, find, confirms? }] } }` extends the claim check to an app's own vocabulary (counts, status words, reference numbers); a match in a negated clause is not a claim. The grader applies the suite's kinds.
 - **Typed tool declarations.** `read()`/`write()` infer the input type from the zod schema: `run`, `bind`, `fromUser`, `secret` and `confirm.by` are typed against it, so a misspelled field is a compile error; `records` and `outcome` are typed from `run`'s return when `run` is declared first.
-- **Reference results for 0.2.0.** `snapshots/v0.2.0-sonnet.json` (subscriptions, 22 tasks, pass^4 100%, 88/88 trials) and `snapshots/v0.2.0-procurement-sonnet.json` (procurement's first reference, 4 tasks, pass^4 100%, 16/16); docs/results.md has the runs, what the procurement runs found, and what each snapshot's library fingerprint predates.
+- **Reference results for 0.2.0.** `snapshots/v0.2.0-sonnet.json` (subscriptions, 22 tasks, pass^4 95%, 87/88 trials, zero harmful cases) and `snapshots/v0.2.0-procurement-sonnet.json` (procurement's first reference, 4 tasks, pass^4 100%, 16/16), both taken on the released code; docs/results.md has the runs and what the procurement runs found.
 - **Testing without a model.** `trust-layer-agent/testing` exports `scripted(steps, …)`, the model the library's own tests run on, so an adopter's unit tests can drive `agent.respond()` with no key. `validate --suite <dir>` runs the checks `test` makes before its first model call (stand-ins, tasks, expected writes, prices) without building a model, for a free CI gate; a `--tasks` id that names no task is an error for both commands; `validateSuite()` is exported from `trust-layer-agent/sim` and `prepare()` now calls it.
 - **A second worked journey, `examples/procurement/`:** a company's purchasing desk, using `fromUser`, an `approve()` check for orders over the team's limit, two claim kinds and `agent.review()` on the app-rendered supplier email, with a 4-task suite and a demo of a person approving a parked order. `test/examples.test.ts` validates both suites and drives the procurement example with a scripted model on every CI run.
 - Smaller: `HttpOptions` (`timeoutMs`, `retryDelayMs`) on both adapters; `AgentOptions.warn` for startup notices; `loadSession()` and `SessionV1`; system notes escape anything interpolated from outside the library; the snapshot fingerprint covers `fromUser` and the claim kinds' source; `npm run typecheck` type-checks the tests, and CI runs it on Node 20, 22 and 24 plus `npm pack --dry-run`; `engines.node` is `>=20.12`. Trace lines: `check` gains `approval` on a parked action, and `approval`, `review`, `model` and `resume` lines are new. `builtins: { no_invented_inputs: false }` turns the new check off; a field can't be both bound and `fromUser`. `forget` through `withStore` deletes the trace and stores a tombstone that `load` returns. The snapshot fingerprint also covers each tool's `secret` list, since redaction changes the history the model sees. New exports: `approve`, `loadSession`, `TurnFailed`, `teachingView`, and the types `Approval`, `ClaimKind`, `Verdict`, `StoreOptions`, `HttpOptions`, `SessionV1`.
@@ -25,7 +29,7 @@ Everything here is unreleased work since 0.1.0 and ships as 0.2.0.
 ### Changed
 
 - **The party the agent talks to is the `user`, not the `customer`.** The library is a trust layer for any LLM agent that acts on someone's behalf; customer support is one journey. Renamed, with no aliases: the message role `customer` → `user`; the prompt fence `<customer_message>` → `<user_message>` and the data rule's wording; the journey guardrail `customer_says` → `user_says`; the task file block `customer:` → `user:` and its `reason_for_call` → `reason`; the suite field `customerModel` → `userModel`; the tool declaration `fromCustomer` → `fromUser`; the `turn` trace field `customer` → `user`; trial `tokens.customer` and transcript roles → `user`; the default `handoff_to_person` summary → `User asked for a person.`; every block reason that said "the customer" now says "the user". **Session schema is v2**: `createSession` and `forget` write `v: 2`, and `loadSession` upgrades a v1 session, so stored sessions keep working. Journey and task files must be updated by hand (the loader names the unknown key with file and line).
-- **Behavior a maintainer should measure** with `test --against v4-sonnet` before re-snapshotting: the rename (fence, data rule, block reasons and the simulated user's prompt are model-facing); the `complete_reply` structural check; the reconcile read counting toward failures; worded prices ("29 a month"); the approval commitment re-check; history order after an approval and after a failed turn; wider default hiding of personal-data fields (`pin`, `password`, `secret`, `…token`, `passport`, `tax_id`, `national_id`, `licence_number`, `account_number`, `routing`); the resume system note.
+- **Behavior measured** (the v0.2.0 snapshots are the result; compare future changes with `test --against v0.2.0-sonnet`): the rename (fence, data rule, block reasons and the simulated user's prompt are model-facing); the `complete_reply` structural check; the reconcile read counting toward failures; worded prices ("29 a month"); the approval commitment re-check; history order after an approval and after a failed turn; wider default hiding of personal-data fields (`pin`, `password`, `secret`, `…token`, `passport`, `tax_id`, `national_id`, `licence_number`, `account_number`, `routing`); the resume system note.
 - **Two line caps** replace the single `src/` cap: the library (`src/` without `src/sim/` and `src/cli.ts`) under 1,300, the simulator and CLI under 450. The aggregate ceiling rises from 1,600 to 1,750; the trust boundary is the one to watch.
 - The README was rewritten in plain language; SPEC, AGENTS.md, llms.txt, CONTRIBUTING.md, SECURITY.md and the copy-paste prompts were brought in line, and docs/design.md was trimmed to its decisions.
 
@@ -191,7 +195,8 @@ Internal milestone: the runtime, both model adapters and the subscriptions examp
 - Model adapters for `anthropic` and `openai-compatible`, using plain `fetch`.
 - The subscriptions example: the 10-line refunds quickstart and the full plan-change agent (verification, usage, eligible plans, quotes, plan change, refunds, usage packs, cases and handoff) over a seeded in-memory store.
 
-[Unreleased]: https://github.com/rmt99e/trust-layer-agent/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rmt99e/trust-layer-agent/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rmt99e/trust-layer-agent/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/rmt99e/trust-layer-agent/compare/v4...v0.1.0
 [v4]: https://github.com/rmt99e/trust-layer-agent/compare/v3...v4
 [v3]: https://github.com/rmt99e/trust-layer-agent/compare/v2...v3
