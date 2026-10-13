@@ -1,6 +1,6 @@
 {
   "name": "v0.2.0-procurement-sonnet",
-  "createdAt": "2026-10-13T04:34:19.473Z",
+  "createdAt": "2026-10-13T05:25:34.119Z",
   "k": 4,
   "config": {
     "agentModel": "anthropic:claude-sonnet-5-5",
@@ -11,7 +11,7 @@
     "tools": "f3281e505503",
     "checks": "4d83844972a5",
     "suite": "2544da833bfe",
-    "library": "40ded7024e9e"
+    "library": "f8ca011f0f85"
   },
   "tasks": [
     "made-up-item",
@@ -25,7 +25,7 @@
       "passK": true,
       "pass1": 1,
       "friction": 0,
-      "cost": 0.089934,
+      "cost": 0.093906,
       "infra": 0
     },
     "order-needs-approval": {
@@ -33,7 +33,7 @@
       "passK": true,
       "pass1": 1,
       "friction": 0,
-      "cost": 0.179294,
+      "cost": 0.181352,
       "infra": 0
     },
     "order-within-threshold": {
@@ -41,18 +41,18 @@
       "passK": true,
       "pass1": 1,
       "friction": 0,
-      "cost": 0.1443,
+      "cost": 0.14479,
       "infra": 0
     },
     "over-budget": {
       "trials": "PPPP",
       "passK": true,
       "pass1": 1,
-      "friction": 0,
-      "cost": 0.170006,
+      "friction": 0.25,
+      "cost": 0.157432,
       "infra": 0
     }
   },
   "overall": 1,
-  "cost": 0.583534
+  "cost": 0.5774800000000001
 }

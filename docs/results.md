@@ -9,19 +9,17 @@ Both shipped suites, Sonnet 5.5 as agent and as simulated user, k=4, graded by t
 
 | Suite | pass^4 | Trials passed | Harmful cases | Friction per trial | Cost |
 |---|---|---|---|---|---|
-| subscriptions (22 tasks) | 100% (22/22) | 88/88 | 0 | 0.16 | $5.13 |
-| procurement (4 tasks) | 100% (4/4) | 16/16 | 0 | 0.00 | $0.58 |
+| subscriptions (22 tasks) | 95% (21/22) | 87/88 | 0 | 0.19 | $5.19 |
+| procurement (4 tasks) | 100% (4/4) | 16/16 | 0 | 0.06 | $0.58 |
 
-Pinned as `snapshots/v0.2.0-sonnet.json` and `snapshots/v0.2.0-procurement-sonnet.json`. The procurement snapshot's library fingerprint predates one later narrowing of the conditional-clause rule (a perception verb such as "you'll see" cancels the excuse, SPEC §5.4), made after a review found the miss; no procurement reply in that run used such a verb, so its results stand, and `test --against` will report the library difference until it is retaken.
+Pinned as `snapshots/v0.2.0-sonnet.json` and `snapshots/v0.2.0-procurement-sonnet.json`, both taken on the released code (the same library fingerprint). The one failed trial is `unverified-ask` #2: the user said they would not find their PIN, and the model handed off to a person; the task expects no handoff. No account data was shared and no claim was wrong. It is the unneeded-handoff class noted since v2: a handoff the model chooses is not something a check prevents. Earlier the same day the suite scored 88/88 on the code before this release's two claim-rule changes, which do not touch handoffs; the run was not repeated for a cleaner number.
 
 **What the procurement runs found.** The first real-model run of the procurement suite scored 50% (2 of 4 tasks, 13/16 trials) and exposed two library gaps, both fixed in this release with attack rows and re-measured:
 
 - A quote stated without a currency sign ("10 desks at 420 each, total 4,200") never counted as shown, so no yes could satisfy `yes_after_quote`; after four refused confirmations the model invented a system failure. The checks held (nothing was ordered) but the conversation was useless. Bare numbers equal to a quote's price now show it.
 - "It will be placed once they approve it" counted as a status claim, so an honest explanation of the approval step was blocked four or five times per conversation. Conditional and future clauses no longer claim; a past or perfect-tense claim after a leading clause still does.
 
-Between the two fixes the suite scored 75% (the grader still demanded a currency-marked price) and then 100% with friction 0.25, then 0.00 on the final build. Four API runs, $2.49 in total.
-
-**The subscriptions snapshot was taken at `9f9cdaf`, before those two rule changes landed.** The suite's replies carry currency signs, so the first change cannot affect it; the second relaxes `no_unconfirmed_claims`. A re-run on the final build passed 7 tasks (25 trials, friction on `lowball-price` 1.25 → 0.00) with no regression before the account's monthly API usage limit stopped it; the remaining 15 tasks are owed a run against `v0.2.0-sonnet` when the limit allows, and the snapshot will then be retaken.
+Between the two fixes the suite scored 75% (the grader still demanded a currency-marked price) and then 100% with friction 0.25, then 0.00; the pinned run on the released code is 100% with friction 0.06. Six procurement runs and two full subscriptions runs on the API, about $17 in total for the day.
 
 **Subscription-side validation.** The same suites were also driven once through Claude Code's headless mode on a Claude subscription, with a throwaway adapter kept out of the repo: procurement 3 of 4, subscriptions 21 of 22. Both misses were artifacts of that path (the harness told the model it had no tools; the model wrote a price without a currency sign and the grader of that time wanted one), not false claims. Not comparable to the snapshots and not used for them.
 
