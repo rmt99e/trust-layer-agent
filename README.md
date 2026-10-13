@@ -318,9 +318,9 @@ With `owner` set, a session id from a request can't reach another owner's conver
 
 `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
-## The two examples
+## The three examples
 
-Two fictional apps, one journey each. Both run the full library: tools with bound ids and field visibility, journeys with guardrails, every built-in check, a simulation suite the grader can score.
+Three fictional apps, one journey each. All run the full library: tools with bound ids and field visibility, journeys with guardrails, every built-in check, a simulation suite the grader can score.
 
 ### A support desk for a subscription app
 
@@ -352,7 +352,22 @@ Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `pla
 node --env-file=.env examples/procurement/demo.js     # a scripted requester, then a person approving, then the email through review()
 ```
 
-`test/examples.test.ts` drives both examples with a scripted model, so they are checked on every CI run without a model call.
+### A scheduling desk
+
+[examples/scheduling/](examples/scheduling/) is a scheduling desk: people book time with a host. Appointments, meetings and service visits all have this shape, and it is the first example with no money in it. A person verifies with a passcode the session never keeps (`secret`), sees their bookings, and books or cancels. What it adds:
+
+- an offered slot is a commitment with no price: it is shown by its date, and `book_slot` needs that offer and a yes after it (`confirm`);
+- a `time` claim kind checks every clock time the model writes against the ISO times the tools returned, in the ways people write them, and a `status` kind covers `booked` and `cancelled`;
+- a cancellation inside 24 hours returns `approve(...)` from a check that reads the booking's start from the tool result the model saw, not from the model's input;
+- the journey hands off when the person asks for someone at the desk, before the model is called.
+
+Tools: `verify_person`, `get_bookings`, `find_slots`, `offer_slot`, `book_slot` (`reconcileWith: "get_bookings"`), `cancel_booking` (a plain yes, no commitment), `handoff_to_person`. The journey is [journeys/booking.yaml](examples/scheduling/journeys/booking.yaml); the suite in [sim/](examples/scheduling/sim/) has 5 tasks (book, slot taken, late cancel, out of scope, unverified ask). Rename the nouns and it is your calendar.
+
+```sh
+node --env-file=.env examples/scheduling/demo.js      # a scripted person books, then a late cancellation is parked and someone approves it
+```
+
+`test/examples.test.ts` drives all three examples with a scripted model, so they are checked on every CI run without a model call.
 
 ## Testing your agent
 

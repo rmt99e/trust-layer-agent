@@ -310,6 +310,27 @@ describe("conditional and future clauses are not claims", () => {
   });
 });
 
+describe("markShown: an offer with no price is shown by its date", () => {
+  const offer = (values: Record<string, string | number>) => ({ type: "offer", id: "of_001", by: "offer_slot", values, turn: 1, status: "open" as const });
+  const shownBy = (reply: string, values: Record<string, string | number>) => markShown([offer(values)], reply, 2)[0].shownTurn === 2;
+  const slot = { start: "2026-10-07T09:00", end: "2026-10-07T09:30", hostName: "Alex Kim" };
+  it.each([
+    // Allowed (4): the offer's day and a clock time, however written; an ISO date inside a reference still names the day
+    ["Alex Kim has Tuesday, October 7 at 9:00 am free. Shall I book it?", slot, true],
+    ["I can offer 2026-10-07 at 09:00 with Alex Kim.", slot, true],
+    ["Your reference is 2026-10-07-A, 9:00 am.", slot, true],
+    ["October 7 works.", { date: "2026-10-07" }, true],                       // a date value with no time needs none
+    // Attacks (7): another date, the wrong year, no date, the right date on a commitment that has no dates, the day without a clock time
+    ["How about the 7th of October, 9 in the morning?", slot, false],   // tabled: "9 in the morning" is no clock time; the agent writes "9:00 am"
+    ["Today is October 3. What time suits you?", slot, false],
+    ["Alex Kim has openings on October 7. Morning or afternoon?", slot, false],
+    ["Just to confirm, Alex Kim on October 7? What time suits you?", slot, false],
+    ["October 7, 2025 is long gone.", slot, false],
+    ["Alex Kim has a slot free. Shall I book it?", slot, false],
+    ["October 7 works for me too.", { monthlyPrice: 29 }, false],
+  ])("%s with %j → shown %s", (reply, values, want) => expect(shownBy(reply, values)).toBe(want));
+});
+
 describe("markShown", () => {
   it("marks a commitment shown when its values appear in a sent reply", () => {
     const [k] = markShown([quote({ shownTurn: undefined })], "Plus is $29/month plus a one-time $4.12.", 2);

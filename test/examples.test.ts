@@ -3,6 +3,9 @@ import procurement from "../examples/procurement/sim/suite.js";
 import { makeAgent } from "../examples/procurement/agent.js";
 import { createStore, renderPurchaseOrder, SEED } from "../examples/procurement/store.js";
 import subscriptions from "../examples/subscriptions/sim/suite.js";
+import scheduling from "../examples/scheduling/sim/suite.js";
+import { makeAgent as makeDesk } from "../examples/scheduling/agent.js";
+import { createStore as createDesk } from "../examples/scheduling/store.js";
 import { prepare, type Suite } from "../src/sim/simulator.js";
 import { scripted, type ScriptStep } from "../src/sim/scripted.js";
 
@@ -18,6 +21,91 @@ describe("the shipped suites are valid before any model call", () => {
   it("procurement: 4 tasks", async () => {
     const { tasks } = await prepare(offline(procurement as Suite));
     expect(tasks.map((t) => t.id).sort()).toEqual(["made-up-item", "order-needs-approval", "order-within-threshold", "over-budget"]);
+  });
+  it("scheduling: 5 tasks", async () => {
+    const { tasks } = await prepare(offline(scheduling as Suite));
+    expect(tasks.map((t) => t.id).sort()).toEqual(["book-slot", "cancel-late", "out-of-scope", "slot-taken", "unverified-ask"]);
+  });
+});
+
+describe("the scheduling example, driven by a scripted model", () => {
+  const NOW = () => new Date("2026-10-03T12:00:00Z");
+  const run = async (steps: ScriptStep[], messages: string[], store = createDesk(undefined, { now: NOW })) => {
+    const model = scripted(steps), lines: any[] = [];
+    const agent = makeDesk({ model, store, trace: { write: (l: any) => lines.push(l) }, now: NOW });
+    let session = null as any, last: any;
+    for (const m of messages) { last = await agent.respond(session, m); session = last.session; }
+    return { store, model, lines, session, last, agent };
+  };
+  const verify = { call: "verify_person", input: { personId: "usr_100", passcode: "4417" } };
+  const hello = "Hi, I'm Dana Ruiz, usr_100, passcode 4417.";
+
+  it("books after the offer was shown by its date and accepted; the passcode is redacted; the reply's time and status are backed by the tools", async () => {
+    const { store, last, lines, session } = await run([
+      verify, "Hi Dana. What would you like to do?",
+      { call: "find_slots", input: { hostId: "host_alex" } }, { call: "offer_slot", input: { slotId: "sl_001" } },
+      "Alex Kim has October 7 at 9:00 am. Shall I book it?",
+      { call: "book_slot", input: { offerId: "of_001" } }, "Booked: Alex Kim on October 7 at 9:00 am. You're confirmed.",
+    ], [hello, "Can I book Alex on October 7 at 9?", "yes"]);
+    expect(last.reply).toBe("Booked: Alex Kim on October 7 at 9:00 am. You're confirmed.");           // "booked" backs "confirmed"; 09:00 backs "9:00 am"
+    expect(store.db.bookings.at(-1)).toMatchObject({ bookingId: "bk_003", personId: "usr_100", hostId: "host_alex", start: "2026-10-07T09:00", status: "booked" });
+    expect(session.results[0].input).toEqual({ personId: "usr_100", passcode: "[redacted]" });
+    expect(session.commitments[0]).toMatchObject({ type: "offer", id: "of_001", shownTurn: 2, status: "used" });
+    expect(lines.filter((l) => l.type === "check")).toEqual([]);
+  });
+
+  it("a time no tool returned is blocked by the time kind; a yes before the offer was shown doesn't book", async () => {
+    const { lines, last, store } = await run([
+      verify, "Hi Dana.",
+      { call: "find_slots", input: { hostId: "host_alex" } }, { call: "offer_slot", input: { slotId: "sl_001" } },
+      { call: "book_slot", input: { offerId: "of_001" } },                                                  // before the person saw the offer
+      "Alex Kim has October 7 at 9:45 am free. Shall I book it?",                                           // a time no slot has
+      "Alex Kim has October 7 at 9:00 am free (slots run in 30-minute blocks). Shall I book it?",
+    ], [hello, "Book me the first slot with Alex, yes, go ahead."]);
+    expect(lines.filter((l) => l.type === "check").map((l) => [l.event, l.check, l.result.block])).toEqual([
+      ["action", "yes_after_quote", 'Show the user offer "of_001" (its price or date) and wait for a yes after it before book_slot.'],
+      ["reply", "no_unconfirmed_claims", 'Reply states the time "9:45 am" but no tool returned it. Use a returned value or don\'t state it.']]);
+    expect(last.reply).toContain("9:00 am");
+    expect(store.db.bookings.filter((b) => b.personId === "usr_100" && b.start.startsWith("2026-10-07"))).toEqual([]);
+  });
+
+  it("cancelling tomorrow's booking is parked for a person; 'cancelled' is blocked until they approve", async () => {
+    const { agent, session, last, lines, store } = await run([
+      verify, "Hi Dana.",
+      { call: "get_bookings" }, "Your booking is October 4 at 10:00 am with Alex Kim. Cancel it?",
+      { call: "cancel_booking", input: { bookingId: "bk_001" } },
+      "Done, your booking is cancelled.",                                                                   // not yet
+      "I've requested the cancellation; a person at the desk reviews cancellations within 24 hours, so it isn't cancelled yet.",
+    ], [hello, "Please cancel my booking tomorrow.", "yes"]);
+    expect(last.approvals).toEqual([expect.objectContaining({ id: "p_1", tool: "cancel_booking", by: "late_cancellations_need_approval" })]);
+    expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
+      'Reply states the status "cancelled" but no tool returned it. Use a returned value or don\'t state it.']);
+    expect(store.db.bookings[0].status).toBe("booked");
+    const { session: after, result } = await agent.approve(session, "p_1", { by: "desk-lead" });
+    expect(result).toMatchObject({ ok: true, output: { bookingId: "bk_001", status: "cancelled" } });
+    expect([store.db.bookings[0].status, after.approvals[0].decidedBy]).toEqual(["cancelled", "desk-lead"]);
+  });
+
+  it("a slot taken between the offer and the yes fails the write; 'booked' stays blocked even after get_bookings, and the person is told", async () => {
+    const store = createDesk(undefined, { now: NOW }), lines: any[] = [];
+    const model = scripted([
+      { call: "verify_person", input: { personId: "usr_200", passcode: "9902" } }, "Hi Sam.",
+      { call: "get_bookings" }, { call: "find_slots", input: { hostId: "host_jordan" } }, { call: "offer_slot", input: { slotId: "sl_004" } },
+      "Jordan Lee has October 6 at 3:00 pm. Shall I book it?",
+      { call: "book_slot", input: { offerId: "of_001" } },
+      "You're booked for October 6 at 3:00 pm.",                                                           // it failed, and the earlier booking's status isn't exposed
+      "That time was just taken, so nothing is booked. Shall I look for another?",
+    ]);
+    const agent = makeDesk({ model, store, trace: { write: (l: any) => lines.push(l) }, now: NOW });
+    let s = (await agent.respond(null, "Hi, I'm Sam Ortiz, usr_200, passcode 9902.")).session;
+    s = (await agent.respond(s, "Jordan on October 6 at 3 pm please.")).session;
+    store.db.bookings.push({ bookingId: "bk_900", personId: "usr_100", hostId: "host_jordan", start: "2026-10-06T15:00", end: "2026-10-06T15:30", status: "booked" });   // someone else takes it
+    const last = await agent.respond(s, "yes");
+    expect(lines.find((l) => l.type === "tool" && l.tool === "book_slot")).toMatchObject({ ok: false, error: { code: "slot_taken" } });
+    expect(lines.filter((l) => l.type === "check" && l.event === "reply").map((l) => l.result.block)).toEqual([
+      'Reply states the status "booked" but no tool returned it. Use a returned value or don\'t state it.']);
+    expect(last.reply).toBe("That time was just taken, so nothing is booked. Shall I look for another?");
+    expect(store.db.bookings.filter((b) => b.personId === "usr_200")).toHaveLength(1);                     // only the seeded one
   });
 });
 

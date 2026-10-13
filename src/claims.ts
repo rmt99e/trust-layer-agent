@@ -186,13 +186,15 @@ const finder = ({ find }: ClaimKind) => typeof find === "function" ? find
     .filter((m) => !NEGATED.test(clauseOf(text, m.index!)) && !hypothetical(text, m.index!)).map((m) => (m[1] ?? m[0]).toLowerCase());
 
 /** Mark open commitments whose id or values appear in a sent reply as shown on this turn. */
+const TIMED = /T\d{2}:\d{2}/, CLOCK = /\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b|\b\d{1,2}:\d{2}\b/i;   // a value with a time is shown only with some clock time
 export function markShown(commitments: Commitment[], reply: string, turn: number): Commitment[] {
   const c = extractClaims(reply);
   return commitments.map((k) => {
     const v = confirmedValues([k.values as Json]);
     const named = new RegExp(String.raw`(?<![\w])${escapeRegExp(k.id)}(?![\w])`).test(reply);   // q_1 isn't shown by "q_10"
     const shown = named || c.money.some((n) => v.money.has(n)) || c.percents.some((n) => v.percent.has(n))
-      || c.bare.some((n) => v.money.has(n));                     // a price stated without its currency sign ("total 4,200") still shows the quote
+      || c.bare.some((n) => v.money.has(n))                      // a price stated without its currency sign ("total 4,200") still shows the quote
+      || (c.dates.some((d) => v.dates.has(d)) && (!TIMED.test(JSON.stringify(k.values)) || CLOCK.test(reply)));   // an offer is shown by its date, with a time when it has one
     return k.shownTurn === undefined && k.status === "open" && shown ? { ...k, shownTurn: turn } : k;
   });
 }

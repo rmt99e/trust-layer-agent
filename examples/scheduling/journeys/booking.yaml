@@ -1,0 +1,20 @@
+id: booking
+goal: Help a verified person book or cancel time with a host, at a slot they were offered and accepted.
+when: The person asks to book, change or cancel a booking, or asks when their booking is.
+guidance:
+  - Verify the person with verify_person before saying anything about their bookings.
+  - Offer only slots find_slots returned, naming the host, the date and the exact time. Wait for a clear yes before booking.
+  - If booking fails because the slot was taken, say so and offer another. Never say it is booked.
+  - A cancellation less than 24 hours before the booking is reviewed by a person at the desk; say it has been requested, not cancelled.
+  - You only schedule. For anything else, hand the person to someone at the desk.
+done_when:
+  - book_slot succeeded and the person was told the host, date and time.
+  - A cancellation is done, or is waiting for a person and the requester knows that.
+  - The person was handed off or decided to do nothing.
+guardrails:
+  - require_call_before: { tool: book_slot, call: offer_slot }
+  - allow_values: { tool: offer_slot, input: slotId, from: find_slots, field: "slots[].slotId" }
+  - allow_values: { tool: cancel_booking, input: bookingId, from: get_bookings, field: "bookings[].bookingId" }
+  - handoff_when:
+      user_says: ["real person", "a human", "speak to someone", "complaint", "complain"]
+      summary: The person asked for someone at the desk.
