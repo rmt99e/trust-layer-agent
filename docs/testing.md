@@ -1,4 +1,4 @@
-# Measuring your agent
+# Testing your agent
 
 This is the measure step's reference: the `test`, `snapshot` and `validate` commands, suites and tasks. The README has the short version; [SPEC.md](../SPEC.md) §10–12 is normative for task files, grading and snapshots.
 

@@ -14,7 +14,8 @@ You write three things: tools (functions wrapped with `read()` or `write()`, eac
 
 ## Docs
 
-- [README.md](README.md): gate, check, measure; what it enforces, the quickstart, the reference, the examples.
+- [README.md](README.md): features, how it works, installation, quick start, usage (tools, checks, journeys, sessions, stores), examples, testing.
+- [docs/why.md](docs/why.md): why each check exists, in the library's own block reasons.
 - [docs/results.md](docs/results.md): measured pass^k per version. [docs/roadmap.md](docs/roadmap.md): plans. [docs/testing.md](docs/testing.md): the measure step: `test`, `snapshot`, `validate`, suites and tasks.
 - [SPEC.md](SPEC.md): language-neutral spec: journey JSON Schema, check result shape, session JSON, simulation task format.
 - [docs/design.md](docs/design.md): the original design and its decisions, kept for history; superseded by SPEC.md wherever they differ.
