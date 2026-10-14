@@ -67,7 +67,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 
 ## Where docs live
 
-- [README.md](README.md): what it is, quickstart, the examples. Keep measurements, counts and plans out of it: results go in docs/results.md, plans in docs/roadmap.md.
+- [README.md](README.md): features, quick start, usage, examples, testing; [docs/why.md](docs/why.md) holds the argument for each check. Keep measurements, counts and plans out of it: results go in docs/results.md, plans in docs/roadmap.md.
 - [SPEC.md](SPEC.md): normative and language-neutral. Update it in the same pull request as any behavior change it covers.
 - [CHANGELOG.md](CHANGELOG.md): add an entry under `[Unreleased]`.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents.

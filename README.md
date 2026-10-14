@@ -1,77 +1,26 @@
 # trust-layer-agent
 
-> A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. Code decides what the model may do and what it may say, from a session your app owns, whatever the model was told.
-
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
-[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The examples](#the-examples) · [Measuring your agent](#measuring-your-agent) · [How it differs from other guardrails](#how-it-differs-from-other-guardrails) · [Limitations](#limitations) · [Docs](#docs) · [Contributing](#contributing) · [Where the grading comes from](#where-the-grading-comes-from) · [License](#license)
+A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup.
 
-## What it is
+It is a TypeScript library (Node 20+) that sits between the model and your tools. The model talks to the user and proposes tool calls; your tools read and change records; code decides what runs and what is said, from a session your app owns, whatever the model was told. You write tools, checks and journeys. A simulator scores the result on real models.
 
-trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things. The model talks to the user and proposes tool calls; your tools read and change records. The library sits between the two and does three things, in this order.
+## Features
 
-### Gate tool calls
+- **Consent before a write.** A write runs only after the user's clear yes, and a write tied to a quote needs that quote shown, unused and unexpired.
+- **Inputs from the record, not the model.** Ids are bound from the session; a search runs only on words the user said.
+- **Replies that match what happened.** No price, date, status or "done" that no tool returned; no "it failed" after a success; nothing while an outcome is unknown.
+- **A person can take the decision.** A check can park an action for approval while the conversation continues, and record who decided and when.
+- **Your own messages checked too.** `review()` runs the same checks on a template or an outbound email the app wrote.
+- **The model sees only what you allow.** Field visibility, masked traces, and user and tool text fenced as data.
+- **Secrets stay out of the session.** A tool's `secret` fields reach the function and are redacted everywhere else.
+- **Measured, not assumed.** A simulator plays scripted users k times per task and grades every trial; snapshots pin the result; `validate` and a scripted model need no key.
 
-Before any tool runs, code decides whether it may. A write needs the user's yes after they saw the exact quote. A record is read only after verification. An account id is bound from the session, never taken from the model. A search runs only on words the user said. An action over a limit is parked for a person. A write that already succeeded this turn does not run again. A refused call is answered with the reason and the model carries on.
+The reasoning behind each, with the library's own block reasons, is in [docs/why.md](docs/why.md).
 
-### Check replies
-
-Before any reply is sent, code checks it against the record: no price, date, status or "done" that no tool returned, no "it failed" after a success, nothing while a write's outcome is unknown. A refused draft goes back to the model with the reason, up to `maxRetries` times (default 2); the next refusal hands the turn to a person. Messages your app writes itself go through the same checks with `review()`.
-
-### Measure both
-
-A simulator plays scripted users against your agent, k times per task, and grades each trial on the final data state, forbidden actions, handoff and the claims in every sent reply. `test` reports pass^k, `snapshot` pins a result with fingerprints of the models, prompts, tools, checks and library, and `test --against` diffs a change. `validate` checks a suite with no model call, and a scripted model drives unit tests with no key.
-
-### What you write
-
-Tools, checks and journeys; the table under [How a turn works](#how-a-turn-works) says which of them are enforced. The record they all read is one JSON session your app stores; a store contract and a Postgres adapter are included.
-
-### Examples ship with it
-
-A support desk for a subscription app, a purchasing desk with approvals, and a scheduling desk with no money in it. Each is tools, checks, journeys and a simulation suite with a pinned real-model result. See [The examples](#the-examples).
-
-## Why
-
-You build an agent on a model. You give it tools that read an account, quote a change, place an order, refund an invoice. The model handles the conversation well. It does not reliably know what those tools did, what the user said or what the user agreed to, and instructions cannot make it know.
-
-This library keeps those facts in the session and puts the rules that read them in code. What follows is what that gives you, in the library's own order: gate, check, measure. The quoted lines are the library's own block reasons, each pinned by an exact assertion in the test suite.
-
-### Consent before a write
-
-A write runs only after the agent has replied and the user's latest message is a clear yes, unless the tool opts out with `confirm: false`. A write tied to a quote also needs that quote to exist in this session, to have been shown in an earlier reply, and to be unused and unexpired; the quote is spent once. Details under [What it enforces](#what-it-enforces).
-
-> `Before change_plan, tell the user exactly what will happen and wait for a clear yes.`
-
-### Inputs come from the user
-
-`bind` fills a tool field from a session fact and overwrites whatever the model sent, so an account id is never the model's to choose. `fromUser` requires a field's values to appear in the user's own messages or a fact, so a search runs on what was asked for. See [Tools](#tools).
-
-> `The user never said "office seating" (query in search_catalog). Use only values the user gave, or ask them.`
-
-### A person can take the decision
-
-A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. Your app shows the parked action to a person and calls `agent.approve()` or `agent.decline()`, naming who decided; the result, the decision, who made it and when all land in the session for the next turn and the audit trail. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it lands. See [Checks](#checks).
-
-### What the model can see
-
-A tool lists the output fields the model may see; without a list, fields named like personal data are hidden and personal data in other strings is masked. User messages and tool output reach the model fenced as data with angle brackets escaped, and anything a system note quotes from them is escaped too. Trace lines are masked before they reach a sink unless the sink sets `mask: false`. See [Tools](#tools).
-
-### Replies that match the record
-
-Prices, percentages, dates and "done" wording in a draft must appear in a successful tool result or a commitment from this session, or in your instructions, journeys and knowledge files. Values match by kind, so a 10% discount does not confirm "$10". A write's outcome is tracked, so "done" needs a successful write and nothing goes out while an outcome is unknown. Claim kinds extend this to your own vocabulary; see [Checks](#checks).
-
-> `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
-
-### Your own messages are checked too
-
-`agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. It makes no model call and leaves the session unchanged. See [Checks](#checks).
-
-### Measure the agent against simulated users
-
-A simulator measures both. It plays scripted users against your agent, k times per task, grades every trial, and `snapshot` pins the result so a change can be diffed. See [Measuring your agent](#measuring-your-agent).
-
-## How a turn works
+## How it works
 
 ```
 user message --> model --> tool call? --> action checks --> allow   --> tool runs --> result to model --+
@@ -89,11 +38,14 @@ user message --> model --> tool call? --> action checks --> allow   --> tool run
                                              +-- handoff: turn ends, a person takes over
 ```
 
-Not drawn: a journey's `handoff_when` runs before the model is called; a model refusal, or more than `maxToolCalls` calls in one turn, hands off; after a write with an unknown outcome the library runs the write's `reconcileWith` read itself before the model replies; while an approval is pending the model is reminded each turn not to request it again.
+Not drawn:
 
-The **session** is the JSON record described in [Your app owns the session](#your-app-owns-the-session). Checks read it together with your tool definitions, your instructions, journeys and knowledge text, and a clock; they never see anything else.
+- a journey's `handoff_when` runs before the model is called;
+- a model refusal, or more than `maxToolCalls` calls in one turn, hands off;
+- after a write with an unknown outcome the library runs the write's `reconcileWith` read itself before the model replies;
+- while an approval is pending the model is reminded each turn not to request it again.
 
-You write three kinds of thing, and can add a fourth:
+Action checks run before a tool, reply checks before a reply is sent (a refused draft goes back to the model up to `maxRetries` times, default 2, then the turn hands off), and the simulator measures both.
 
 | | What it is | Enforced? |
 |---|---|---|
@@ -102,53 +54,7 @@ You write three kinds of thing, and can add a fourth:
 | **Journeys** | YAML: a goal, guidance and done-conditions that go into the prompt, plus `guardrails` that compile to checks. | Only the guardrails |
 | **Knowledge** | Operator-authored text files added to the prompt. Prices, percentages and dates written in them (`$29`, `10%`, `2026-11-01`) count as backed when the model repeats them. | Prompt only |
 
-Your app calls `agent.respond(session, message)`, or `withStore(agent, store)` to load and save by session id.
-
-## Quick look
-
-The refund exchange from the Quickstart, as the terminal shows it:
-
-```
-you   > Please refund order 123.
-agent > I can refund order 123 in full. Shall I go ahead?
-
-you   > yes
-   · refund_order → failed (payment_provider_down)
-   ✗ draft not sent  [no_unconfirmed_claims]
-     draft:  "Your refund has been processed."
-     reason: Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.
-agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
-```
-
-The trace sink records the refused draft as one JSON line:
-
-```json
-{"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
-```
-
-This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
-
-## What it enforces
-
-The first six items are the built-in checks, on by default; turn one off with `builtins: { name: false }`. The seventh, `untrusted_text_is_data`, is structural and always on.
-
-- **verified_first**: blocks any tool not marked `beforeVerification` until `facts.verified` is true. It's off, with a startup warning, when no tool declares `verifies: true`.
-- **yes_after_quote**: a write runs only if the user's latest message is a clear yes (an affirmative phrase with no negation, hedge or question). For a write with `confirm`, the named quote must also exist this session, be unused and unexpired, and have been shown in an earlier reply; after that, "go ahead", "I'll take it" or "can you just switch me?" also counts, and questions about cost don't.
-- **no_unconfirmed_claims**: prices, percentages, dates, relative dates ("tomorrow") and "done" wording in a draft reply must appear in a visible tool result or commitment from this session, or in operator text (instructions, journeys, knowledge files). User text never counts. Values match by unit, so a 10% discount doesn't confirm "$10". Write outcomes are checked both ways:
-  - "Done" wording ("has been switched", "went through") needs a successful write, and is blocked while any write's latest call failed or is pending. A clause that negates it ("nothing was changed") or reports status ("you're all set staying on Starter") isn't a done claim; a bare "you're all set" is blocked only while a write is failed, pending, unknown or awaiting approval.
-  - Failure wording ("didn't go through", "failed", "nothing has been changed") is blocked after a write succeeded, unless some write's latest call failed.
-  - While a write's outcome is unknown (a timeout, say), every draft is blocked until that write's `reconcileWith` read succeeds. When code already has the read's inputs (bound or in the failed call), the agent runs the read itself before the model replies. A write with no `reconcileWith` can't be settled, and the block tells the model to hand off.
-  - A number only the user said may appear inside the agent's own refusal that governs it ("I can't offer Plus at $10"). A comparative ("lower than", "best", "at least") disqualifies the refusal.
-  - Your own claim kinds run after these: `builtins: { no_unconfirmed_claims: { kinds: [...] } }` adds things like counts, status words or reference numbers that must also come from a tool result or operator text (see [Checks](#checks)).
-- **untrusted_text_is_data**: structural and always on. User messages and tool output reach the model fenced as data, with angle brackets escaped so they can't forge a system note.
-- **handoff_after_failures**: hands off with a summary of the errors after 2 consecutive tool failures (configurable with `{ after }`).
-- **no_repeated_writes**: blocks a write that already succeeded this turn and gives the model the earlier result. A write declared `repeatable: true` is exempt, except that a write whose latest call this turn has an unknown or pending outcome can't be retried in that turn.
-- **no_invented_inputs**: an input a tool declares in `fromUser` must be something the user gave: each value appears whole in one of their messages, or equals a session fact. A tool result never counts, so data a tool discovered can't become the input to the next search. The model is told which value the user never said.
-- **Account ids from facts**: inputs declared in a tool's `bind` come from session facts. They're removed from the schema the model sees, and anything the model sends for them is overwritten.
-- **Field visibility**: the model sees only the returned fields a tool lists as `visible` (see [Tools](#tools)).
-- **Masked traces**: every trace sink receives lines with emails, phone numbers, card numbers, US social security numbers and street addresses replaced by `[email]`, `[phone]`, `[card]`, `[ssn]` and `[address]`, unless the sink sets `mask: false`. Masking is pattern matching and best-effort; visibility is the guarantee.
-
-## Install
+## Installation
 
 ```sh
 npm install github:rmt99e/trust-layer-agent
@@ -156,7 +62,7 @@ npm install github:rmt99e/trust-layer-agent
 
 It isn't on npm yet. The package's `prepare` script builds it on install. It's TypeScript compiled to ES-module JavaScript with `.d.ts` types, so plain-JS apps need no build step. Runtime dependencies are `zod` and `yaml`. The model adapters (`anthropic` and `openai-compatible`) use `fetch`, with no provider SDKs.
 
-## Quickstart
+## Quick start
 
 ```js
 import { Agent, read, write, z } from "trust-layer-agent";
@@ -200,9 +106,33 @@ if (handoff) notifyATeammate(handoff.summary);
 await save(agent.forget(next));         // stores a tombstone; also deletes the trace when the sink supports it
 ```
 
-## Reference
+### Example output
 
-The three things you write and the knowledge files, in detail, then the session and the stores. Extension happens only through tools, checks, journeys, model adapters and session stores.
+The quick start's refund exchange, as the terminal shows it:
+
+```
+you   > Please refund order 123.
+agent > I can refund order 123 in full. Shall I go ahead?
+
+you   > yes
+   · refund_order → failed (payment_provider_down)
+   ✗ draft not sent  [no_unconfirmed_claims]
+     draft:  "Your refund has been processed."
+     reason: Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.
+agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
+```
+
+The trace sink records the refused draft as one JSON line:
+
+```json
+{"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
+```
+
+This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
+
+## Usage
+
+Tools, checks, journeys, sessions and stores, in that order. Extension happens only through tools, checks, journeys, model adapters and session stores.
 
 ### Tools
 
@@ -224,6 +154,18 @@ A successful write tool named `handoff_to_person` ends the turn as a handoff.
 
 ### Checks
 
+| Check | What it enforces |
+|---|---|
+| `verified_first` | No tool runs before `facts.verified` is true, except tools marked `beforeVerification`. |
+| `yes_after_quote` | A write runs only after the user's latest message is a clear yes. A write with `confirm` also needs its quote to exist this session, to have been shown in an earlier reply, and to be unused and unexpired. |
+| `no_unconfirmed_claims` | Prices, percentages, dates and "done" wording in a draft must appear in a tool result or commitment from this session, or in your instructions, journeys and knowledge files. "Done" needs a successful write; failure wording is blocked after a success; nothing goes out while a write's outcome is unknown. Your own claim kinds extend it. |
+| `no_invented_inputs` | A field declared `fromUser` holds only values the user said or a session fact; a tool result never counts. |
+| `no_repeated_writes` | A write that already succeeded this turn does not run again; a write whose outcome is unknown or pending is not retried this turn. |
+| `handoff_after_failures` | Two consecutive tool failures (`{ after }` to change it) hand the turn to a person. |
+| `untrusted_text_is_data` | Structural, always on: user messages and tool output reach the model fenced as data, angle brackets escaped. |
+
+Turn one off with `builtins: { name: false }`. Three more guarantees are structural: inputs declared in `bind` come from session facts and are removed from the schema the model sees; a tool's `visible` list decides which returned fields the model sees; every trace sink gets masked lines unless it sets `mask: false`.
+
 One function type guards actions (before a tool runs) and replies (before they're sent). It returns `allow()`, `block(reason)`, `rewrite(text)` (replies only), `handoff(summary)` or `approve(reason)` (actions only).
 
 ```js
@@ -236,7 +178,7 @@ const bigRefunds = check("big_refunds_need_a_person", (e) =>
 new Agent({ ...options, checks: [bigRefunds] });
 ```
 
-Built-ins run first, then journey guardrails, then your checks. For actions, the first non-allow result wins; a blocked tool doesn't run and the model is told why. For replies, rewrites chain; a block discards the draft and the model tries again, up to `maxRetries` (default 2), after which the turn hands off. The built-ins are described in [What it enforces](#what-it-enforces).
+Built-ins run first, then journey guardrails, then your checks. For actions, the first non-allow result wins; a blocked tool doesn't run and the model is told why. For replies, rewrites chain; a block discards the draft and the model tries again, up to `maxRetries` (default 2), after which the turn hands off. The built-ins are the table above; SPEC.md §5 has each rule in full.
 
 **Approvals.** `approve(reason)` parks the action for a person instead of running or refusing it. The conversation goes on: the model is told the action is requested, not done, and `no_unconfirmed_claims` blocks "it's done" wording until it is. The parked action is on the session as `approvals[]` (`{ id, tool, input, secret?, turn, at, reason, by, status, result?, decidedAt?, decidedBy? }`) and on the reply as `approvals` for the ones parked this turn. Your app decides, whenever it likes:
 
@@ -289,9 +231,16 @@ guardrails:
 
 The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `require_fact` and `handoff_when` (on a tool result, a tool error code, user phrases or a fact). `handoff_when` is evaluated as soon as a message arrives, so it hands off without a model call. A guardrail can also name a check, which fails loading if that check is disabled. Files are validated when the Agent is built, and errors name the file and line. All loaded journeys are active at once; there is no router.
 
-### Your app owns the session
+### Sessions
 
-The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), each message, result and approval stamped with the agent's clock, a `failures` count, a `status` (`open`, `handed_off`, or the reserved `closed`) and a `rev` that increases on every turn that produces a reply or fails, on every approval decision and on every resume, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
+The session is plain JSON, one object per conversation:
+
+- `facts`: trusted values set by your app or recorded by tools;
+- `commitments`: what the user was shown and agreed to, with when each was shown and whether it was used;
+- `messages`, tool `results` and `approvals` (actions parked for a person), each stamped with the agent's clock;
+- a `failures` count, a `status` (`open`, `handed_off`, or the reserved `closed`), and a `rev` that increases on every turn that produces a reply or fails, on every approval decision and on every resume, for optimistic locking.
+
+Checks read the session together with your tool definitions, instructions, journeys and knowledge text, and a clock; they see nothing else. Start a session with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
 `agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.resume(session, { note, by })` hands a handed-off conversation back to the agent: the person's note is recorded as a `person` message and the model is told what the teammate did, and the session is open again. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
 
@@ -320,58 +269,19 @@ With `owner` set, a session id from a request can't reach another owner's conver
 
 `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
-## The examples
+## Examples
 
-Three fictional apps, one journey each. All run the full library: tools with bound ids and field visibility, journeys with guardrails, every built-in check, a simulation suite the grader can score.
+Three fictional apps, each gated, checked and measured the same way, each with a pinned real-model result.
 
-### A support desk for a subscription app
+| Example | What it shows | Run |
+|---|---|---|
+| [subscriptions/](examples/subscriptions/) | A support desk for a subscription app: verification, usage, quotes, plan changes, refunds, cases and handoff. The fullest example. | `node --env-file=.env examples/subscriptions/chat.js` |
+| [procurement/](examples/procurement/) | A purchasing desk: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two claim kinds, and `review()` on the supplier email. | `node --env-file=.env examples/procurement/demo.js` |
+| [scheduling/](examples/scheduling/) | A scheduling desk with no money in it: an offer commitment shown by its date, a `time` claim kind, a late-cancellation approval, a passcode kept `secret`. Appointments, meetings and service visits share the shape. | `node --env-file=.env examples/scheduling/demo.js` |
 
-[examples/subscriptions/](examples/subscriptions/) is a fictional subscription app with plans, usage credits, invoices and seeded customers. The agent verifies the customer, reviews usage, recommends a plan, quotes it, and changes it only after a yes.
+Each needs `ANTHROPIC_API_KEY` in `.env`. [examples/README.md](examples/README.md) lists every file and the demo toggles. `test/examples.test.ts` drives every example with a scripted model on each CI run.
 
-Tools: `verify_customer`, `get_account`, `get_usage`, `get_invoices`, `get_eligible_plans`, `quote_plan_change` (records the quote as a commitment), `change_plan` (needs this session's quote and a yes after it), `refund_invoice`, `add_usage_pack`, `open_case` and `handoff_to_person`. Business rules are in [store.js](examples/subscriptions/store.js), journeys in [journeys/](examples/subscriptions/journeys/), and policy text in [knowledge/policy.md](examples/subscriptions/knowledge/policy.md).
-
-These call a real model and need `ANTHROPIC_API_KEY` in `.env`:
-
-```sh
-node --env-file=.env examples/subscriptions/chat.js                         # chat with it
-node --env-file=.env examples/subscriptions/demo.js                         # a scripted customer
-FAIL_CHANGE_PLAN=1 node --env-file=.env examples/subscriptions/demo.js      # the same, with the plan change failing
-```
-
-Demo toggles for failing, pending and timed-out changes are listed in [examples/README.md](examples/README.md). The same data, tools and policy back the simulator suite in [sim/](examples/subscriptions/sim/). `TRUST_LAYER_CHECKS=off` runs the example agent with every built-in check off and journey guardrails removed, keeping all prompt text.
-
-### A purchasing desk with approvals
-
-[examples/procurement/](examples/procurement/) is a company's purchasing desk. Staff identify themselves and their team, search a catalog, get a quote and place orders against the team's quarterly budget. It is the same shape as support with three differences the library handles for it:
-
-- the catalog search declares `fromUser: ["query"]`, so the model can only search for what the requester actually said (`no_invented_inputs`);
-- an order above the team's limit returns `approve(...)` from one custom check, so it is parked for a person in purchasing while the chat goes on, and "ordered" stays blocked until it runs;
-- the purchase-order email to the supplier is rendered by the app, not the model, and goes through `agent.review()` before it is sent. Two claim kinds (`count`, `status`) extend the claim check to what purchasing replies state.
-
-Tools: `identify_requester`, `search_catalog`, `get_budget`, `quote_order`, `place_order` (`reconcileWith: "list_orders"` settles a timeout), `open_ticket`, `handoff_to_person`. Rules in [store.js](examples/procurement/store.js), the journey in [journeys/order.yaml](examples/procurement/journeys/order.yaml), the suite in [sim/](examples/procurement/sim/).
-
-```sh
-node --env-file=.env examples/procurement/demo.js     # a scripted requester, then a person approving, then the email through review()
-```
-
-### A scheduling desk
-
-[examples/scheduling/](examples/scheduling/) is a scheduling desk: people book time with a host. Appointments, meetings and service visits all have this shape, and it is the first example with no money in it. A person verifies with a passcode the session never keeps (`secret`), sees their bookings, and books or cancels. What it adds:
-
-- an offered slot is a commitment with no price: it is shown by its date, and `book_slot` needs that offer and a yes after it (`confirm`);
-- a `time` claim kind checks every clock time the model writes against the ISO times the tools returned, in the ways people write them, and a `status` kind covers `booked` and `cancelled`;
-- a cancellation inside 24 hours returns `approve(...)` from a check that reads the booking's start from the tool result the model saw, not from the model's input;
-- the journey hands off when the person asks for someone at the desk, before the model is called.
-
-Tools: `verify_person`, `get_bookings`, `find_slots`, `offer_slot`, `book_slot` (`reconcileWith: "get_bookings"`), `cancel_booking` (a plain yes, no commitment), `handoff_to_person`. The journey is [journeys/booking.yaml](examples/scheduling/journeys/booking.yaml); the suite in [sim/](examples/scheduling/sim/) has 5 tasks (book, slot taken, late cancel, out of scope, unverified ask). Rename the nouns and it is your calendar.
-
-```sh
-node --env-file=.env examples/scheduling/demo.js      # a scripted person books, then a late cancellation is parked and someone approves it
-```
-
-`test/examples.test.ts` drives every example with a scripted model, so they are checked on every CI run without a model call.
-
-## Measuring your agent
+## Testing
 
 ```sh
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4
@@ -416,7 +326,7 @@ assert(r.reply === "I can refund that order. Shall I go ahead?");
 assert(model.requests.length === 3);   // the blocked call, the blocked draft, the reply that was sent
 ```
 
-## How it differs from other guardrails
+## Comparison
 
 Guardrails AI and NeMo Guardrails validate and steer the text going into and out of a model, with far larger libraries of validators and rails than this. Parlant models the conversation itself, with guidelines and journeys that shape how the agent behaves, and is a much fuller conversation framework.
 
@@ -437,13 +347,14 @@ trust-layer-agent is narrower and sits elsewhere: between the model and the tool
 - The openai-compatible adapter is tested only against mocked HTTP.
 - `review()` checks a message the app wrote; nothing schedules or sends it. There are no multi-day journeys, voice or multi-agent setups.
 
-## Docs
+## Documentation
 
+- [docs/why.md](docs/why.md): why each check exists, with the library's own block reasons.
 - [SPEC.md](SPEC.md): the language-neutral spec (journey schema, check results, session JSON, task format). The TypeScript package is its reference implementation.
-- [docs/design.md](docs/design.md): the original design's acceptance sketch and decisions, kept for history; SPEC.md is current.
+- [docs/testing.md](docs/testing.md): the measure step in full: flags, the suite shape, task fields and the pass^k rule.
 - [docs/results.md](docs/results.md): measured pass^k per version, and the limitations those runs exposed.
 - [docs/roadmap.md](docs/roadmap.md): what is planned.
-- [docs/testing.md](docs/testing.md): the measure step in full: flags, the suite shape, task fields and the pass^k rule.
+- [docs/design.md](docs/design.md): the original design's acceptance sketch and decisions, kept for history; SPEC.md is current.
 - [docs/how-it-was-built.md](docs/how-it-was-built.md): the build log, with timeline, decisions, full results and cost.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 - [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt): for coding agents.
@@ -453,7 +364,7 @@ trust-layer-agent is narrower and sits elsewhere: between the model and the tool
 
 Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, tests and the five extension points. Report security issues privately as described in [SECURITY.md](SECURITY.md), not in public issues.
 
-## Where the grading comes from
+## Acknowledgments
 
 The simulator's grading design (outcome grading on final state, simulated users driven by a task persona) and the pass^k metric come from τ-bench and τ²-bench by Sierra Research. trust-layer-agent reports pass^k in its strict form (a task counts only if all k trials pass); it does not depend on either project.
 

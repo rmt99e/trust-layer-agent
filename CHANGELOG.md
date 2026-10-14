@@ -15,7 +15,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
-- The project describes itself as what it is: a simple framework for guardrails on agents that gates tool calls, checks replies and measures both. The README opens with those three steps and orders the rest by them; AGENTS.md says why the repo exists and which step each rule serves; the package, repository, llms.txt, SPEC and prompt openers carry the same sentence.
+- The project describes itself as what it is: a simple framework for guardrails on agents that gates tool calls, checks replies and measures both. The README has the standard shape (features, how it works, installation, quick start, usage, examples, testing, comparison, limitations, documentation), with the argument for each check moved to docs/why.md; AGENTS.md says why the repo exists and which step each rule serves; the package, repository, llms.txt, SPEC and prompt openers carry the same sentence.
 - The note the model gets when an action is parked for approval now ends "and keep helping; don't hand off for this": the first real-model run of the scheduling suite showed Sonnet reading "needs a person's approval" as a reason to hand the whole conversation to a person in 3 of 4 trials, abandoning the approval flow the library keeps alive. Model-facing text: measure with `test --against v0.2.0-sonnet`.
 - package.json keywords drop `customer-support`; the repository description and topics carry the gate, check, measure sentence above.
 
