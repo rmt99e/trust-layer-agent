@@ -91,7 +91,7 @@ user message --> model --> tool call? --> action checks --> allow   --> tool run
 
 Not drawn: a journey's `handoff_when` runs before the model is called; a model refusal, or more than `maxToolCalls` calls in one turn, hands off; after a write with an unknown outcome the library runs the write's `reconcileWith` read itself before the model replies; while an approval is pending the model is reminded each turn not to request it again.
 
-The **session** is the JSON record described in [The session and the agent verbs](#the-session-and-the-agent-verbs). Checks read it together with your tool definitions, your instructions, journeys and knowledge text, and a clock; they never see anything else.
+The **session** is the JSON record described in [The session and the agent verbs](#your-app-owns-the-session). Checks read it together with your tool definitions, your instructions, journeys and knowledge text, and a clock; they never see anything else.
 
 You write three kinds of thing, and can add a fourth:
 
@@ -369,7 +369,7 @@ Tools: `verify_person`, `get_bookings`, `find_slots`, `offer_slot`, `book_slot` 
 node --env-file=.env examples/scheduling/demo.js      # a scripted person books, then a late cancellation is parked and someone approves it
 ```
 
-`test/examples.test.ts` drives all three examples with a scripted model, so they are checked on every CI run without a model call.
+`test/examples.test.ts` drives every example with a scripted model, so they are checked on every CI run without a model call.
 
 ## Measuring your agent
 
