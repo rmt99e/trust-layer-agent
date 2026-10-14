@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
-[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The three examples](#the-three-examples) · [Measuring your agent](#measuring-your-agent) · [How it differs from other guardrails](#how-it-differs-from-other-guardrails) · [Limitations](#limitations) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The examples](#the-examples) · [Measuring your agent](#measuring-your-agent) · [How it differs from other guardrails](#how-it-differs-from-other-guardrails) · [Limitations](#limitations) · [Docs](#docs) · [Contributing](#contributing) · [Where the grading comes from](#where-the-grading-comes-from) · [License](#license)
 
 ## What it is
 
@@ -25,11 +25,11 @@ A simulator plays scripted users against your agent, k times per task, and grade
 
 ### What you write
 
-Tools, wrapped with `read()` or `write()` and declaring what the model may see and what a successful call records. Checks, one function type over actions and replies, returning `allow`, `block`, `rewrite`, `handoff` or `approve`; six are built in. Journeys, YAML that goes into the prompt and whose guardrails compile to checks. The record all of it reads is one JSON session your app stores; a store contract and a Postgres adapter are included.
+Tools, checks and journeys; the table under [How a turn works](#how-a-turn-works) says which of them are enforced. The record they all read is one JSON session your app stores; a store contract and a Postgres adapter are included.
 
-### Three examples ship with it
+### Examples ship with it
 
-A support desk for a subscription app, a purchasing desk with approvals, and a scheduling desk with no money in it. Each is tools, checks, journeys and a simulation suite with a pinned real-model result. See [The three examples](#the-three-examples).
+A support desk for a subscription app, a purchasing desk with approvals, and a scheduling desk with no money in it. Each is tools, checks, journeys and a simulation suite with a pinned real-model result. See [The examples](#the-examples).
 
 ## Why
 
@@ -67,9 +67,9 @@ Prices, percentages, dates and "done" wording in a draft must appear in a succes
 
 `agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. It makes no model call and leaves the session unchanged. See [Checks](#checks).
 
-### Tests run the agent against simulated users
+### Measure the agent against simulated users
 
-`test` runs simulated users against your agent, k times per task, grades each trial on final data state, forbidden actions, handoff and the claims in every sent reply, and reports pass^k. `snapshot` pins the last run with fingerprints of the models, prompts, tools, checks and library code, and `test --against` diffs a run against it. See [Measuring your agent](#measuring-your-agent).
+A simulator measures both. It plays scripted users against your agent, k times per task, grades every trial, and `snapshot` pins the result so a change can be diffed. See [Measuring your agent](#measuring-your-agent).
 
 ## How a turn works
 
@@ -102,7 +102,7 @@ You write three kinds of thing, and can add a fourth:
 | **Journeys** | YAML: a goal, guidance and done-conditions that go into the prompt, plus `guardrails` that compile to checks. | Only the guardrails |
 | **Knowledge** | Operator-authored text files added to the prompt. Prices, percentages and dates written in them (`$29`, `10%`, `2026-11-01`) count as backed when the model repeats them. | Prompt only |
 
-Your app calls `agent.respond(session, message)`, or `withStore(agent, store)` to load and save by session id. `test` runs simulated users against the agent and reports pass^k; `snapshot` pins the results.
+Your app calls `agent.respond(session, message)`, or `withStore(agent, store)` to load and save by session id.
 
 ## Quick look
 
@@ -289,7 +289,7 @@ guardrails:
 
 The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `require_fact` and `handoff_when` (on a tool result, a tool error code, user phrases or a fact). `handoff_when` is evaluated as soon as a message arrives, so it hands off without a model call. A guardrail can also name a check, which fails loading if that check is disabled. Files are validated when the Agent is built, and errors name the file and line. All loaded journeys are active at once; there is no router.
 
-### The session and the agent verbs
+### Your app owns the session
 
 The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), each message, result and approval stamped with the agent's clock, a `failures` count, a `status` (`open`, `handed_off`, or the reserved `closed`) and a `rev` that increases on every turn that produces a reply or fails, on every approval decision and on every resume, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
@@ -320,7 +320,7 @@ With `owner` set, a session id from a request can't reach another owner's conver
 
 `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
-## The three examples
+## The examples
 
 Three fictional apps, one journey each. All run the full library: tools with bound ids and field visibility, journeys with guardrails, every built-in check, a simulation suite the grader can score.
 
@@ -443,7 +443,7 @@ trust-layer-agent is narrower and sits elsewhere: between the model and the tool
 - [docs/design.md](docs/design.md): the original design's acceptance sketch and decisions, kept for history; SPEC.md is current.
 - [docs/results.md](docs/results.md): measured pass^k per version, and the limitations those runs exposed.
 - [docs/roadmap.md](docs/roadmap.md): what is planned.
-- [docs/testing.md](docs/testing.md): `test` flags, the suite shape, task fields and the pass^k rule.
+- [docs/testing.md](docs/testing.md): the measure step in full: flags, the suite shape, task fields and the pass^k rule.
 - [docs/how-it-was-built.md](docs/how-it-was-built.md): the build log, with timeline, decisions, full results and cost.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
 - [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt): for coding agents.
@@ -453,7 +453,7 @@ trust-layer-agent is narrower and sits elsewhere: between the model and the tool
 
 Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, tests and the five extension points. Report security issues privately as described in [SECURITY.md](SECURITY.md), not in public issues.
 
-## Acknowledgments and citations
+## Where the grading comes from
 
 The simulator's grading design (outcome grading on final state, simulated users driven by a task persona) and the pass^k metric come from τ-bench and τ²-bench by Sierra Research. trust-layer-agent reports pass^k in its strict form (a task counts only if all k trials pass); it does not depend on either project.
 

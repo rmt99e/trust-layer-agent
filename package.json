@@ -10,7 +10,8 @@
     "human-in-the-loop",
     "operations",
     "llm",
-    "evals"
+    "evals",
+    "simulation"
   ],
   "license": "MIT",
   "repository": {
