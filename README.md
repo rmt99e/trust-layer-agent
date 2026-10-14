@@ -38,9 +38,14 @@ user message --> model --> tool call? --> action checks --> allow   --> tool run
                                              +-- handoff: turn ends, a person takes over
 ```
 
-Not drawn: a journey's `handoff_when` runs before the model is called; a model refusal, or more than `maxToolCalls` calls in one turn, hands off; after a write with an unknown outcome the library runs the write's `reconcileWith` read itself before the model replies; while an approval is pending the model is reminded each turn not to request it again.
+Not drawn:
 
-Three things happen in order. Before a tool runs, the action checks decide whether it may, from the session, your tool definitions and your instructions. Before a reply is sent, the reply checks compare it with what the tools returned and what the user agreed to; a refused draft goes back to the model with the reason, up to `maxRetries` times (default 2), and the next refusal hands the turn to a person. A simulator then measures both against scripted users.
+- a journey's `handoff_when` runs before the model is called;
+- a model refusal, or more than `maxToolCalls` calls in one turn, hands off;
+- after a write with an unknown outcome the library runs the write's `reconcileWith` read itself before the model replies;
+- while an approval is pending the model is reminded each turn not to request it again.
+
+Action checks run before a tool, reply checks before a reply is sent (a refused draft goes back to the model up to `maxRetries` times, default 2, then the turn hands off), and the simulator measures both.
 
 | | What it is | Enforced? |
 |---|---|---|
@@ -48,30 +53,6 @@ Three things happen in order. Before a tool runs, the action checks decide wheth
 | **Checks** | One function type over actions and replies, returning `allow`, `block`, `rewrite`, `handoff` or `approve`. Six are built in and on by default; a seventh, `untrusted_text_is_data`, is structural and can't be turned off. | Yes |
 | **Journeys** | YAML: a goal, guidance and done-conditions that go into the prompt, plus `guardrails` that compile to checks. | Only the guardrails |
 | **Knowledge** | Operator-authored text files added to the prompt. Prices, percentages and dates written in them (`$29`, `10%`, `2026-11-01`) count as backed when the model repeats them. | Prompt only |
-
-### Example output
-
-The refund exchange from the quick start, as the terminal shows it:
-
-```
-you   > Please refund order 123.
-agent > I can refund order 123 in full. Shall I go ahead?
-
-you   > yes
-   · refund_order → failed (payment_provider_down)
-   ✗ draft not sent  [no_unconfirmed_claims]
-     draft:  "Your refund has been processed."
-     reason: Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.
-agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
-```
-
-The trace sink records the refused draft as one JSON line:
-
-```json
-{"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
-```
-
-This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
 
 ## Installation
 
@@ -125,9 +106,33 @@ if (handoff) notifyATeammate(handoff.summary);
 await save(agent.forget(next));         // stores a tombstone; also deletes the trace when the sink supports it
 ```
 
+### Example output
+
+The quick start's refund exchange, as the terminal shows it:
+
+```
+you   > Please refund order 123.
+agent > I can refund order 123 in full. Shall I go ahead?
+
+you   > yes
+   · refund_order → failed (payment_provider_down)
+   ✗ draft not sent  [no_unconfirmed_claims]
+     draft:  "Your refund has been processed."
+     reason: Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.
+agent > Sorry, the refund didn't go through: the payment provider rejected it. Nothing was charged.
+```
+
+The trace sink records the refused draft as one JSON line:
+
+```json
+{"type":"check","event":"reply","check":"no_unconfirmed_claims","result":{"block":"Reply says \"has been processed\", but refund_order failed and hasn't succeeded since. Say what actually happened."},"draft":"Your refund has been processed."}
+```
+
+This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
+
 ## Usage
 
-Extension happens only through tools, checks, journeys, model adapters and session stores.
+Tools, checks, journeys, sessions and stores, in that order. Extension happens only through tools, checks, journeys, model adapters and session stores.
 
 ### Tools
 
@@ -156,7 +161,7 @@ A successful write tool named `handoff_to_person` ends the turn as a handoff.
 | `no_unconfirmed_claims` | Prices, percentages, dates and "done" wording in a draft must appear in a tool result or commitment from this session, or in your instructions, journeys and knowledge files. "Done" needs a successful write; failure wording is blocked after a success; nothing goes out while a write's outcome is unknown. Your own claim kinds extend it. |
 | `no_invented_inputs` | A field declared `fromUser` holds only values the user said or a session fact; a tool result never counts. |
 | `no_repeated_writes` | A write that already succeeded this turn does not run again; a write whose outcome is unknown or pending is not retried this turn. |
-| `handoff_after_failures` | Two consecutive tool failures (configurable) hand the turn to a person. |
+| `handoff_after_failures` | Two consecutive tool failures (`{ after }` to change it) hand the turn to a person. |
 | `untrusted_text_is_data` | Structural, always on: user messages and tool output reach the model fenced as data, angle brackets escaped. |
 
 Turn one off with `builtins: { name: false }`. Three more guarantees are structural: inputs declared in `bind` come from session facts and are removed from the schema the model sees; a tool's `visible` list decides which returned fields the model sees; every trace sink gets masked lines unless it sets `mask: false`.
@@ -228,7 +233,14 @@ The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `req
 
 ### Sessions
 
-The session is plain JSON: `facts`, `commitments` (what the user was shown and agreed to), `messages`, tool `results`, `approvals` (actions parked for a person), each message, result and approval stamped with the agent's clock, a `failures` count, a `status` (`open`, `handed_off`, or the reserved `closed`) and a `rev` that increases on every turn that produces a reply or fails, on every approval decision and on every resume, for optimistic locking. Start one with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
+The session is plain JSON, one object per conversation:
+
+- `facts`: trusted values set by your app or recorded by tools;
+- `commitments`: what the user was shown and agreed to, with when each was shown and whether it was used;
+- `messages`, tool `results` and `approvals` (actions parked for a person), each stamped with the agent's clock;
+- a `failures` count, a `status` (`open`, `handed_off`, or the reserved `closed`), and a `rev` that increases on every turn that produces a reply or fails, on every approval decision and on every resume, for optimistic locking.
+
+Checks read the session together with your tool definitions, instructions, journeys and knowledge text, and a clock; they see nothing else. Start a session with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
 `agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.resume(session, { note, by })` hands a handed-off conversation back to the agent: the person's note is recorded as a `person` message and the model is told what the teammate did, and the session is open again. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
 
@@ -263,9 +275,9 @@ Three fictional apps, each gated, checked and measured the same way, each with a
 
 | Example | What it shows | Run |
 |---|---|---|
-| [subscriptions/](examples/subscriptions/) | A support desk for a subscription app: verification, usage, quotes, plan changes, refunds, cases and handoff. The fullest example; 22 simulation tasks. | `node --env-file=.env examples/subscriptions/chat.js` |
-| [procurement/](examples/procurement/) | A purchasing desk: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two claim kinds, and `review()` on the supplier email. 4 tasks. | `node --env-file=.env examples/procurement/demo.js` |
-| [scheduling/](examples/scheduling/) | A scheduling desk with no money in it: an offer commitment shown by its date, a `time` claim kind, a late-cancellation approval, a passcode kept `secret`. Appointments, meetings and service visits share the shape. 5 tasks. | `node --env-file=.env examples/scheduling/demo.js` |
+| [subscriptions/](examples/subscriptions/) | A support desk for a subscription app: verification, usage, quotes, plan changes, refunds, cases and handoff. The fullest example. | `node --env-file=.env examples/subscriptions/chat.js` |
+| [procurement/](examples/procurement/) | A purchasing desk: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two claim kinds, and `review()` on the supplier email. | `node --env-file=.env examples/procurement/demo.js` |
+| [scheduling/](examples/scheduling/) | A scheduling desk with no money in it: an offer commitment shown by its date, a `time` claim kind, a late-cancellation approval, a passcode kept `secret`. Appointments, meetings and service visits share the shape. | `node --env-file=.env examples/scheduling/demo.js` |
 
 Each needs `ANTHROPIC_API_KEY` in `.env`. [examples/README.md](examples/README.md) lists every file and the demo toggles. `test/examples.test.ts` drives every example with a scripted model on each CI run.
 
