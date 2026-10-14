@@ -336,7 +336,7 @@ trust-layer-agent is narrower and is placed between the model and the tools. It 
 
 - Affirmatives, negations, "done" wording, refusals and relative dates are English phrase lists. Slash dates are read month first.
 - Units come from field names: `price`, `charge`, `amount`, `fee`, `cost`, `total`, `balance`, `savings`, `increase` and `refund` mean money; `percent` and `pct` mean a percentage. A number in any other field cannot confirm "$29"; rename the field or return `"$29"`. Sums and differences are not computed, so tools should return every number the agent may say.
-- Claims about fit or eligibility aren't checked (see [docs/results.md](docs/results.md)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
+- Claims about fit or eligibility are not checked (see [docs/results.md](docs/results.md)); an application can cover its own vocabulary with a claim kind, but the built-ins don't know it.
 - `no_invented_inputs` matches whole words, case-insensitively. A user who typed "Springfeld" can be searched for as "Springfeld", not "Springfield".
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
 - Consent is per turn: one yes licenses every unconfirmed write the model calls in that turn. Tie a write to what was proposed with `confirm`, or with a custom check.
