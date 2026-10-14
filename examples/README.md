@@ -2,7 +2,7 @@
 
 Three fictional applications: a subscription support desk, a purchasing desk and a scheduling desk. `test/examples.test.ts` drives each with a scripted model on every CI run; the commands below use a real model.
 
-All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the repository root. Run `npm install` first (it builds the package).
+Each command calls a real model and needs `ANTHROPIC_API_KEY` in `.env` at the repository root. Run `npm install` first (it builds the package).
 
 | File | What it shows |
 |---|---|
@@ -10,12 +10,12 @@ All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the rep
 | [subscriptions/chat.js](subscriptions/chat.js) | Chat with the full subscription agent: tools, journeys, policy and every built-in check, shown inline. |
 | [subscriptions/demo.js](subscriptions/demo.js) | A scripted customer through `respond()`, printed in the same teaching view. |
 | [subscriptions/sim/](subscriptions/sim/) | The simulation suite: 22 tasks, stand-ins over a seeded store. Run with `npx trust-layer-agent test --suite examples/subscriptions/sim`. |
-| [procurement/demo.js](procurement/demo.js) | A second journey, internal purchasing: a scripted requester, an order parked for a person and approved with `agent.approve()`, and the app's own supplier email checked with `agent.review()`. |
+| [procurement/demo.js](procurement/demo.js) | A second journey, internal purchasing: a scripted requester, an order parked for a person and approved with `agent.approve()`, and the application's supplier email checked with `agent.review()`. |
 | [procurement/sim/](procurement/sim/) | Its suite: 4 tasks (within limit, needs approval, made-up item, over budget). `npx trust-layer-agent test --suite examples/procurement/sim`. |
-| [scheduling/demo.js](scheduling/demo.js) | A third journey with no money in it, a scheduling desk (appointments, meetings, service visits): an offered slot shown by its date and booked after a yes, a `time` claim kind, and a late cancellation parked for a person. |
+| [scheduling/demo.js](scheduling/demo.js) | A third journey, a scheduling desk with no monetary values (appointments, meetings, service visits): an offered slot shown by its date and booked after a yes, a `time` claim kind, and a late cancellation parked for a person. |
 | [scheduling/sim/](scheduling/sim/) | Its suite: 5 tasks (book, slot taken, late cancel, out of scope, unverified ask). `npx trust-layer-agent test --suite examples/scheduling/sim`. |
 
-## Demo toggles (subscriptions/chat.js)
+## Demo toggles
 
 | Variable | Values | Effect |
 |---|---|---|
@@ -24,7 +24,7 @@ All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the rep
 | | `pending` | `change_plan` is accepted but not applied yet (`status: "pending"`); "done" wording is blocked. |
 | `AGENT_MODEL` | `sonnet` (default), `haiku` | Which model plays the agent: `anthropic:claude-sonnet-5-5` or `anthropic:claude-haiku-4-5-20251001`. |
 
-The active model and outcome are printed on startup. Examples:
+`subscriptions/chat.js` reads these and prints the active model and outcome on startup. Examples:
 
 ```sh
 CHANGE_PLAN_OUTCOME=timeout AGENT_MODEL=haiku node --env-file=.env examples/subscriptions/chat.js

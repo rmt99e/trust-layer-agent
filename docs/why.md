@@ -18,7 +18,7 @@ A write runs only after the agent has replied and the user's latest message is a
 
 ## Human approval
 
-A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. The application shows the parked action to a person and calls `agent.approve()` or `agent.decline()`, naming who decided; the result, the decision, who made it and when all land in the session for the next turn and the audit trail. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it lands. See [Checks](../README.md#checks).
+A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. The application shows the parked action to a person and calls `agent.approve()` or `agent.decline()`, naming who decided; the result, the decision, who made it and when are recorded in the session for the next turn and the audit trail. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it is returned. See [Checks](../README.md#checks).
 
 ## Visibility
 

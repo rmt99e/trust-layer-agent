@@ -60,7 +60,7 @@ Action checks run before each tool call and reply checks before each reply. A re
 npm install github:rmt99e/trust-layer-agent
 ```
 
-It isn't on npm yet. The package's `prepare` script builds it on install. It's TypeScript compiled to ES-module JavaScript with `.d.ts` types, so plain-JS apps need no build step. Runtime dependencies are `zod` and `yaml`. The model adapters (`anthropic` and `openai-compatible`) use `fetch`, with no provider SDKs.
+The package is not yet on npm; its `prepare` script builds it on install. It is TypeScript compiled to ES-module JavaScript with `.d.ts` types, so plain-JS applications need no build step. Runtime dependencies are `zod` and `yaml`. The model adapters (`anthropic` and `openai-compatible`) use `fetch`, with no provider SDKs.
 
 ## Quick start
 
@@ -92,12 +92,12 @@ model: openaiCompatible({ model: "<model-name>", baseUrl: "http://localhost:8000
 
 The string `"openai-compatible:<model>"` does the same, reading `OPENAI_API_KEY` and `OPENAI_BASE_URL`. Any object with an `id` and a `generate()` method also works; the interface is `Model`.
 
-In an app, call `respond()` and store the session yourself:
+In an application, call `respond()` and store the session:
 
 ```js
 import { createSession } from "trust-layer-agent";
 
-const session = saved ?? createSession({ facts: { verified: true, accountId: user.accountId } });  // app-set facts are trusted
+const session = saved ?? createSession({ facts: { verified: true, accountId: user.accountId } });  // application-set facts are trusted
 const { reply, session: next, handoff } = await agent.respond(session, message);
 await save(next);                       // plain JSON: a jsonb column works
 if (handoff) notifyATeammate(handoff.summary);
@@ -132,23 +132,23 @@ This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
 
 ## Usage
 
-Tools, checks, journeys, sessions and stores, in that order. The library is extended only through tools, checks, journeys, model adapters and session stores.
+This section covers tools, checks, journeys, sessions and stores, in that order. The library is extended only through tools, checks, journeys, model adapters and session stores.
 
 ### Tools
 
 Wrap existing functions with `read()` or `write()`. Each tool has a snake_case `name`, a `description` and a zod `input`, which is validated before `run` and types `run`, `bind`, `fromUser` and `confirm.by`, so a misspelled field is a compile error. `records` and `outcome` are typed from `run`'s return value when `run` is declared before them.
 
-- **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data or secrets (email, phone, address, postcode, dob, ssn, card number, iban, pin, password, token, passport, tax id, driver licence, account number) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
+- **`visible`**: the returned fields the model may see (`"plan.name"`, `"invoices[].amount"`). Without it, fields named like personal data or secrets (email, phone, address, postcode, dob, ssn, card number, iban, pin, password, token, passport, tax id, driver license, account number) are hidden and personal data in other strings is masked. `strictVisibility: true` on the Agent hides every unlisted field.
 - **`bind`**: fills input fields from session facts, e.g. `{ accountId: "facts.accountId" }`.
 - **`records`**: what a successful call writes to the session: `facts` (e.g. `verified: true`) and `commitments` (e.g. a quote with its prices and expiry). A call that throws records nothing.
 - **`beforeVerification`** lets a tool run before verification; **`verifies`** marks the tool whose records can set `facts.verified`.
-- **`confirm`** (writes): ties a write to a commitment, e.g. `{ commitment: "quote", by: "quoteId" }`, or `false` to skip the yes requirement (for `open_case`, say).
+- **`confirm`** (writes): ties a write to a commitment, e.g. `{ commitment: "quote", by: "quoteId" }`, or `false` to skip the yes requirement (e.g. `open_case`).
 - **`ToolError`**: `throw new ToolError("outside_refund_window", "message for the model")` sends the model a structured error and gives journeys a code to hand off on. Other thrown errors reach the model as `internal_error`. For a write that may have happened anyway, throw `new ToolError("timeout", "message", { outcome: "unknown" })`; without `{ outcome: "unknown" }` a ToolError is a known failure.
 - **`outcome`** (writes): reads a successful result as `"done"` or `"pending"`, e.g. `(o) => (o.status === "pending" ? "pending" : "done")`. The default is done.
 - **`reconcileWith`** (writes): the read tool that settles an unknown outcome, e.g. `"get_account"` on `change_plan`. It must name a read tool of the same agent, or `new Agent()` throws.
 - **`repeatable: true`** (writes): lets a write succeed more than once in a turn.
-- **`fromUser`**: input fields whose values must come from the user's own words or a session fact, e.g. `["name", "city"]` on a search tool. Checked by `no_invented_inputs`; a field can't be both bound and `fromUser`.
-- **`secret`**: input fields that must not outlive the call, e.g. `["pin"]` on a verify tool. `run` gets the real value; the session, the traces and the model's history keep `[redacted]`. A simulation task can't `compare` such a field.
+- **`fromUser`**: input fields whose values must come from the user's own words or a session fact, e.g. `["name", "city"]` on a search tool. Checked by `no_invented_inputs`; a field cannot be both bound and `fromUser`.
+- **`secret`**: input fields that must not outlive the call, e.g. `["pin"]` on a verify tool. `run` gets the real value; the session, the traces and the model's history keep `[redacted]`. A simulation task cannot `compare` such a field.
 
 A successful write tool named `handoff_to_person` ends the turn as a handoff.
 
@@ -158,7 +158,7 @@ A successful write tool named `handoff_to_person` ends the turn as a handoff.
 |---|---|
 | `verified_first` | No tool runs before `facts.verified` is true, except tools marked `beforeVerification`. |
 | `yes_after_quote` | A write runs only after the user's latest message is a clear yes. A write with `confirm` also needs its quote to exist this session, to have been shown in an earlier reply, and to be unused and unexpired. |
-| `no_unconfirmed_claims` | Prices, percentages, dates and "done" wording in a draft must appear in a tool result or commitment from this session, or in your instructions, journeys and knowledge files. "Done" needs a successful write; failure wording is blocked after a success; nothing goes out while a write's outcome is unknown. Your own claim kinds extend it. |
+| `no_unconfirmed_claims` | Prices, percentages, dates and "done" wording in a draft must appear in a tool result or commitment from this session, or in the operator's instructions, journeys and knowledge files. "Done" needs a successful write; failure wording is blocked after a success; nothing goes out while a write's outcome is unknown. Operator-defined claim kinds extend it. |
 | `no_invented_inputs` | A field declared `fromUser` holds only values the user said or a session fact; a tool result never counts. |
 | `no_repeated_writes` | A write that already succeeded this turn does not run again; a write whose outcome is unknown or pending is not retried this turn. |
 | `handoff_after_failures` | Two consecutive tool failures (`{ after }` to change it) hand the turn to a person. |
@@ -166,7 +166,7 @@ A successful write tool named `handoff_to_person` ends the turn as a handoff.
 
 Turn one off with `builtins: { name: false }`. Three more guarantees are structural: inputs declared in `bind` come from session facts and are removed from the schema the model sees; a tool's `visible` list decides which returned fields the model sees; every trace sink gets masked lines unless it sets `mask: false`.
 
-One function type guards actions (before a tool runs) and replies (before they're sent). It returns `allow()`, `block(reason)`, `rewrite(text)` (replies only), `handoff(summary)` or `approve(reason)` (actions only).
+One function type guards actions (before a tool runs) and replies (before they are sent). It returns `allow()`, `block(reason)`, `rewrite(text)` (replies only), `handoff(summary)` or `approve(reason)` (actions only).
 
 ```js
 import { check, allow, approve } from "trust-layer-agent";
@@ -178,9 +178,9 @@ const bigRefunds = check("big_refunds_need_a_person", (e) =>
 new Agent({ ...options, checks: [bigRefunds] });
 ```
 
-Built-ins run first, then journey guardrails, then your checks. For actions, the first non-allow result wins; a blocked tool doesn't run and the model is told why. For replies, rewrites chain; a block discards the draft and the model tries again, up to `maxRetries` (default 2), after which the turn hands off. The built-ins are the table above; SPEC.md §5 has each rule in full.
+Built-ins run first, then journey guardrails, then the application's checks. For actions, the first non-allow result wins; a blocked tool does not run and the model is told why. For replies, rewrites chain; a block discards the draft and the model tries again, up to `maxRetries` (default 2), after which the turn hands off. The built-ins are the table above; SPEC.md §5 has each rule in full.
 
-**Approvals.** `approve(reason)` parks the action for a person instead of running or refusing it. The conversation goes on: the model is told the action is requested, not done, and `no_unconfirmed_claims` blocks "it's done" wording until it is. The parked action is on the session as `approvals[]` (`{ id, tool, input, secret?, turn, at, reason, by, status, result?, decidedAt?, decidedBy? }`) and on the reply as `approvals` for the ones parked this turn. Your app decides, whenever it likes:
+**Approvals.** `approve(reason)` parks the action for a person instead of running or refusing it. The conversation continues: the model is told the action is requested rather than done, and `no_unconfirmed_claims` blocks "it's done" wording until it is. The parked action is on the session as `approvals[]` (`{ id, tool, input, secret?, turn, at, reason, by, status, result?, decidedAt?, decidedBy? }`) and on the reply as `approvals` for the ones parked this turn. The application decides at any later time:
 
 ```js
 const { reply, session, approvals } = await agent.respond(saved, message);
@@ -191,9 +191,9 @@ const { session: next, result } = await agent.approve(session, "p_1", { by: revi
 await save(next);                                                           // the model sees the result next turn
 ```
 
-Both decisions end in an ordinary tool result in the session, so the next reply is checked against the recorded result. An approved call runs without checks: the person's decision is the check. The same call isn't parked twice, and each turn while something is pending the model is reminded not to request it again.
+Both decisions end in an ordinary tool result in the session, so the next reply is checked against the recorded result. An approved call runs without further checks. The same call is not parked twice, and each turn while something is pending the model is reminded not to request it again.
 
-**Your own claim kinds.** `no_unconfirmed_claims` knows prices, percentages, dates and "done" wording. Teach it what your replies state with a claim kind: a name, a way to find such claims in a text, and optionally what a source has to contain to back one:
+**Claim kinds.** `no_unconfirmed_claims` covers prices, percentages, dates and "done" wording. A claim kind extends it to the application's vocabulary: a name, a way to find such claims in a text, and optionally what a source has to contain to back one:
 
 ```js
 new Agent({ ...options, builtins: { no_unconfirmed_claims: { kinds: [
@@ -205,7 +205,7 @@ new Agent({ ...options, builtins: { no_unconfirmed_claims: { kinds: [
 
 `find` is a RegExp (its first group, or the whole match, lower-cased) or a function returning the claims in a text. A claim is backed when a successful tool output, a commitment or operator text contains it: by default any string or number in the source, whole, or anything `find` picks out of it; `confirms(source)` replaces that rule. User text never backs anything. The block reason names the kind and the value, and the simulator's grader applies the same kinds.
 
-**Reviewing a draft you wrote.** `agent.review(session, draft)` runs the reply checks on text that didn't come from the model: a rendered template, a scheduled notice, an outbound email. No model call, nothing changes, and a `review` trace line records the verdict:
+**Review.** `agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. It makes no model call, leaves the session unchanged, and writes a `review` trace line with the verdict:
 
 ```js
 const v = await agent.review(session, renderNotice(data));   // { result, by?, text?, trail }
@@ -213,7 +213,7 @@ if ("block" in v.result) return holdForEdit(v.result.block);  // "Reply states t
 send(v.text ?? draft);                                        // text is set when a check rewrote it
 ```
 
-`session` may be `null`: then only your instructions, journeys and knowledge files can back a claim.
+`session` may be `null`: then only the operator's instructions, journeys and knowledge files can back a claim.
 
 ### Journeys
 
@@ -235,20 +235,20 @@ The guardrail kinds are `require_call_before`, `allow_values`, `max_calls`, `req
 
 The session is plain JSON, one object per conversation:
 
-- `facts`: trusted values set by your app or recorded by tools;
+- `facts`: trusted values set by the application or recorded by tools;
 - `commitments`: what the user was shown and agreed to, with when each was shown and whether it was used;
 - `messages`, tool `results` and `approvals` (actions parked for a person), each stamped with the agent's clock;
 - a `failures` count, a `status` (`open`, `handed_off`, or the reserved `closed`), and a `rev` that increases on every turn that produces a reply or fails, on every approval decision and on every resume, for optimistic locking.
 
-Checks read the session together with your tool definitions, instructions, journeys and knowledge text, and a clock; they see nothing else. Start a session with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
+Checks read the session together with the tool definitions, instructions, journeys and knowledge text, and a clock; they see nothing else. Start a session with `createSession({ facts })` or pass `null`. A session stored before `approvals` existed loads fine.
 
-`agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies aren't streamed, because each is checked before it's sent. `agent.chat()` runs the same loop in a terminal. `agent.resume(session, { note, by })` hands a handed-off conversation back to the agent: the person's note is recorded as a `person` message and the model is told what the teammate did, and the session is open again. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
+`agent.respond(session, message)` returns `{ reply, session, handoff?, approvals?, usage }`. `handoff` is `{ summary, reason }`; `approvals` lists the actions parked this turn; `usage` counts tokens and model calls. The returned session is a new object. Replies are not streamed, because each is checked before it is sent. `agent.chat()` runs the same loop in a terminal. `agent.resume(session, { note, by })` hands a handed-off conversation back to the agent: the person's note is recorded as a `person` message and the model is told what the teammate did, and the session is open again. `agent.forget(session)` returns a tombstone, `{ v: 2, id, forgotten: true }`, to store in place of the session, and deletes the session's trace when the sink has a `forget` method (it warns once if not).
 
-The default trace sink, `jsonl()`, writes one masked file per session to `./traces/`. `maskTrace` is exported for your own logs. The session itself holds what the user typed; store it like other user data.
+The default trace sink, `jsonl()`, writes one masked file per session to `./traces/`. `maskTrace` is exported for application logs. The session itself holds what the user typed; store it like other user data.
 
 ### Stores
 
-A store gives your storage two verbs, `load(id)` and `save(session, expectedRev)`, and `save` must refuse when the stored `rev` isn't the one you loaded. That turns `rev` into a real lock: two requests for one conversation can't overwrite each other. `withStore(agent, store)` then gives you the agent's verbs by session id, each one loading, acting and saving against the rev it loaded:
+A store gives the application's storage two verbs, `load(id)` and `save(session, expectedRev)`, and `save` must refuse when the stored `rev` is not the one loaded. `rev` is then a lock: two requests for one conversation cannot overwrite each other. `withStore(agent, store)` then exposes the agent's verbs by session id, each one loading, acting and saving against the rev it loaded:
 
 ```js
 import { withStore, memoryStore } from "trust-layer-agent";
@@ -265,13 +265,13 @@ await mine.forget(session.id);            // deletes the trace rows and stores t
 
 A second call that loses the race rejects with `StaleSession`; retry it from a fresh load. If the model fails mid-turn, `respond` rejects with `TurnFailed`, which carries the session so far; `withStore` saves it before rethrowing, so a write that ran before the failure is never lost, and the model sees it next turn.
 
-With `owner` set, a session id from a request can't reach another owner's conversation: it reads as `no session`, the same as an id that doesn't exist, and a tool can't change a session's owner. Every trace line for a model call carries the provider's request id and the wall time, so a line can be matched to the provider's own log.
+With `owner` set, a session id from a request cannot reach another owner's conversation: it reads as `no session`, the same as an id that does not exist, and a tool cannot change a session's owner. Every trace line for a model call carries the provider's request id and the wall time, so a line can be matched to the provider's own log.
 
 `memoryStore()` is the reference implementation (a Map) and the contract every store must meet, in [test/store.test.ts](test/store.test.ts). `postgres({ query, sessions?, traces?, mask?, onError? })` keeps sessions in one table (`id`, `rev`, `status`, `session` jsonb, `updated_at`; run `pg.schema` rather than hand-building it) and trace lines in another, through whatever query function you pass, so the library takes no database dependency. A forgotten session stays as a tombstone row, so `load` can tell "forgotten" from "never existed".
 
 ## Examples
 
-Three fictional applications, each with a pinned real-model result.
+Three fictional applications follow, each with a pinned real-model result.
 
 | Example | What it shows | Run |
 |---|---|---|
@@ -311,7 +311,7 @@ expect:
 max_steps: 12
 ```
 
-A suite is a `suite.js` that exports your agent options, your tools, a stand-in `run` per tool over a fresh seeded store, the tasks directory and the models. `validate` runs everything `test` checks before its first model call (stand-ins match the tools, every task names real tools and its expected writes apply to the seed, both models are priced) and exits, so a CI job can gate task files for free. The flags, the suite shape, the other `expect` fields and the exact pass^k rule are in [docs/testing.md](docs/testing.md); the task format is normative in [SPEC.md](SPEC.md).
+A suite is a `suite.js` that exports the agent options, the tools, a stand-in `run` per tool over a fresh seeded store, the tasks directory and the models. `validate` runs everything `test` checks before its first model call (stand-ins match the tools, every task names real tools and its expected writes apply to the seed, both models are priced) and exits, so a CI job can gate task files at no cost. The flags, the suite shape, the other `expect` fields and the exact pass^k rule are in [docs/testing.md](docs/testing.md); the task format is normative in [SPEC.md](SPEC.md).
 
 Unit tests need no model either. `trust-layer-agent/testing` exports the scripted model the library's tests run on: a list of steps, each a reply or a tool call, that records every request it receives.
 
@@ -328,28 +328,28 @@ assert(model.requests.length === 3);   // the blocked call, the blocked draft, t
 
 ## Comparison
 
-Guardrails AI and NeMo Guardrails validate and steer the text entering and leaving a model, with far larger libraries of validators and rails. Parlant models the conversation itself, with guidelines and journeys, and is a much fuller conversation framework.
+Guardrails AI and NeMo Guardrails validate and steer the text entering and leaving a model, with larger libraries of validators and rails. Parlant models the conversation itself, with guidelines and journeys, and is a fuller conversation framework.
 
-trust-layer-agent is narrower and occupies a different position, between the model and the tools. It gates which calls run, checks each reply against what the tools returned and what the user agreed to, and includes the simulator that measures both. A text validator can be wrapped as a check and used alongside it.
+trust-layer-agent is narrower and is placed between the model and the tools. It gates which calls run, checks each reply against what the tools returned and what the user agreed to, and includes the simulator that measures both. A text validator can be wrapped as a check and used alongside it.
 
 ## Limitations
 
 - Affirmatives, negations, "done" wording, refusals and relative dates are English phrase lists. Slash dates are read month first.
-- Units come from field names: `price`, `charge`, `amount`, `fee`, `cost`, `total`, `balance`, `savings`, `increase` and `refund` mean money; `percent` and `pct` mean a percentage. A number in any other field can't confirm "$29"; rename the field or return `"$29"`. Sums and differences aren't computed, so tools should return every number the agent may say.
+- Units come from field names: `price`, `charge`, `amount`, `fee`, `cost`, `total`, `balance`, `savings`, `increase` and `refund` mean money; `percent` and `pct` mean a percentage. A number in any other field cannot confirm "$29"; rename the field or return `"$29"`. Sums and differences are not computed, so tools should return every number the agent may say.
 - Claims about fit or eligibility aren't checked (see [docs/results.md](docs/results.md)); an app can cover its own vocabulary with a claim kind, but the built-ins don't know it.
 - `no_invented_inputs` matches whole words, case-insensitively. A user who typed "Springfeld" can be searched for as "Springfeld", not "Springfield".
 - Implied outcomes ("our team will handle your switch") are caught only while an outcome is unknown, when every draft is blocked.
-- Consent is per turn: one yes licenses every unconfirmed write the model calls in that turn. Tie a write to what was proposed with `confirm`, or with a check of your own.
+- Consent is per turn: one yes licenses every unconfirmed write the model calls in that turn. Tie a write to what was proposed with `confirm`, or with a custom check.
 - The whole conversation is replayed to the model every turn; there is no windowing.
-- Trace masking replaces any run of ten or more digits with `[phone]`, so long reference numbers in free text are masked too. Visibility is the guarantee; masking is best effort.
+- Trace masking replaces any run of ten or more digits with `[phone]`, so long reference numbers in free text are masked too. Only visibility is guaranteed; masking is best-effort.
 - Failure wording ignores negation: "nothing failed" after a success is blocked.
-- No streaming; each reply is checked whole before it's sent.
+- No streaming; each reply is checked whole before it is sent.
 - The openai-compatible adapter is tested only against mocked HTTP.
-- `review()` checks a message the app wrote; nothing schedules or sends it. There are no multi-day journeys, voice or multi-agent setups.
+- `review()` checks a message the application wrote; nothing schedules or sends it. There are no multi-day journeys, voice or multi-agent setups.
 
 ## Documentation
 
-- [docs/why.md](docs/why.md): why each check exists, with the library's own block reasons.
+- [docs/why.md](docs/why.md): why each check exists, with the library's block reasons.
 - [SPEC.md](SPEC.md): the language-neutral spec (journey schema, check results, session JSON, task format). The TypeScript package is its reference implementation.
 - [docs/testing.md](docs/testing.md): the measure step in full: flags, the suite shape, task fields and the pass^k rule.
 - [docs/results.md](docs/results.md): measured pass^k per version, and the limitations those runs exposed.

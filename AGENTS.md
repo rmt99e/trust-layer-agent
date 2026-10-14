@@ -4,15 +4,15 @@ Notes for coding agents working on this repo. For using the package in an app, r
 
 ## Why it exists
 
-A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. Everything in this repo serves one of those three steps, and every rule below follows from one of them:
+A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. Every rule below follows from one of those steps:
 
-- **Gate.** A tool call runs only when code allows it, from the session: verification, a yes after the quote, bound ids, inputs the user gave, approvals parked for a person, no repeated writes. The gate must be reliable, so checks are deterministic code and never call a model.
-- **Check.** A reply is sent only when it matches what the tools returned and what the user agreed to. The claim rules are phrase lists and regexes whose block reasons are exact strings, with tests for every allowed case and every attack, so a relaxation can't quietly let a false claim through.
-- **Measure.** A simulator scores the agent on real models, task by task, k times; snapshots pin results; every behavior change is measured against one. A check that passes unit tests but fails a scored run is not done.
+- Gate. A tool call runs only when code allows it, from the session: verification, a yes after the quote, bound ids, inputs the user gave, approvals parked for a person, no repeated writes. The gate must be reliable, so checks are deterministic code and never call a model.
+- Check. A reply is sent only when it matches what the tools returned and what the user agreed to. The claim rules are phrase lists and regexes whose block reasons are exact strings, with tests for every allowed case and every attack, so a relaxation cannot admit a false claim untested.
+- Measure. A simulator scores the agent on real models, task by task, k times; snapshots pin results; every behavior change is measured against one. A check is complete only when it also passes a scored run.
 
 A TypeScript library (Node 20+); support, purchasing and scheduling are the three shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
 
-Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `resume`, `forget`, `chat`), three commands (`test`, `snapshot`, `validate`).
+The surface is three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `resume`, `forget`, `chat`) and three commands (`test`, `snapshot`, `validate`).
 
 ## Layout
 
