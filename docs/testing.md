@@ -1,6 +1,6 @@
 # Testing your agent
 
-The reference for the `test`, `snapshot` and `validate` commands and for suites. The README has the short version; [SPEC.md](../SPEC.md) §10–12 is normative for task files, grading and snapshots.
+The measure step: the reference for the `test`, `snapshot` and `validate` commands and for suites. The README has the short version; [SPEC.md](../SPEC.md) §10–12 is normative for task files, grading and snapshots.
 
 ## `test` flags
 

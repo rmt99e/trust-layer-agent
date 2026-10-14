@@ -1,51 +1,47 @@
 # trust-layer-agent
 
-> A trust layer for LLM agents that act on someone's behalf. Every tool call is checked before it runs, and every reply is checked before it is sent, against what the tools returned and what the user agreed to.
+> A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. Code decides what the model may do and what it may say, from a session your app owns, whatever the model was told.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/rmt99e/trust-layer-agent/actions/workflows/ci.yml)
 
-[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The two examples](#the-two-examples) · [Testing your agent](#testing-your-agent) · [How it differs from guardrail tools](#how-it-differs-from-guardrail-tools) · [Limitations](#limitations) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
+[What it is](#what-it-is) · [Why](#why) · [How a turn works](#how-a-turn-works) · [Quick look](#quick-look) · [What it enforces](#what-it-enforces) · [Install](#install) · [Quickstart](#quickstart) · [Reference](#reference) · [The three examples](#the-three-examples) · [Measuring your agent](#measuring-your-agent) · [How it differs from other guardrails](#how-it-differs-from-other-guardrails) · [Limitations](#limitations) · [Docs](#docs) · [Contributing](#contributing) · [Acknowledgments and citations](#acknowledgments-and-citations) · [License](#license)
 
 ## What it is
 
-### It sits between the model and your tools
+trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things. The model talks to the user and proposes tool calls; your tools read and change records. The library sits between the two and does three things, in this order.
 
-trust-layer-agent is a TypeScript library (Node 20+) for agents that both do things and say things. The model talks to the user and proposes tool calls; your tools read and change records. The library sits between the two and sees every call and every reply before either goes out.
+### Gate tool calls
 
-### Code makes two decisions
+Before any tool runs, code decides whether it may. A write needs the user's yes after they saw the exact quote. A record is read only after verification. An account id is bound from the session, never taken from the model. A search runs only on words the user said. An action over a limit is parked for a person. A write that already succeeded this turn does not run again. A refused call is answered with the reason and the model carries on.
 
-For each tool call, whether it may run. For each draft reply, whether it may be sent. Code answers both from the session, your tool definitions and your own instructions. A refused call is answered with the reason. A refused draft goes back to the model with the reason and the model writes again, up to `maxRetries` times (default 2); the next refusal hands the turn to a person.
+### Check replies
 
-### Your app owns the session
+Before any reply is sent, code checks it against the record: no price, date, status or "done" that no tool returned, no "it failed" after a success, nothing while a write's outcome is unknown. A refused draft goes back to the model with the reason, up to `maxRetries` times (default 2); the next refusal hands the turn to a person. Messages your app writes itself go through the same checks with `review()`.
 
-The record the decisions read is one JSON object, the session: trusted facts, quotes with when each was shown and whether it was used, every tool result, the messages, actions parked for a person. Your app stores it between turns. A store contract and a Postgres adapter are included; a Map is the reference.
+### Measure both
 
-### Checks are code
+A simulator plays scripted users against your agent, k times per task, and grades each trial on the final data state, forbidden actions, handoff and the claims in every sent reply. `test` reports pass^k, `snapshot` pins a result with fingerprints of the models, prompts, tools, checks and library, and `test --against` diffs a change. `validate` checks a suite with no model call, and a scripted model drives unit tests with no key.
 
-They hold whether or not the model follows its instructions, and they run without a model in tests. Journeys describe what a good conversation looks like and go into the prompt; only their guardrails are enforced. Six built-in checks cover verification, consent, claims, inputs, repeated writes and failures; your own checks and claim kinds extend them.
+### What you write
 
-### Two examples ship with it
+Tools, wrapped with `read()` or `write()` and declaring what the model may see and what a successful call records. Checks, one function type over actions and replies, returning `allow`, `block`, `rewrite`, `handoff` or `approve`; six are built in. Journeys, YAML that goes into the prompt and whose guardrails compile to checks. The record all of it reads is one JSON session your app stores; a store contract and a Postgres adapter are included.
 
-Customer support is the use case it was built on and the fullest example in the repo. An internal purchasing desk with approvals is the second. Both are built from the same four parts: tools, checks, journeys and a session. See [The two examples](#the-two-examples).
+### Three examples ship with it
+
+A support desk for a subscription app, a purchasing desk with approvals, and a scheduling desk with no money in it. Each is tools, checks, journeys and a simulation suite with a pinned real-model result. See [The three examples](#the-three-examples).
 
 ## Why
 
 You build an agent on a model. You give it tools that read an account, quote a change, place an order, refund an invoice. The model handles the conversation well. It does not reliably know what those tools did, what the user said or what the user agreed to, and instructions cannot make it know.
 
-This library keeps those facts in the session and puts the rules that read them in code. What follows is what that gives you. The quoted lines are the library's own block reasons, each pinned by an exact assertion in the test suite.
+This library keeps those facts in the session and puts the rules that read them in code. What follows is what that gives you, in the library's own order: gate, check, measure. The quoted lines are the library's own block reasons, each pinned by an exact assertion in the test suite.
 
 ### Consent before a write
 
 A write runs only after the agent has replied and the user's latest message is a clear yes, unless the tool opts out with `confirm: false`. A write tied to a quote also needs that quote to exist in this session, to have been shown in an earlier reply, and to be unused and unexpired; the quote is spent once. Details under [What it enforces](#what-it-enforces).
 
 > `Before change_plan, tell the user exactly what will happen and wait for a clear yes.`
-
-### Replies that match the record
-
-Prices, percentages, dates and "done" wording in a draft must appear in a successful tool result or a commitment from this session, or in your instructions, journeys and knowledge files. Values match by kind, so a 10% discount does not confirm "$10". A write's outcome is tracked, so "done" needs a successful write and nothing goes out while an outcome is unknown. Claim kinds extend this to your own vocabulary; see [Checks](#checks).
-
-> `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
 
 ### Inputs come from the user
 
@@ -57,17 +53,23 @@ Prices, percentages, dates and "done" wording in a draft must appear in a succes
 
 A check can return `approve(reason)`. The call is parked on the session, the model is told it is requested rather than done, and the conversation continues. Your app shows the parked action to a person and calls `agent.approve()` or `agent.decline()`, naming who decided; the result, the decision, who made it and when all land in the session for the next turn and the audit trail. A check can also return `handoff(summary)` to end the turn, and a journey's `handoff_when` hands off on a phrase or a fact before the model is called, or on a tool result or error as soon as it lands. See [Checks](#checks).
 
-### Your own messages are checked too
-
-`agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. It makes no model call and leaves the session unchanged. See [Checks](#checks).
-
 ### What the model can see
 
 A tool lists the output fields the model may see; without a list, fields named like personal data are hidden and personal data in other strings is masked. User messages and tool output reach the model fenced as data with angle brackets escaped, and anything a system note quotes from them is escaped too. Trace lines are masked before they reach a sink unless the sink sets `mask: false`. See [Tools](#tools).
 
+### Replies that match the record
+
+Prices, percentages, dates and "done" wording in a draft must appear in a successful tool result or a commitment from this session, or in your instructions, journeys and knowledge files. Values match by kind, so a 10% discount does not confirm "$10". A write's outcome is tracked, so "done" needs a successful write and nothing goes out while an outcome is unknown. Claim kinds extend this to your own vocabulary; see [Checks](#checks).
+
+> `Reply says "has been processed", but refund_order failed and hasn't succeeded since. Say what actually happened.`
+
+### Your own messages are checked too
+
+`agent.review(session, draft)` runs the reply checks on text the model did not write: a rendered template, a scheduled notice, an outbound email. It makes no model call and leaves the session unchanged. See [Checks](#checks).
+
 ### Tests run the agent against simulated users
 
-`test` runs simulated users against your agent, k times per task, grades each trial on final data state, forbidden actions, handoff and the claims in every sent reply, and reports pass^k. `snapshot` pins the last run with fingerprints of the models, prompts, tools, checks and library code, and `test --against` diffs a run against it. See [Testing your agent](#testing-your-agent).
+`test` runs simulated users against your agent, k times per task, grades each trial on final data state, forbidden actions, handoff and the claims in every sent reply, and reports pass^k. `snapshot` pins the last run with fingerprints of the models, prompts, tools, checks and library code, and `test --against` diffs a run against it. See [Measuring your agent](#measuring-your-agent).
 
 ## How a turn works
 
@@ -369,7 +371,7 @@ node --env-file=.env examples/scheduling/demo.js      # a scripted person books,
 
 `test/examples.test.ts` drives all three examples with a scripted model, so they are checked on every CI run without a model call.
 
-## Testing your agent
+## Measuring your agent
 
 ```sh
 npx trust-layer-agent test --suite examples/subscriptions/sim --k 4
@@ -414,11 +416,11 @@ assert(r.reply === "I can refund that order. Shall I go ahead?");
 assert(model.requests.length === 3);   // the blocked call, the blocked draft, the reply that was sent
 ```
 
-## How it differs from guardrail tools
+## How it differs from other guardrails
 
 Guardrails AI and NeMo Guardrails validate and steer the text going into and out of a model, with far larger libraries of validators and rails than this. Parlant models the conversation itself, with guidelines and journeys that shape how the agent behaves, and is a much fuller conversation framework.
 
-trust-layer-agent is narrower. It checks that what the agent says matches what it did and what the user agreed to (no price, date or "done" that no tool returned, no write without a yes after the quote), and it limits what the model ever sees. These can sit side by side: a text validator can be wrapped as a check.
+trust-layer-agent is narrower and sits elsewhere: between the model and the tools. It gates what runs, checks what is said against what ran and what the user agreed to, and ships the simulator that measures both. A text validator can be wrapped as a check and sit alongside.
 
 ## Limitations
 

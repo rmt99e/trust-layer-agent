@@ -1,6 +1,8 @@
 # Contributing
 
-Thanks for helping. trust-layer-agent caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300; the simulator, CLI and scripted test model stay under 450. A change that adds a feature near a cap needs a trim elsewhere first.
+Thanks for helping. trust-layer-agent is a simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. Every change serves one of those three steps; the rules below exist to keep each reliable.
+
+The library caps its logic lines: the library (checks, the agent loop, two model adapters, the store contract with its Postgres adapter) stays under 1,300; the simulator, CLI and scripted test model stay under 450. A change that adds a feature near a cap needs a trim elsewhere first.
 
 Be respectful: assume good faith, keep feedback about the work, and help newcomers.
 
@@ -65,7 +67,7 @@ Exit codes: 0 pass; 1 when pass^k is below `--min-pass` or a task flipped pass t
 
 ## Where docs live
 
-- [README.md](README.md): what it is, quickstart, the two examples. Keep measurements, counts and plans out of it: results go in docs/results.md, plans in docs/roadmap.md.
+- [README.md](README.md): what it is, quickstart, the three examples. Keep measurements, counts and plans out of it: results go in docs/results.md, plans in docs/roadmap.md.
 - [SPEC.md](SPEC.md): normative and language-neutral. Update it in the same pull request as any behavior change it covers.
 - [CHANGELOG.md](CHANGELOG.md): add an entry under `[Unreleased]`.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents.
