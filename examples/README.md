@@ -1,6 +1,6 @@
 # Examples
 
-Three fictional apps, each gated, checked and measured the same way: a subscription app's support desk, a company's purchasing desk, and a scheduling desk. `test/examples.test.ts` drives all three with a scripted model on every CI run; the commands below use a real one.
+Three fictional applications: a subscription support desk, a purchasing desk and a scheduling desk. `test/examples.test.ts` drives each with a scripted model on every CI run; the commands below use a real model.
 
 All of these call a real model and need `ANTHROPIC_API_KEY` in `.env` at the repository root. Run `npm install` first (it builds the package).
 

@@ -5,20 +5,20 @@
 
 A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup.
 
-It is a TypeScript library (Node 20+) that sits between the model and your tools. The model talks to the user and proposes tool calls; your tools read and change records; code decides what runs and what is said, from a session your app owns, whatever the model was told. You write tools, checks and journeys. A simulator scores the result on real models.
+trust-layer-agent is a TypeScript library (Node 20+) placed between a model and the tools it calls. The model converses with the user and proposes tool calls; the tools read and write records; code decides which calls run and which replies are sent, from a session the application stores. An operator writes tools, checks and journeys. A simulator measures the result against scripted users on real models.
 
 ## Features
 
-- **Consent before a write.** A write runs only after the user's clear yes, and a write tied to a quote needs that quote shown, unused and unexpired.
-- **Inputs from the record, not the model.** Ids are bound from the session; a search runs only on words the user said.
-- **Replies that match what happened.** No price, date, status or "done" that no tool returned; no "it failed" after a success; nothing while an outcome is unknown.
-- **A person can take the decision.** A check can park an action for approval while the conversation continues, and record who decided and when.
-- **Your own messages checked too.** `review()` runs the same checks on a template or an outbound email the app wrote.
-- **The model sees only what you allow.** Field visibility, masked traces, and user and tool text fenced as data.
-- **Secrets stay out of the session.** A tool's `secret` fields reach the function and are redacted everywhere else.
-- **Measured, not assumed.** A simulator plays scripted users k times per task and grades every trial; snapshots pin the result; `validate` and a scripted model need no key.
+- Consent before a write. A write tool runs only after the user's latest message is an affirmative; a write bound to a quote also requires that quote to have been shown, and to be unused and unexpired.
+- Provenance of inputs. Identifiers are bound from session facts rather than taken from the model; a field declared `fromUser` accepts only values the user stated.
+- Verified replies. A draft may state a price, date, status or completion only when a tool result, a commitment or operator text supports it. Completion wording requires a successful write; no reply is sent while a write's outcome is unknown.
+- Human approval. A check may park an action for a person while the conversation continues; the decision, its author and its time are recorded.
+- Review of application-authored text. `review()` applies the reply checks to templates and outbound messages the application composes.
+- Bounded visibility. A tool exposes only its listed output fields; traces are masked; user and tool text reach the model as fenced data.
+- Redaction of secrets. A field declared `secret` is passed to the tool and stored redacted in the session, the traces and the model's history.
+- Measurement. A simulator plays scripted users k times per task and grades each trial; snapshots pin results for regression; `validate` and a scripted model run without a model call.
 
-The reasoning behind each, with the library's own block reasons, is in [docs/why.md](docs/why.md).
+The rationale for each, with the library's block reasons, is in [docs/why.md](docs/why.md).
 
 ## How it works
 
@@ -45,12 +45,12 @@ Not drawn:
 - after a write with an unknown outcome the library runs the write's `reconcileWith` read itself before the model replies;
 - while an approval is pending the model is reminded each turn not to request it again.
 
-Action checks run before a tool, reply checks before a reply is sent (a refused draft goes back to the model up to `maxRetries` times, default 2, then the turn hands off), and the simulator measures both.
+Action checks run before each tool call and reply checks before each reply. A refused draft is returned to the model with the reason, up to `maxRetries` times (default 2); the next refusal hands the turn to a person. The simulator measures both.
 
 | | What it is | Enforced? |
 |---|---|---|
-| **Tools** | Your functions wrapped with `read()` or `write()`: a schema, which output fields the model may see, which inputs are bound from facts, which must come from the user's words, what a successful call records. | Schema, `bind` and `visible` structurally; `fromUser` through the `no_invented_inputs` check |
-| **Checks** | One function type over actions and replies, returning `allow`, `block`, `rewrite`, `handoff` or `approve`. Six are built in and on by default; a seventh, `untrusted_text_is_data`, is structural and can't be turned off. | Yes |
+| **Tools** | Application functions wrapped with `read()` or `write()`: a schema, which output fields the model may see, which inputs are bound from facts, which must come from the user's words, what a successful call records. | Schema, `bind` and `visible` structurally; `fromUser` through the `no_invented_inputs` check |
+| **Checks** | One function type over actions and replies, returning `allow`, `block`, `rewrite`, `handoff` or `approve`. Six are built in and on by default; a seventh, `untrusted_text_is_data`, is structural and cannot be disabled. | Yes |
 | **Journeys** | YAML: a goal, guidance and done-conditions that go into the prompt, plus `guardrails` that compile to checks. | Only the guardrails |
 | **Knowledge** | Operator-authored text files added to the prompt. Prices, percentages and dates written in them (`$29`, `10%`, `2026-11-01`) count as backed when the model repeats them. | Prompt only |
 
@@ -108,7 +108,7 @@ await save(agent.forget(next));         // stores a tombstone; also deletes the 
 
 ### Example output
 
-The quick start's refund exchange, as the terminal shows it:
+The refund exchange above, as the terminal prints it:
 
 ```
 you   > Please refund order 123.
@@ -132,7 +132,7 @@ This exchange is a test in [test/agent.test.ts](test/agent.test.ts).
 
 ## Usage
 
-Tools, checks, journeys, sessions and stores, in that order. Extension happens only through tools, checks, journeys, model adapters and session stores.
+Tools, checks, journeys, sessions and stores, in that order. The library is extended only through tools, checks, journeys, model adapters and session stores.
 
 ### Tools
 
@@ -191,7 +191,7 @@ const { session: next, result } = await agent.approve(session, "p_1", { by: revi
 await save(next);                                                           // the model sees the result next turn
 ```
 
-Both decisions end in an ordinary tool result in the session, so the next reply is checked against what really happened. An approved call runs without checks: the person's decision is the check. The same call isn't parked twice, and each turn while something is pending the model is reminded not to request it again.
+Both decisions end in an ordinary tool result in the session, so the next reply is checked against the recorded result. An approved call runs without checks: the person's decision is the check. The same call isn't parked twice, and each turn while something is pending the model is reminded not to request it again.
 
 **Your own claim kinds.** `no_unconfirmed_claims` knows prices, percentages, dates and "done" wording. Teach it what your replies state with a claim kind: a name, a way to find such claims in a text, and optionally what a source has to contain to back one:
 
@@ -271,15 +271,15 @@ With `owner` set, a session id from a request can't reach another owner's conver
 
 ## Examples
 
-Three fictional apps, each gated, checked and measured the same way, each with a pinned real-model result.
+Three fictional applications, each with a pinned real-model result.
 
 | Example | What it shows | Run |
 |---|---|---|
-| [subscriptions/](examples/subscriptions/) | A support desk for a subscription app: verification, usage, quotes, plan changes, refunds, cases and handoff. The fullest example. | `node --env-file=.env examples/subscriptions/chat.js` |
-| [procurement/](examples/procurement/) | A purchasing desk: `fromUser` on the catalog search, an `approve()` check for orders over the team's limit, two claim kinds, and `review()` on the supplier email. | `node --env-file=.env examples/procurement/demo.js` |
-| [scheduling/](examples/scheduling/) | A scheduling desk with no money in it: an offer commitment shown by its date, a `time` claim kind, a late-cancellation approval, a passcode kept `secret`. Appointments, meetings and service visits share the shape. | `node --env-file=.env examples/scheduling/demo.js` |
+| [subscriptions/](examples/subscriptions/) | A support desk for a subscription application: verification, usage, quotes, plan changes, refunds, cases and handoff. The most complete example. | `node --env-file=.env examples/subscriptions/chat.js` |
+| [procurement/](examples/procurement/) | A purchasing desk: `fromUser` on the catalog search, an `approve()` check for orders above the team's limit, two claim kinds, and `review()` on the supplier email. | `node --env-file=.env examples/procurement/demo.js` |
+| [scheduling/](examples/scheduling/) | A scheduling desk with no monetary values: an offer commitment shown by its date, a `time` claim kind, approval of late cancellations, a passcode declared `secret`. Appointments, meetings and service visits have the same structure. | `node --env-file=.env examples/scheduling/demo.js` |
 
-Each needs `ANTHROPIC_API_KEY` in `.env`. [examples/README.md](examples/README.md) lists every file and the demo toggles. `test/examples.test.ts` drives every example with a scripted model on each CI run.
+Each requires `ANTHROPIC_API_KEY` in `.env`. [examples/README.md](examples/README.md) lists the files and the demo toggles. `test/examples.test.ts` drives each example with a scripted model on every CI run.
 
 ## Testing
 
@@ -313,7 +313,7 @@ max_steps: 12
 
 A suite is a `suite.js` that exports your agent options, your tools, a stand-in `run` per tool over a fresh seeded store, the tasks directory and the models. `validate` runs everything `test` checks before its first model call (stand-ins match the tools, every task names real tools and its expected writes apply to the seed, both models are priced) and exits, so a CI job can gate task files for free. The flags, the suite shape, the other `expect` fields and the exact pass^k rule are in [docs/testing.md](docs/testing.md); the task format is normative in [SPEC.md](SPEC.md).
 
-Your own unit tests need no model either. `trust-layer-agent/testing` exports the scripted model the library's tests run on: a list of steps, each a reply or a tool call, that records every request it receives.
+Unit tests need no model either. `trust-layer-agent/testing` exports the scripted model the library's tests run on: a list of steps, each a reply or a tool call, that records every request it receives.
 
 ```js
 import { scripted } from "trust-layer-agent/testing";
@@ -328,9 +328,9 @@ assert(model.requests.length === 3);   // the blocked call, the blocked draft, t
 
 ## Comparison
 
-Guardrails AI and NeMo Guardrails validate and steer the text going into and out of a model, with far larger libraries of validators and rails than this. Parlant models the conversation itself, with guidelines and journeys that shape how the agent behaves, and is a much fuller conversation framework.
+Guardrails AI and NeMo Guardrails validate and steer the text entering and leaving a model, with far larger libraries of validators and rails. Parlant models the conversation itself, with guidelines and journeys, and is a much fuller conversation framework.
 
-trust-layer-agent is narrower and sits elsewhere: between the model and the tools. It gates what runs, checks what is said against what ran and what the user agreed to, and ships the simulator that measures both. A text validator can be wrapped as a check and sit alongside.
+trust-layer-agent is narrower and occupies a different position, between the model and the tools. It gates which calls run, checks each reply against what the tools returned and what the user agreed to, and includes the simulator that measures both. A text validator can be wrapped as a check and used alongside it.
 
 ## Limitations
 
