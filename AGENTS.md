@@ -2,7 +2,15 @@
 
 Notes for coding agents working on this repo. For using the package in an app, read README.md.
 
-trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks tool calls before they run and replies before they're sent. Customer support and internal operations are the two shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
+## Why it exists
+
+A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. Everything in this repo serves one of those three steps, and every rule below follows from one of them:
+
+- **Gate.** A tool call runs only when code allows it, from the session: verification, a yes after the quote, bound ids, inputs the user gave, approvals parked for a person, no repeated writes. The gate must be reliable, so checks are deterministic code and never call a model.
+- **Check.** A reply is sent only when it matches what the tools returned and what the user agreed to. The claim rules are phrase lists and regexes whose block reasons are exact strings, with tests for every allowed case and every attack, so a relaxation can't quietly let a false claim through.
+- **Measure.** A simulator scores the agent on real models, task by task, k times; snapshots pin results; every behavior change is measured against one. A check that passes unit tests but fails a scored run is not done.
+
+A TypeScript library (Node 20+); support, purchasing and scheduling are the three shipped journeys. `src/` names no journey; its "done" word list (`claims.ts`) is still account vocabulary, which is why the procurement example adds a status claim kind (see README Limitations).
 
 Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `approve`, `decline`, `resume`, `forget`, `chat`), three commands (`test`, `snapshot`, `validate`).
 
@@ -26,7 +34,7 @@ Three nouns (tools, checks, journeys), the agent verbs (`respond`, `review`, `ap
 - `src/sim/`: `task.ts` (task files), `simulator.ts` (validation, simulated user, stand-in tools, trials), `grade.ts` (deterministic grading), `scripted.ts` (the scripted test model).
 - `src/cli.ts`: the `test`, `snapshot` and `validate` commands.
 - `test/`: vitest unit tests. `src/sim/scripted.ts` (exported as `trust-layer-agent/testing`) is the scripted Model they run on, no network; `fixtures.ts` builds check contexts, `harness.ts` builds agents over an in-memory trace sink. `tsconfig.test.json` type-checks the tests in CI (`npm run typecheck`).
-- `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the operations example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `test/examples.test.ts` drives both with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests. `examples/scheduling/`: the third journey, a scheduling desk for appointments, meetings or service visits (offer commitments shown by their date, a `time` claim kind, a late-cancellation approval, `secret` on the passcode; `sim/` has 5 tasks).
+- `examples/refunds.js`: the 10-line quickstart. `examples/subscriptions/`: the support example (store, tools, journeys, policy, `sim/` suite and 22 tasks). `examples/procurement/`: the purchasing example (`fromUser`, an `approve()` check, claim kinds, `review()`; `sim/` with 4 tasks). `examples/scheduling/`: the scheduling example (offer commitments shown by their date, a `time` claim kind, a late-cancellation approval, `secret` on the passcode; `sim/` with 5 tasks). `test/examples.test.ts` drives all three with a scripted model; `vitest.config.ts` aliases `trust-layer-agent` to `src/` so the examples run against source in tests.
 - `snapshots/`: pinned versions (committed): `v1`, `v2`, `v2.1-sonnet`, `v2.1-haiku`, `v3-sonnet`, `v3-haiku`, `v3-sonnet-regraded`, `v3-haiku-regraded` (v3 trials re-graded offline with the fixed grader), `v4-sonnet`, `v4-haiku`, `v0.2.0-sonnet` (subscriptions), `v0.2.0-procurement-sonnet` (the first procurement reference) and `scheduling-v1-sonnet` (the first scheduling reference). `results/` and `traces/` are written at run time and gitignored.
 - `docs/design.md`: the original design's decisions, kept for history.
 
@@ -68,11 +76,11 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 
 ## Conventions
 
-- Checks are deterministic code. Built-ins never call a model. A model-backed check would be a custom check an operator writes; the library ships none.
+- Checks are deterministic code (gate and check). Built-ins never call a model. A model-backed check would be a custom check an operator writes; the library ships none.
 - No prices or other business values hardcoded in `src/`. They come from tools.
-- Vendor-neutral naming in code, examples and sample data. No real company or product names; the examples are a fictional subscription app and a fictional purchasing desk.
-- Every check change needs tests: add rows to the tables in `test/claims.test.ts` or `test/builtins.test.ts`. A change that lets more through also adds attack rows that must still be blocked.
-- Measure behavior changes with `test --against <snapshot>`; keep behavior-neutral fixes separate from behavior changes. Re-baseline after changing the grader.
+- Vendor-neutral naming in code, examples and sample data. No real company or product names; the examples are a fictional subscription app, purchasing desk and scheduling desk.
+- Every check change needs tests (gate and check): add rows to the tables in `test/claims.test.ts` or `test/builtins.test.ts`. A change that lets more through also adds attack rows that must still be blocked.
+- Measure behavior changes with `test --against <snapshot>` (measure); keep behavior-neutral fixes separate from behavior changes. Re-baseline after changing the grader. A new example ships with a scored run, not only scripted tests: each of the three found a library gap only on a real model.
 - Never weaken a simulation task to make it pass. Fix tools, checks or journeys instead, then rerun `test` and take a new snapshot.
 - Extension happens only through tools, checks, journeys, model adapters and session stores. If an app use case needs a core change, the interface is wrong: fix the interface, not the app.
 - Keep code small and readable, and match the surrounding style.
@@ -80,7 +88,7 @@ npx trust-layer-agent snapshot --suite examples/subscriptions/sim --name v4
 
 ## More
 
-- [README.md](README.md): what it is, quickstart, the two examples. Measurements live in docs/results.md and plans in docs/roadmap.md; the README carries nothing that goes stale.
+- [README.md](README.md): what it is, quickstart, the examples. Measurements live in docs/results.md and plans in docs/roadmap.md; the README carries nothing that goes stale.
 - [SPEC.md](SPEC.md): the language-neutral spec (journey schema, check results, session JSON, task format).
 - [docs/design.md](docs/design.md): the original design's decisions, kept for history; SPEC.md and the code are current.
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, CI, the rules above and the pull request checklist.

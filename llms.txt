@@ -1,6 +1,6 @@
 # trust-layer-agent
 
-> trust-layer-agent is a trust layer for LLM agents that act on someone's behalf: a TypeScript library (Node 20+) that checks every tool call before it runs and every reply before it's sent, against what the tools returned and what the user agreed to. Customer support and internal operations with approvals are the two shipped journeys; the same primitives carry any agent that both does things and says things. It also ships a simulator for testing agents.
+> trust-layer-agent is a simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. A TypeScript library (Node 20+) that sits between the model and the agent's tools: code gates every tool call before it runs and checks every reply before it is sent, against what the tools returned and what the user agreed to. Three worked examples: a support desk, a purchasing desk with approvals, a scheduling desk.
 
 You write three things: tools (functions wrapped with `read()` or `write()`, each declaring which fields the model may see), checks (one function type returning allow, block, rewrite, handoff or approve, guarding both tool calls and replies), and optional journey YAML files. You call `await agent.respond(session, message)`, where the session is plain JSON your app stores anywhere. `agent.review(session, draft)` runs the same reply checks on a message your app wrote; `agent.approve(session, id, { by })` and `agent.decline(session, id, { reason, by })` settle an action a check parked for a person, recording who and when; `agent.resume(session, { note, by })` hands a handed-off conversation back. Three commands: `test` runs simulated users k times per task and reports pass^k; `snapshot` pins a passing version; `validate` runs the pre-run checks with no model call. `trust-layer-agent/testing` exports the scripted model for unit tests without a key.
 
@@ -14,8 +14,8 @@ You write three things: tools (functions wrapped with `read()` or `write()`, eac
 
 ## Docs
 
-- [README.md](README.md): what it is and why, what it enforces, the quickstart, the reference, the two examples.
-- [docs/results.md](docs/results.md): measured pass^k per version. [docs/roadmap.md](docs/roadmap.md): plans. [docs/testing.md](docs/testing.md): the `test` command reference.
+- [README.md](README.md): gate, check, measure; what it enforces, the quickstart, the reference, the examples.
+- [docs/results.md](docs/results.md): measured pass^k per version. [docs/roadmap.md](docs/roadmap.md): plans. [docs/testing.md](docs/testing.md): the measure step: `test`, `snapshot`, `validate`, suites and tasks.
 - [SPEC.md](SPEC.md): language-neutral spec: journey JSON Schema, check result shape, session JSON, simulation task format.
 - [docs/design.md](docs/design.md): the original design and its decisions, kept for history; superseded by SPEC.md wherever they differ.
 - [AGENTS.md](AGENTS.md): layout, commands and conventions for coding agents working on this repo.

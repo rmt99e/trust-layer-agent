@@ -1,7 +1,7 @@
 {
   "name": "trust-layer-agent",
   "version": "0.2.0",
-  "description": "A trust layer for LLM agents that act on someone's behalf: every tool call is checked before it runs and every reply before it's sent.",
+  "description": "A simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup.",
   "keywords": [
     "ai",
     "agents",
@@ -10,7 +10,8 @@
     "human-in-the-loop",
     "operations",
     "llm",
-    "evals"
+    "evals",
+    "simulation"
   ],
   "license": "MIT",
   "repository": {

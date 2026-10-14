@@ -1,6 +1,6 @@
 # Prompt: port trust-layer-agent to my language
 
-trust-layer-agent is a TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it. It enforces rules in code: tool calls are checked before they run, and replies are checked before they're sent. It also ships a simulator for testing agents.
+trust-layer-agent is a simple framework for guardrails on agents: gate tool calls, check replies, and measure both with a built-in simulation and grading setup. A TypeScript library (Node 20+) that sits between an LLM and the tools and replies of an agent built on it: code gates tool calls before they run and checks replies before they're sent, and a simulator measures both.
 
 SPEC.md defines the parts that don't depend on a language: the session JSON, the check result shape, the journey schema and the simulation task format. The TypeScript package is the reference implementation. This prompt has your coding agent build a port in another language, smallest piece first, using the reference tests as conformance cases. It finishes by running the same simulation suite the reference passes and comparing the scores. It stops for your OK after the plan and after the check tables pass. Only the last step costs money.
 
@@ -11,8 +11,8 @@ Port trust-layer-agent to <language>. Reference repo: <repo-url>. Clone it and r
 1,700 logic lines of TypeScript), test/ and examples/subscriptions/. SPEC.md is the contract. Where SPEC.md, the
 source and the tests disagree, the source and its tests win; list every disagreement for me.
 
-Keep the design intact: three things a user writes (tools, checks, journeys), one call (respond), two commands
-(test, snapshot), five extension points (tools, checks, journeys, model adapters, session stores). Don't add features. Put ideas in a list for me instead.
+Keep the design intact: three things a user writes (tools, checks, journeys), one call (respond), three commands
+(test, snapshot, validate), five extension points (tools, checks, journeys, model adapters, session stores). Don't add features. Put ideas in a list for me instead.
 
 RULES
 - Dependencies: a schema validator that can emit JSON Schema, and a YAML parser that keeps line numbers. Use
